@@ -293,10 +293,12 @@ async function loadDoctor(showError = false) {
       const detail = document.createElement('small');
       detail.textContent = component.status === 'available'
         ? 'Installed ' + component.current + ' · Latest ' + (component.latest || 'unknown')
-        : 'Installed ' + component.current + ' · No published release available';
+        : (component.status === 'no_release'
+          ? 'Installed ' + component.current + ' · No published release available'
+          : 'Installed ' + component.current + ' · Release check unavailable' + (component.detail ? ': ' + component.detail : ''));
       info.append(title, detail);
-      const stateLabel = document.createElement('span'); stateLabel.className = 'doctor-status ' + (component.update_available ? 'warning' : 'ok');
-      stateLabel.textContent = component.update_available ? 'UPDATE' : (component.status === 'available' ? 'CURRENT' : 'NO RELEASE');
+      const stateLabel = document.createElement('span'); stateLabel.className = 'doctor-status ' + (component.update_available ? 'warning' : (component.status === 'unavailable' ? 'attention' : 'ok'));
+      stateLabel.textContent = component.update_available ? 'UPDATE' : (component.status === 'available' ? 'CURRENT' : (component.status === 'no_release' ? 'NO RELEASE' : 'CHECK FAILED'));
       row.append(info, stateLabel);
       if (component.url) {
         const link = document.createElement('a'); link.href = component.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'Release notes'; row.append(link);

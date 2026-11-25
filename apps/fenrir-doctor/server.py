@@ -28,6 +28,7 @@ SETTINGS_FILE = CONFIG_HOME / "fenrir-doctor" / "settings.json"
 LEGACY_STATE = STATE_HOME / "sun-ai"
 LEGACY_DB = LEGACY_STATE / "history.sqlite3"
 LEGACY_SETTINGS = CONFIG_HOME / "sun-ai" / "settings.json"
+CATALOG_SOURCE = Path(os.environ.get("FENRIR_CATALOG_SOURCE", Path.home() / ".local/share/fenrir/catalog-source"))
 CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/share/fenrir/catalog"))
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
@@ -406,7 +407,77 @@ def _version_key(value: str) -> tuple[int, ...]:
     return tuple(int(part) for part in parts[:4]) if parts else (0,)
 
 
+def _latest_private_catalog_release() -> dict[str, Any]:
+    current = LOCAL_RELEASES["Fenrir-Wallpaper-Catalog"]
+    if not (CATALOG_SOURCE / ".git").is_dir():
+        return {
+            "repository": "Fenrir-Wallpaper-Catalog",
+            "current": current,
+            "latest": None,
+            "update_available": False,
+            "status": "unavailable",
+            "detail": "Local authenticated Catalog checkout is missing.",
+        }
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(CATALOG_SOURCE), "ls-remote", "--tags", "--refs", "origin", "refs/tags/v*"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+        )
+        if result.returncode != 0:
+            return {
+                "repository": "Fenrir-Wallpaper-Catalog",
+                "current": current,
+                "latest": None,
+                "update_available": False,
+                "status": "unavailable",
+                "detail": (result.stderr or "GitHub authentication is unavailable.")[:180],
+            }
+        tags = []
+        for line in result.stdout.splitlines():
+            parts = line.split("\t", 1)
+            if len(parts) != 2:
+                continue
+            tag = parts[1].rsplit("/", 1)[-1]
+            if re.fullmatch(r"v\d+\.\d+\.\d+", tag):
+                tags.append(tag)
+        if not tags:
+            return {
+                "repository": "Fenrir-Wallpaper-Catalog",
+                "current": current,
+                "latest": None,
+                "update_available": False,
+                "status": "no_release",
+            }
+        tag = max(tags, key=_version_key)
+        latest = tag[1:]
+        return {
+            "repository": "Fenrir-Wallpaper-Catalog",
+            "current": current,
+            "latest": latest,
+            "update_available": _version_key(latest) > _version_key(current),
+            "tag": tag,
+            "url": f"https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog/releases/tag/{tag}",
+            "published_at": None,
+            "status": "available",
+        }
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError) as exc:
+        return {
+            "repository": "Fenrir-Wallpaper-Catalog",
+            "current": current,
+            "latest": None,
+            "update_available": False,
+            "status": "unavailable",
+            "detail": str(exc)[:180],
+        }
+
+
 def _latest_release(repository: str) -> dict[str, Any]:
+    if repository == "Fenrir-Wallpaper-Catalog":
+        return _latest_private_catalog_release()
     request = urllib.request.Request(
         f"https://api.github.com/repos/sunxsaturn/{repository}/releases/latest",
         headers={"Accept": "application/vnd.github+json", "User-Agent": "Fenrir-Doctor/0.5"},
