@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Fenrir Settings
-Comment=Customize the Fenrir desktop environment
+Name=Fenrir Control Center
+Comment=Unified Fenrir desktop settings, wallpaper, and system controls
 Exec=fenrir-settings
 Icon=fenrir-desktop
 Terminal=false
