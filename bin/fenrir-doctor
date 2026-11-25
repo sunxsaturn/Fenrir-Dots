@@ -3,19 +3,20 @@ set -Eeuo pipefail
 
 UI_URL="http://127.0.0.1:8765"
 OLLAMA_UNIT="ollama.service"
-STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/sun-ai"
-STARTED_MARKER="$STATE_HOME/ollama-started-by-sun-ai"
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}/fenrir-doctor"
+STARTED_MARKER="$STATE_HOME/ollama-started-by-fenrir-doctor"
 
 usage() {
   cat <<'USAGE'
-Sun AI local runtime control
+Fenrir Doctor local runtime control
 
-Usage: sun-ai {open|start|stop|status|logs}
-  open    Start Ollama only when needed, start Sun AI, and open the dashboard
-  start   Start Ollama and the local dashboard service
-  stop    Stop the dashboard and Ollama (frees GPU/RAM for gaming/recording)
-  status  Show model-runtime and local dashboard status
-  logs    Show the Sun AI user-service journal
+Usage: fenrir-doctor {open|start|stop|status|logs|upgrade}
+  open     Start Ollama only when needed, start Doctor, and open the dashboard
+  start    Start Ollama and the local Doctor dashboard service
+  stop     Stop Doctor and an Ollama service started by Doctor
+  status   Show local model and Doctor dashboard status
+  logs     Show the Doctor user-service journal
+  upgrade  Open the interactive Fenrir upgrade terminal
 USAGE
 }
 
@@ -37,10 +38,10 @@ start_runtime() {
     : > "$STARTED_MARKER"
     chmod 0600 "$STARTED_MARKER"
   fi
-  systemctl --user start sun-ai.service
+  systemctl --user start fenrir-doctor.service
   if ! wait_for_url "$UI_URL/api/health" 30; then
-    systemctl --user --no-pager --full status sun-ai.service || true
-    echo "Sun AI did not start. Inspect: sun-ai logs" >&2
+    systemctl --user --no-pager --full status fenrir-doctor.service || true
+    echo "Fenrir Doctor did not start. Inspect: fenrir-doctor logs" >&2
     exit 1
   fi
 }
@@ -56,33 +57,38 @@ case "${1:-open}" in
     ;;
   start)
     start_runtime
-    echo "Sun AI is ready at $UI_URL"
+    echo "Fenrir Doctor is ready at $UI_URL"
     ;;
   stop)
-    systemctl --user stop sun-ai.service 2>/dev/null || true
+    systemctl --user stop fenrir-doctor.service 2>/dev/null || true
     if [[ -e "$STARTED_MARKER" ]]; then
       if systemctl is-active --quiet "$OLLAMA_UNIT"; then
         pkexec /usr/bin/systemctl stop "$OLLAMA_UNIT"
       fi
       rm -f -- "$STARTED_MARKER"
-      echo "Sun AI and its Ollama runtime stopped. GPU and RAM are released."
+      echo "Fenrir Doctor and its Ollama runtime stopped. GPU and RAM are released."
     else
-      echo "Sun AI stopped. Ollama was already running before Sun AI started it, so it was left untouched."
+      echo "Fenrir Doctor stopped. Ollama was already running, so it was left untouched."
     fi
     ;;
   status)
-    printf 'Sun AI UI: '
-    systemctl --user is-active sun-ai.service 2>/dev/null || true
+    printf 'Fenrir Doctor UI: '
+    systemctl --user is-active fenrir-doctor.service 2>/dev/null || true
     printf 'Ollama: '
     systemctl is-active "$OLLAMA_UNIT" 2>/dev/null || true
-    [[ -e "$STARTED_MARKER" ]] && echo 'Ollama was started by Sun AI.' || true
+    [[ -e "$STARTED_MARKER" ]] && echo 'Ollama was started by Fenrir Doctor.' || true
     if command -v ollama >/dev/null 2>&1 && systemctl is-active --quiet "$OLLAMA_UNIT"; then
       ollama list || true
     fi
     printf 'Dashboard: %s\n' "$UI_URL"
     ;;
   logs)
-    journalctl --user -u sun-ai.service -n 100 --no-pager
+    journalctl --user -u fenrir-doctor.service -n 100 --no-pager
+    ;;
+  upgrade)
+    command -v kitty >/dev/null 2>&1 || { echo "Kitty terminal is required." >&2; exit 1; }
+    command -v fenrir-upgrade >/dev/null 2>&1 || { echo "Fenrir upgrade helper is not installed." >&2; exit 1; }
+    exec kitty --title "Fenrir Upgrade" fenrir-upgrade apply
     ;;
   -h|--help|help) usage ;;
   *) usage >&2; exit 2 ;;

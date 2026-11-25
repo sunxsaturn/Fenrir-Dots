@@ -2,3 +2,15 @@
 @media(max-width:1200px){.content-grid{grid-template-columns:minmax(0,1fr) 250px}.app-shell{grid-template-columns:220px minmax(0,1fr)}.topbar-actions{gap:9px}}
 @media(max-width:940px){.content-grid{grid-template-columns:1fr}.right-rail{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start}.brand-note{grid-column:1/-1}.app-shell{grid-template-columns:205px minmax(0,1fr)}}
 @media(max-width:700px){.app-shell{grid-template-columns:1fr;padding:9px;gap:9px}.sidebar{min-height:auto;padding:12px}.brand{padding-bottom:12px}.new-chat{width:auto}.primary-nav{display:flex;overflow:auto;margin-top:13px}.nav-item{white-space:nowrap;padding:9px}.sidebar-divider,.section-kicker,.chat-list,.sidebar-spacer,.privacy-card,.sidebar-version{display:none}.topbar{align-items:flex-start;gap:15px;flex-direction:column;padding:14px}.topbar-actions{width:100%;flex-wrap:wrap}.model-picker{flex:1}.content-grid{min-height:0}.workspace,.chat-view{min-height:65vh}.right-rail{grid-template-columns:1fr}.page-view{min-height:unset;padding:20px 15px}.page-heading h2{font-size:23px}.forecast-days{grid-template-columns:repeat(2,minmax(0,1fr))}.weather-details{grid-template-columns:1fr}.system-grid{grid-template-columns:1fr 1fr}.messages{padding:16px 12px}.composer{width:calc(100% - 20px)}.welcome{padding:10px}.settings-actions{align-items:flex-start;gap:12px;flex-direction:column}}
+
+.doctor-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin:14px 0}
+.doctor-section{margin-top:14px}
+.doctor-check-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.doctor-status{display:inline-flex;align-items:center;padding:4px 8px;border:1px solid var(--line);border-radius:999px;font-size:9px;letter-spacing:.08em;color:var(--muted);white-space:nowrap}
+.doctor-status.ok{color:#8bd7ac}.doctor-status.warning{color:#e5c77d}.doctor-status.attention{color:#ef9b9b}
+.doctor-list{display:grid;gap:8px;margin-top:12px}
+.doctor-row{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:rgba(8,11,18,.28)}
+.doctor-row>div{display:grid;gap:4px}.doctor-row strong{font-size:12px}.doctor-row small{font-size:10px;color:var(--muted)}.doctor-row a{color:var(--accent);font-size:10px}
+.doctor-log{max-height:220px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--muted);font-size:10px;background:rgba(8,11,18,.55);border:1px solid var(--line);border-radius:10px;padding:12px}
+#wallpaper-target{width:100%;max-width:260px;padding:10px;background:var(--panel-strong);color:var(--foreground);border:1px solid var(--line);border-radius:10px}
+@media(max-width:760px){.doctor-row{align-items:flex-start;flex-wrap:wrap}.doctor-row button{margin-left:auto}}

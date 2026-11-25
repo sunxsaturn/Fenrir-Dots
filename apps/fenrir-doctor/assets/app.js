@@ -1,8 +1,8 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null };
-const views = ['chat', 'weather', 'system', 'history', 'settings'];
+const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 5000 };
+const views = ['chat', 'weather', 'system', 'doctor', 'wallpapers', 'history', 'settings'];
 
 async function api(path, options = {}) {
   const response = await fetch(path, { cache: 'no-store', ...options, headers: { ...(options.headers || {}), ...(options.body ? { 'Content-Type': 'application/json' } : {}) } });
@@ -27,11 +27,13 @@ function showView(name) {
     const element = $(`${view}-view`);
     if (element) element.classList.toggle('hidden', view !== name);
   });
-  const titles = { chat: ['YOUR WORKSPACE', 'Chat'], weather: ['YOUR LOCAL FORECAST', 'Weather'], system: ['LIVE HARDWARE TELEMETRY', 'System'], history: ['YOUR PRIVATE ARCHIVE', 'History'], settings: ['PERSONALIZE SUN AI', 'Settings'] };
+  const titles = { chat: ['YOUR WORKSPACE', 'Chat'], weather: ['YOUR LOCAL FORECAST', 'Weather'], system: ['LIVE HARDWARE TELEMETRY', 'System'], doctor: ['DIAGNOSTICS · UPDATES · RECOVERY', 'Fenrir Doctor'], wallpapers: ['RIGHTS-AWARE WALLPAPER LIBRARY', 'Wallpapers'], history: ['YOUR PRIVATE ARCHIVE', 'History'], settings: ['PERSONALIZE FENRIR DOCTOR', 'Settings'] };
   $('view-eyebrow').textContent = titles[name][0];
   $('view-title').textContent = titles[name][1];
   if (name === 'weather') loadWeather(true);
   if (name === 'system') loadSystem(true);
+  if (name === 'doctor') loadDoctor(true);
+  if (name === 'wallpapers') loadWallpapers(true);
   if (name === 'history') renderHistory();
   if (name === 'settings') loadSettings();
 }
@@ -41,7 +43,7 @@ function createMessage(role, content, model = '') {
   wrapper.className = `message ${role}`;
   const label = document.createElement('div');
   label.className = 'message-label';
-  label.textContent = role === 'user' ? 'YOU' : (model ? `SUN AI · ${model}` : 'SUN AI');
+  label.textContent = role === 'user' ? 'YOU' : (model ? `FENRIR DOCTOR · ${model}` : 'FENRIR DOCTOR');
   const body = document.createElement('p');
   body.className = 'message-body';
   body.textContent = content;
@@ -56,7 +58,7 @@ function renderEmptyChat() {
   welcome.className = 'welcome';
   const orb = document.createElement('div'); orb.className = 'welcome-orb'; orb.textContent = '✧';
   const kicker = document.createElement('div'); kicker.className = 'eyebrow'; kicker.textContent = 'A QUIET SPACE TO THINK';
-  const heading = document.createElement('h2'); heading.textContent = 'Hello. I\'m Sun AI.';
+  const heading = document.createElement('h2'); heading.textContent = 'Hello. I\'m Fenrir Doctor.';
   const description = document.createElement('p'); description.textContent = 'Your private assistant, running locally on your own machine. Let\'s work through something.';
   const suggestions = document.createElement('div'); suggestions.className = 'suggestions';
   [['Plan a project', 'Help me plan a project step by step.'], ['Learn something', 'Explain a difficult concept clearly, with examples.'], ['Solve a problem', 'Help me debug this problem. Ask for any missing details first.']].forEach(([label, prompt]) => {
@@ -267,6 +269,90 @@ function renderWeatherPage(data) {
   target.append(current, details, heading, days);
 }
 
+function addDoctorCheck(item, target) {
+  const card = document.createElement('article'); card.className = 'doctor-check metric-card';
+  const head = document.createElement('div'); head.className = 'doctor-check-head';
+  const name = document.createElement('strong'); name.textContent = item.name;
+  const status = document.createElement('span'); status.className = 'doctor-status ' + item.status; status.textContent = item.status.toUpperCase();
+  const detail = document.createElement('small'); detail.textContent = item.detail || '';
+  head.append(name, status); card.append(head, detail); target.append(card);
+}
+
+async function loadDoctor(showError = false) {
+  try {
+    const values = await Promise.all([api('/api/doctor/diagnostics'), api('/api/doctor/updates'), api('/api/doctor/backups')]);
+    const diagnostics = values[0], updates = values[1], backups = values[2];
+    $('doctor-summary').textContent = diagnostics.summary.ok + '/' + diagnostics.summary.total + ' checks passed · ' + diagnostics.summary.warning + ' warnings · ' + diagnostics.summary.attention + ' attention required';
+    const checks = $('doctor-checks'); checks.replaceChildren();
+    diagnostics.checks.forEach((item) => addDoctorCheck(item, checks));
+    const updateTarget = $('update-content'); updateTarget.replaceChildren();
+    updates.components.forEach((component) => {
+      const row = document.createElement('article'); row.className = 'doctor-row';
+      const info = document.createElement('div');
+      const title = document.createElement('strong'); title.textContent = component.repository;
+      const detail = document.createElement('small');
+      detail.textContent = component.status === 'available'
+        ? 'Installed ' + component.current + ' · Latest ' + (component.latest || 'unknown')
+        : 'Installed ' + component.current + ' · No published release available';
+      info.append(title, detail);
+      const stateLabel = document.createElement('span'); stateLabel.className = 'doctor-status ' + (component.update_available ? 'warning' : 'ok');
+      stateLabel.textContent = component.update_available ? 'UPDATE' : (component.status === 'available' ? 'CURRENT' : 'NO RELEASE');
+      row.append(info, stateLabel);
+      if (component.url) {
+        const link = document.createElement('a'); link.href = component.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.textContent = 'Release notes'; row.append(link);
+      }
+      updateTarget.append(row);
+    });
+    $('update-status').textContent = updates.update_available ? 'A newer project release is available.' : 'No newer published release detected.';
+    renderBackups(backups.backups || []);
+  } catch (error) { if (showError) toast(error.message); }
+}
+
+function renderBackups(backups) {
+  const target = $('backup-content'); target.replaceChildren();
+  if (!backups.length) {
+    const empty = document.createElement('p'); empty.className = 'loading-card'; empty.textContent = 'No Fenrir configuration backups are available yet.'; target.append(empty); return;
+  }
+  backups.forEach((backup) => {
+    const row = document.createElement('article'); row.className = 'doctor-row';
+    const info = document.createElement('div');
+    const name = document.createElement('strong'); name.textContent = backup.id;
+    const detail = document.createElement('small'); detail.textContent = backup.files + ' backed-up files';
+    info.append(name, detail);
+    const button = document.createElement('button'); button.type = 'button'; button.className = 'widget-link';
+    button.dataset.restoreBackup = backup.id; button.textContent = 'Restore';
+    row.append(info, button); target.append(row);
+  });
+}
+
+async function loadWallpapers(showError = false) {
+  try {
+    const data = await api('/api/doctor/wallpapers');
+    $('wallpaper-summary').textContent = data.catalog_available
+      ? data.detail
+      : data.detail + ' Existing local wallpapers remain available.';
+    const metrics = $('wallpaper-metrics'); metrics.replaceChildren();
+    [
+      ['Accepted catalog records', data.accepted_asset_count === null ? 'Not connected' : Number(data.accepted_asset_count).toLocaleString(), 'Human acceptance is separate from rights approval.'],
+      ['Local image files', Number(data.local_image_count).toLocaleString(), 'Files already in your wallpaper folder.'],
+      ['Selected target', Number(data.target_count).toLocaleString(), data.target_reached ? 'Target reached' : Number(data.remaining).toLocaleString() + ' more images to reach target.']
+    ].forEach(([title, value, detail]) => {
+      const card = document.createElement('article'); card.className = 'metric-card';
+      const label = document.createElement('span'); label.className = 'eyebrow'; label.textContent = title;
+      const number = document.createElement('strong'); number.textContent = value;
+      const help = document.createElement('small'); help.textContent = detail;
+      card.append(label, number, help); metrics.append(card);
+    });
+    state.wallpaperTarget = data.target_count || state.wallpaperTarget;
+    $('wallpaper-target').value = String(state.wallpaperTarget);
+    const sync = data.sync || {};
+    $('wallpaper-sync-button').disabled = Boolean(sync.running) || !data.catalog_available;
+    $('wallpaper-sync-button').textContent = sync.running ? 'Synchronization running…' : 'Sync accepted wallpapers';
+    $('wallpaper-sync-status').textContent = sync.running ? 'Copying verified local assets…' : (sync.returncode === 0 ? 'Last synchronization completed.' : (sync.returncode ? 'Synchronization stopped (exit ' + sync.returncode + ').' : 'Ready'));
+    $('wallpaper-sync-log').textContent = sync.log || '';
+  } catch (error) { if (showError) toast(error.message); }
+}
+
 async function loadSettings() {
   try {
     const data = await api('/api/settings');
@@ -274,6 +360,8 @@ async function loadSettings() {
     $('weather-location').value = data.weather.location || '';
     $('weather-latitude').value = data.weather.latitude ?? '';
     $('weather-longitude').value = data.weather.longitude ?? '';
+    state.wallpaperTarget = data.wallpaper_target_count || 5000;
+    if ($('wallpaper-target')) $('wallpaper-target').value = String(state.wallpaperTarget);
   } catch (error) { toast(error.message); }
 }
 
@@ -284,6 +372,7 @@ $('settings-form').addEventListener('submit', async (event) => {
     location: $('weather-location').value,
     latitude: $('weather-latitude').value,
     longitude: $('weather-longitude').value,
+    wallpaper_target_count: state.wallpaperTarget,
   };
   try {
     await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
@@ -294,17 +383,52 @@ $('settings-form').addEventListener('submit', async (event) => {
   } catch (error) { $('settings-status').textContent = ''; toast(error.message); }
 });
 
+$('upgrade-button').addEventListener('click', async () => {
+  $('update-status').textContent = 'Opening interactive updater…';
+  try {
+    const result = await api('/api/doctor/upgrade', { method: 'POST', body: JSON.stringify({}) });
+    $('update-status').textContent = result.message;
+    toast('Fenrir updater opened in a terminal');
+  } catch (error) { $('update-status').textContent = error.message; toast(error.message); }
+});
+
+$('wallpaper-target').addEventListener('change', async () => {
+  state.wallpaperTarget = Number($('wallpaper-target').value);
+  try {
+    const settings = await api('/api/settings');
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({
+      default_model: settings.default_model || '',
+      location: settings.weather.location || '',
+      latitude: settings.weather.latitude,
+      longitude: settings.weather.longitude,
+      wallpaper_target_count: state.wallpaperTarget
+    })});
+    toast('Wallpaper target saved');
+    loadWallpapers();
+  } catch (error) { toast(error.message); }
+});
+
+$('wallpaper-sync-button').addEventListener('click', async () => {
+  if (!window.confirm('Copy catalog-approved wallpapers into your local folder until the ' + Number(state.wallpaperTarget).toLocaleString() + ' image target is reached? This does not publish or upload images.')) return;
+  try {
+    await api('/api/doctor/wallpapers/sync', { method: 'POST', body: JSON.stringify({ target_count: state.wallpaperTarget }) });
+    toast('Wallpaper synchronization started');
+    loadWallpapers();
+    window.setTimeout(loadWallpapers, 1500);
+  } catch (error) { toast(error.message); }
+});
+
 $('composer').addEventListener('submit', async (event) => {
   event.preventDefault();
   if (state.sending) return;
   const prompt = $('prompt').value.trim();
   const model = $('model-select').value;
   if (!prompt) return;
-  if (!model) { toast('Start Sun AI and install a local model first.'); return; }
+  if (!model) { toast('Start Fenrir Doctor and install a local model first.'); return; }
   state.sending = true; $('send').disabled = true;
   if ($('messages').querySelector('.welcome')) $('messages').replaceChildren();
   $('messages').append(createMessage('user', prompt));
-  const pending = document.createElement('div'); pending.className = 'pending'; pending.textContent = 'Sun AI is thinking…'; $('messages').append(pending); $('messages').scrollTop = $('messages').scrollHeight;
+  const pending = document.createElement('div'); pending.className = 'pending'; pending.textContent = 'Fenrir Doctor is thinking…'; $('messages').append(pending); $('messages').scrollTop = $('messages').scrollHeight;
   $('prompt').value = '';
   try {
     const data = await api('/api/chat', { method: 'POST', body: JSON.stringify({ conversation_id: state.conversationId, model, message: prompt }) });
@@ -321,17 +445,26 @@ $('new-chat').addEventListener('click', () => { state.conversationId = null; app
 $('model-select').addEventListener('change', async () => {
   try {
     const settings = await api('/api/settings');
-    await api('/api/settings', { method: 'POST', body: JSON.stringify({ default_model: $('model-select').value, location: settings.weather.location || '', latitude: settings.weather.latitude, longitude: settings.weather.longitude }) });
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ default_model: $('model-select').value, location: settings.weather.location || '', latitude: settings.weather.latitude, longitude: settings.weather.longitude, wallpaper_target_count: state.wallpaperTarget }) });
   } catch (error) { toast(error.message); }
 });
 
-document.addEventListener('click', (event) => {
+document.addEventListener('click', async (event) => {
   const nav = event.target.closest('[data-view]');
   if (nav) return showView(nav.dataset.view);
   const prompt = event.target.closest('[data-prompt]');
   if (prompt) { $('prompt').value = prompt.dataset.prompt; $('prompt').focus(); return; }
   const view = event.target.closest('[data-open-view]');
   if (view) showView(view.dataset.openView);
+  const restore = event.target.closest('[data-restore-backup]');
+  if (restore) {
+    if (!window.confirm('Restore backup ' + restore.dataset.restoreBackup + '? Current Fenrir configuration will first be snapshotted.')) return;
+    try {
+      const result = await api('/api/doctor/recovery', { method: 'POST', body: JSON.stringify({ backup_id: restore.dataset.restoreBackup }) });
+      toast('Restored ' + result.restored.length + ' Fenrir configuration paths. Log out and back in to apply session changes.');
+      loadDoctor();
+    } catch (error) { toast(error.message); }
+  }
 });
 
 async function loadPalette() {
@@ -343,7 +476,7 @@ async function loadPalette() {
     root.style.setProperty('--foreground', palette.foreground || '#e8e9f2');
     root.style.setProperty('--muted', palette.muted || '#9699ab');
     root.style.setProperty('--surface-opacity', String(Math.max(.35, Math.min(.85, Number(palette.surface_opacity ?? .60)))));
-  } catch (error) { console.warn('Default Sun AI palette retained:', error); }
+  } catch (error) { console.warn('Default Fenrir Doctor palette retained:', error); }
 }
 
 async function refreshHealth() {
@@ -363,4 +496,5 @@ async function refreshHealth() {
   window.setInterval(loadPalette, 60000);
   window.setInterval(refreshHealth, 6000);
   window.setInterval(refreshChats, 30000);
+  window.setInterval(() => { if (state.view === 'doctor') loadDoctor(); if (state.view === 'wallpapers') loadWallpapers(); }, 30000);
 })();

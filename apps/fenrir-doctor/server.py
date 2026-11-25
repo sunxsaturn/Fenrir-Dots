@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Sun AI: local-only dashboard and Ollama bridge using the Python standard library."""
+"""Fenrir Doctor: local-only dashboard and Ollama bridge using the Python standard library."""
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
+import subprocess
 import time
 import urllib.error
 import urllib.parse
@@ -19,9 +21,24 @@ from urllib.parse import urlparse
 APP = Path(__file__).resolve().parent
 CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
 STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
-STATE = STATE_HOME / "sun-ai"
+STATE = STATE_HOME / "fenrir-doctor"
 DB = STATE / "history.sqlite3"
-SETTINGS_FILE = CONFIG_HOME / "sun-ai" / "settings.json"
+SETTINGS_FILE = CONFIG_HOME / "fenrir-doctor" / "settings.json"
+LEGACY_STATE = STATE_HOME / "sun-ai"
+LEGACY_DB = LEGACY_STATE / "history.sqlite3"
+LEGACY_SETTINGS = CONFIG_HOME / "sun-ai" / "settings.json"
+CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/share/fenrir/catalog"))
+CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
+QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
+WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
+APP_VERSION = "0.5.0"
+LOCAL_RELEASES = {
+    "Fenrir-Arch": "0.5.0",
+    "Fenrir-Dots": "0.5.0",
+    "Fenrir-Wallpaper-Catalog": "0.19.0",
+}
+WALLPAPER_SYNC: subprocess.Popen | None = None
+WALLPAPER_SYNC_LOG = STATE / "wallpaper-sync.log"
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 MAX_BODY = 256 * 1024
 MAX_OLLAMA_RESPONSE = 8 * 1024 * 1024
@@ -64,7 +81,11 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
 
 
 def default_settings() -> dict[str, Any]:
-    return {"default_model": "", "weather": {"location": "", "latitude": None, "longitude": None}}
+    return {
+        "default_model": "",
+        "weather": {"location": "", "latitude": None, "longitude": None},
+        "wallpaper_target_count": 5000,
+    }
 
 
 def read_settings() -> dict[str, Any]:
@@ -76,6 +97,9 @@ def read_settings() -> dict[str, Any]:
         model = raw.get("default_model", "")
         if isinstance(model, str) and len(model) <= 160:
             settings["default_model"] = model
+        target_count = raw.get("wallpaper_target_count", 5000)
+        if target_count in {5000, 10000, 20000}:
+            settings["wallpaper_target_count"] = target_count
         weather = raw.get("weather", {})
         if isinstance(weather, dict):
             location = weather.get("location", "")
@@ -261,7 +285,7 @@ def weather_snapshot() -> dict[str, Any]:
     })
     request = urllib.request.Request(
         f"https://api.open-meteo.com/v1/forecast?{query}",
-        headers={"User-Agent": "SunAI/0.2 (local desktop weather panel)"},
+        headers={"User-Agent": "FenrirDoctor/0.2 (local desktop weather panel)"},
     )
     with urllib.request.urlopen(request, timeout=8) as response:
         data = strict_json(response.read(512 * 1024))
@@ -294,12 +318,336 @@ def weather_snapshot() -> dict[str, Any]:
     }
 
 
+
+def migrate_legacy_data() -> None:
+    """Copy legacy Sun AI user data without deleting the original files."""
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if LEGACY_DB.is_file() and not DB.exists():
+        try:
+            source = sqlite3.connect(f"file:{LEGACY_DB}?mode=ro", uri=True, timeout=5)
+            target = sqlite3.connect(DB, timeout=5)
+            try:
+                source.backup(target)
+                target.commit()
+            finally:
+                target.close()
+                source.close()
+            os.chmod(DB, 0o600)
+        except sqlite3.Error as exc:
+            print(f"Fenrir Doctor: legacy chat history migration skipped: {exc}", flush=True)
+            DB.unlink(missing_ok=True)
+    if LEGACY_SETTINGS.is_file() and not SETTINGS_FILE.exists():
+        try:
+            shutil.copy2(LEGACY_SETTINGS, SETTINGS_FILE)
+            os.chmod(SETTINGS_FILE, 0o600)
+        except OSError as exc:
+            print(f"Fenrir Doctor: legacy settings migration skipped: {exc}", flush=True)
+
+
+def _command_result(args: list[str], timeout: float = 5.0) -> tuple[bool, str]:
+    try:
+        result = subprocess.run(args, capture_output=True, text=True, timeout=timeout, check=False)
+        detail = (result.stdout or result.stderr or "").strip().splitlines()
+        return result.returncode == 0, detail[0][:220] if detail else ("Command completed." if result.returncode == 0 else "Command reported an error.")
+    except (OSError, subprocess.SubprocessError) as exc:
+        return False, str(exc)[:220]
+
+
+def _check(name: str, status: str, detail: str, group: str) -> dict[str, str]:
+    return {"name": name, "status": status, "detail": detail, "group": group}
+
+
+def diagnostics_snapshot() -> dict[str, Any]:
+    checks: list[dict[str, str]] = []
+    checks.append(_check(
+        "Arch Linux",
+        "ok" if Path("/etc/arch-release").exists() else "attention",
+        "Arch release marker found." if Path("/etc/arch-release").exists() else "This installer targets Arch Linux.",
+        "system",
+    ))
+    hypr_ok, hypr_detail = _command_result(["hyprctl", "-j", "version"])
+    checks.append(_check("Hyprland", "ok" if hypr_ok else "warning", hypr_detail if hypr_ok else "Run diagnostics inside the Fenrir Hyprland session.", "desktop"))
+    vulkan_ok, vulkan_detail = _command_result(["vulkaninfo", "--summary"], timeout=8) if shutil.which("vulkaninfo") else (False, "vulkaninfo is not installed.")
+    checks.append(_check("Vulkan", "ok" if vulkan_ok else "warning", vulkan_detail, "graphics"))
+    audio_ok, audio_detail = _command_result(["wpctl", "status"])
+    checks.append(_check("PipeWire audio", "ok" if audio_ok else "warning", audio_detail, "audio"))
+    network_ok, network_detail = _command_result(["systemctl", "is-active", "NetworkManager.service"])
+    checks.append(_check("NetworkManager", "ok" if network_ok else "attention", network_detail, "system"))
+    wallpaper_ok, wallpaper_detail = _command_result(["systemctl", "--user", "is-active", "fenrir-wallpaper.service"])
+    checks.append(_check("Wallpaper service", "ok" if wallpaper_ok else "warning", wallpaper_detail, "wallpaper"))
+    catalog_ready = shutil.which("fenrir-catalog") is not None and CATALOG_DB.is_file() and QUARANTINE_ROOT.is_dir()
+    checks.append(_check(
+        "Wallpaper Catalog",
+        "ok" if catalog_ready else "warning",
+        "Local catalog and quarantine are ready." if catalog_ready else "Install or initialize the local Fenrir Wallpaper Catalog to enable wallpaper intelligence.",
+        "wallpaper",
+    ))
+    usage = shutil.disk_usage(Path.home())
+    used_percent = round(100 * usage.used / usage.total, 1) if usage.total else 0
+    disk_status = "attention" if used_percent >= 95 else ("warning" if used_percent >= 85 else "ok")
+    checks.append(_check("Home disk space", disk_status, f"{used_percent:.1f}% used ({round(usage.free / 1024**3, 1)} GiB free).", "storage"))
+    ok_count = sum(1 for item in checks if item["status"] == "ok")
+    attention_count = sum(1 for item in checks if item["status"] == "attention")
+    return {
+        "app_version": APP_VERSION,
+        "checks": checks,
+        "summary": {"total": len(checks), "ok": ok_count, "warning": sum(1 for item in checks if item["status"] == "warning"), "attention": attention_count},
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def _version_key(value: str) -> tuple[int, ...]:
+    parts = re.findall(r"\d+", value)
+    return tuple(int(part) for part in parts[:4]) if parts else (0,)
+
+
+def _latest_release(repository: str) -> dict[str, Any]:
+    request = urllib.request.Request(
+        f"https://api.github.com/repos/sunxsaturn/{repository}/releases/latest",
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "Fenrir-Doctor/0.5"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=6) as response:
+            payload = strict_json(response.read(256 * 1024))
+        tag = payload.get("tag_name", "")
+        latest = tag[1:] if isinstance(tag, str) and tag.startswith("v") else str(tag)
+        current = LOCAL_RELEASES[repository]
+        return {
+            "repository": repository,
+            "current": current,
+            "latest": latest,
+            "update_available": bool(latest and _version_key(latest) > _version_key(current)),
+            "tag": tag,
+            "url": payload.get("html_url"),
+            "published_at": payload.get("published_at"),
+            "status": "available",
+        }
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return {"repository": repository, "current": LOCAL_RELEASES[repository], "latest": None, "update_available": False, "status": "no_release"}
+        return {"repository": repository, "current": LOCAL_RELEASES[repository], "latest": None, "update_available": False, "status": "unavailable"}
+    except (OSError, ValueError, TypeError) as exc:
+        return {"repository": repository, "current": LOCAL_RELEASES[repository], "latest": None, "update_available": False, "status": "unavailable", "detail": str(exc)[:180]}
+
+
+def updates_snapshot() -> dict[str, Any]:
+    updates = [_latest_release(name) for name in LOCAL_RELEASES]
+    return {
+        "components": updates,
+        "update_available": any(item["update_available"] for item in updates),
+        "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+
+
+def backups_snapshot() -> dict[str, Any]:
+    root = Path.home() / ".local/state/fenrir/backups"
+    if not root.is_dir() or root.is_symlink():
+        return {"backups": [], "root": str(root)}
+    backups = []
+    for path in sorted(root.iterdir(), key=lambda item: item.name, reverse=True):
+        if not path.is_dir() or path.is_symlink() or not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", path.name):
+            continue
+        files = sum(1 for item in path.rglob("*") if item.is_file() and not item.is_symlink())
+        backups.append({"id": path.name, "files": files, "modified": int(path.stat().st_mtime)})
+    return {"backups": backups[:30], "root": str(root)}
+
+
+RESTORE_ALLOWLIST = (
+    ".config/hypr",
+    ".config/waybar",
+    ".config/fuzzel",
+    ".config/kitty",
+    ".config/mako",
+    ".config/gtk-3.0",
+    ".config/gtk-4.0",
+    ".config/fenrir",
+    ".config/systemd/user",
+    ".local/share/icons/Fenrir-Obsidian",
+    ".local/share/fenrir/apps",
+    ".local/share/fenrir-doctor",
+    ".local/bin",
+)
+
+
+def _assert_no_symlink_path(path: Path, boundary: Path) -> None:
+    current = path
+    while current != boundary and boundary in current.parents:
+        if current.is_symlink():
+            raise ValueError(f"Refusing to follow symbolic link: {current}")
+        current = current.parent
+
+
+def _assert_tree_no_symlinks(root: Path) -> None:
+    if root.is_symlink():
+        raise ValueError(f"Refusing symbolic link in recovery tree: {root}")
+    if not root.exists():
+        return
+    if not root.is_dir():
+        return
+    for directory, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        base = Path(directory)
+        for name in dirnames + filenames:
+            candidate = base / name
+            if candidate.is_symlink():
+                raise ValueError(f"Refusing symbolic link in recovery tree: {candidate}")
+
+
+def restore_backup(backup_id: str) -> dict[str, Any]:
+    if not isinstance(backup_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", backup_id):
+        raise ValueError("Invalid backup identifier.")
+    home = Path.home()
+    backup_parent = home / ".local/state/fenrir/backups"
+    _assert_no_symlink_path(backup_parent, home)
+    root = backup_parent.resolve()
+    source_root = root / backup_id
+    if root not in source_root.parents or source_root.is_symlink() or not source_root.is_dir():
+        raise ValueError("Backup does not exist or is not a safe directory.")
+    _assert_tree_no_symlinks(source_root)
+
+    prepared: list[tuple[str, Path, Path]] = []
+    for relative in RESTORE_ALLOWLIST:
+        source = source_root / relative
+        if not source.exists() and not source.is_symlink():
+            continue
+        _assert_tree_no_symlinks(source)
+        target = home / relative
+        _assert_no_symlink_path(target, home)
+        if target.exists() or target.is_symlink():
+            _assert_tree_no_symlinks(target)
+        prepared.append((relative, source, target))
+
+    if not prepared:
+        raise ValueError("The selected backup contains no supported Fenrir configuration paths.")
+
+    rollback_root = root / f"doctor-restore-{time.time_ns()}"
+    restored: list[str] = []
+    for relative, source, target in prepared:
+        if target.exists():
+            snapshot = rollback_root / relative
+            snapshot.parent.mkdir(parents=True, exist_ok=True)
+            if target.is_dir():
+                shutil.copytree(target, snapshot, symlinks=False, dirs_exist_ok=True)
+            else:
+                shutil.copy2(target, snapshot)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if source.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, target, symlinks=False, dirs_exist_ok=True)
+        else:
+            shutil.copy2(source, target)
+        restored.append(relative)
+
+    return {"restored": restored, "rollback_backup": rollback_root.name if rollback_root.exists() else None}
+
+
+def wallpaper_snapshot() -> dict[str, Any]:
+    target_count = read_settings().get("wallpaper_target_count", 5000)
+    accepted = None
+    catalog_available = shutil.which("fenrir-catalog") is not None and CATALOG_DB.is_file() and QUARANTINE_ROOT.is_dir()
+    detail = "Catalog is not installed or its local database has not been initialized."
+    if catalog_available:
+        try:
+            result = subprocess.run(
+                ["fenrir-catalog", "catalog", "library", "facets", "--database", str(CATALOG_DB)],
+                capture_output=True, text=True, timeout=12, check=False,
+            )
+            if result.returncode == 0:
+                payload = strict_json(result.stdout.encode("utf-8"))
+                accepted = int(payload.get("accepted_asset_count", 0))
+                detail = "Accepted-library count loaded from the local catalog."
+            else:
+                detail = (result.stderr or result.stdout or "Catalog query failed.")[:220]
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+            detail = "Catalog status could not be loaded."
+    WALLPAPER_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    local_count = sum(
+        1 for path in WALLPAPER_DIRECTORY.iterdir()
+        if path.is_file() and not path.is_symlink() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+    )
+    sync = {"running": False, "log": ""}
+    global WALLPAPER_SYNC
+    if WALLPAPER_SYNC is not None:
+        code = WALLPAPER_SYNC.poll()
+        log_tail = ""
+        try:
+            log_tail = WALLPAPER_SYNC_LOG.read_text(encoding="utf-8", errors="replace")[-5000:]
+        except OSError:
+            pass
+        sync = {"running": code is None, "returncode": code, "log": log_tail}
+        if code is not None:
+            WALLPAPER_SYNC = None
+    return {
+        "catalog_available": catalog_available,
+        "accepted_asset_count": accepted,
+        "local_image_count": local_count,
+        "target_count": target_count,
+        "remaining": max(0, target_count - local_count),
+        "target_reached": local_count >= target_count,
+        "detail": detail,
+        "sync": sync,
+    }
+
+
+def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
+    global WALLPAPER_SYNC
+    if target_count not in {5000, 10000, 20000}:
+        raise ValueError("Choose a wallpaper target of 5,000, 10,000 or 20,000.")
+    if WALLPAPER_SYNC is not None and WALLPAPER_SYNC.poll() is None:
+        raise ValueError("A wallpaper synchronization is already running.")
+    executable = shutil.which("fenrir-catalog")
+    if not executable or not CATALOG_DB.is_file() or not QUARANTINE_ROOT.is_dir():
+        raise ValueError("The local Fenrir Wallpaper Catalog is not ready.")
+    WALLPAPER_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    log = WALLPAPER_SYNC_LOG.open("w", encoding="utf-8")
+    try:
+        WALLPAPER_SYNC = subprocess.Popen(
+            [
+                executable, "catalog", "library", "sync",
+                "--database", str(CATALOG_DB),
+                "--quarantine-root", str(QUARANTINE_ROOT),
+                "--destination", str(WALLPAPER_DIRECTORY),
+                "--target-count", str(target_count),
+            ],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        log.close()
+        raise
+    log.close()
+    return {"started": True, "pid": WALLPAPER_SYNC.pid, "target_count": target_count}
+
+
+def launch_upgrade_terminal() -> dict[str, Any]:
+    terminal = shutil.which("kitty")
+    updater = shutil.which("fenrir-upgrade")
+    if not terminal or not updater:
+        raise RuntimeError("The Fenrir upgrade command or Kitty terminal is not installed.")
+    unit = f"fenrir-upgrade-{os.getpid()}"
+    try:
+        process = subprocess.Popen(
+            [
+                "systemd-run", "--user", f"--unit={unit}", "--collect",
+                terminal, "--title", "Fenrir Upgrade", updater, "apply",
+            ],
+            start_new_session=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"Could not open the upgrade terminal: {exc}") from exc
+    return {"started": True, "pid": process.pid, "message": "Upgrade terminal opened. Review the package transaction before confirming."}
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "SunAI/0.2"
+    server_version = "FenrirDoctor/0.5"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Never log prompt, response, or request-body content.
-        print(f"Sun AI: {self.address_string()} {fmt % args}")
+        print(f"Fenrir Doctor: {self.address_string()} {fmt % args}")
 
     def secure_headers(self) -> None:
         self.send_header("X-Content-Type-Options", "nosniff")
@@ -375,6 +723,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_bytes(503, {"error": f"Ollama unavailable: {exc}"})
         if path == "/api/system":
             return self.send_bytes(200, system_snapshot())
+        if path == "/api/doctor/diagnostics":
+            return self.send_bytes(200, diagnostics_snapshot())
+        if path == "/api/doctor/updates":
+            return self.send_bytes(200, updates_snapshot())
+        if path == "/api/doctor/backups":
+            return self.send_bytes(200, backups_snapshot())
+        if path == "/api/doctor/wallpapers":
+            return self.send_bytes(200, wallpaper_snapshot())
         if path == "/api/weather":
             try:
                 return self.send_bytes(200, weather_snapshot())
@@ -428,9 +784,33 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_bytes(400, {"error": "provide both latitude and longitude"})
                 if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
                     return self.send_bytes(400, {"error": "coordinates out of range"})
-            settings = {"default_model": model.strip(), "weather": {"location": location.strip(), "latitude": latitude, "longitude": longitude}}
+            target_count = obj.get("wallpaper_target_count", read_settings().get("wallpaper_target_count", 5000))
+            if target_count not in {5000, 10000, 20000}:
+                return self.send_bytes(400, {"error": "Wallpaper target must be 5000, 10000 or 20000."})
+            settings = {
+                "default_model": model.strip(),
+                "weather": {"location": location.strip(), "latitude": latitude, "longitude": longitude},
+                "wallpaper_target_count": target_count,
+            }
             atomic_json(SETTINGS_FILE, settings)
             return self.send_bytes(200, {"saved": True, **settings})
+
+        if path == "/api/doctor/recovery":
+            try:
+                result = restore_backup(obj.get("backup_id"))
+                return self.send_bytes(200, {"success": True, **result})
+            except (OSError, ValueError, shutil.Error) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:260]})
+        if path == "/api/doctor/upgrade":
+            try:
+                return self.send_bytes(202, launch_upgrade_terminal())
+            except RuntimeError as exc:
+                return self.send_bytes(503, {"error": str(exc)[:260]})
+        if path == "/api/doctor/wallpapers/sync":
+            try:
+                return self.send_bytes(202, start_wallpaper_sync(obj.get("target_count", 5000)))
+            except (OSError, ValueError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:260]})
 
         if path != "/api/chat":
             return self.send_bytes(404, {"error": "not found"})
@@ -476,16 +856,17 @@ class Handler(BaseHTTPRequestHandler):
 def main() -> int:
     import argparse
 
-    parser = argparse.ArgumentParser(description="Serve Sun AI on the local machine only.")
+    parser = argparse.ArgumentParser(description="Serve Fenrir Doctor on the local machine only.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     args = parser.parse_args()
     if args.host not in {"127.0.0.1", "localhost"} or not 1024 <= args.port <= 65535:
-        parser.error("Sun AI must bind to loopback on an unprivileged port")
+        parser.error("Fenrir Doctor must bind to loopback on an unprivileged port")
+    migrate_legacy_data()
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
-    print(f"Sun AI listening on http://{args.host}:{args.port} (loopback only)", flush=True)
+    print(f"Fenrir Doctor listening on http://{args.host}:{args.port} (loopback only)", flush=True)
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:

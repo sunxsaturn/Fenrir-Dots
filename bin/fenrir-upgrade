@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+REPOSITORY="https://github.com/sunxsaturn/Fenrir-Arch.git"
+ARCH_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/fenrir/arch-source"
+
+usage() {
+  cat <<'USAGE'
+Fenrir Upgrade
+
+Usage: fenrir-upgrade {check|apply}
+  check  Fetch release tags and display the newest supported Fenrir-Arch release
+  apply  Check out the latest release and start the interactive installer
+USAGE
+}
+
+require_git() {
+  command -v git >/dev/null 2>&1 || { echo "Git is required." >&2; exit 1; }
+}
+
+prepare_checkout() {
+  mkdir -p "$(dirname -- "$ARCH_DIR")"
+  if [[ -d "$ARCH_DIR/.git" ]]; then
+    local remote
+    remote="$(git -C "$ARCH_DIR" remote get-url origin)"
+    case "$remote" in
+      "$REPOSITORY"|"https://github.com/sunxsaturn/Fenrir-Arch"|git@github.com:sunxsaturn/Fenrir-Arch.git) ;;
+      *) echo "Refusing unexpected Git remote in $ARCH_DIR: $remote" >&2; exit 1 ;;
+    esac
+  elif [[ -e "$ARCH_DIR" ]]; then
+    echo "$ARCH_DIR exists but is not a Git checkout; move it aside before upgrading." >&2
+    exit 1
+  else
+    git clone "$REPOSITORY" "$ARCH_DIR"
+  fi
+  git -C "$ARCH_DIR" fetch --prune --tags origin
+}
+
+latest_release() {
+  git -C "$ARCH_DIR" tag --list 'v[0-9]*' --sort=-version:refname | head -n 1
+}
+
+case "${1:-check}" in
+  check)
+    require_git
+    prepare_checkout
+    tag="$(latest_release)"
+    if [[ -n "$tag" ]]; then
+      printf 'Latest Fenrir-Arch release: %s\n' "$tag"
+    else
+      echo "No tagged Fenrir-Arch release exists yet."
+    fi
+    ;;
+  apply)
+    require_git
+    prepare_checkout
+    tag="$(latest_release)"
+    if [[ -n "$tag" ]]; then
+      echo "Preparing Fenrir-Arch release $tag"
+      git -C "$ARCH_DIR" checkout --detach "$tag"
+    else
+      echo "No stable release tag exists yet; using the current main branch."
+      git -C "$ARCH_DIR" checkout -B main origin/main
+    fi
+    exec bash "$ARCH_DIR/install.sh" --cli
+    ;;
+  -h|--help|help) usage ;;
+  *) usage >&2; exit 2 ;;
+esac

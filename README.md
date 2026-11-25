@@ -21,8 +21,9 @@ Do not install this repository as a complete system installer. It expects Arch p
 - Waybar, Kitty, Fuzzel, Mako, GTK and Fenrir-Obsidian icon theme
 - Validated random wallpaper engine and palette synchronization
 - Manual screen recording toggle (`Super+Shift+F9`), screenshots and clipboard workflow
-- Sun AI local dashboard with on-demand inference integration; no model is downloaded automatically
-  - Complete source map: [apps/sun-ai/README.md](apps/sun-ai/README.md) (server, web assets, CLI, user service, desktop entry, icon and tests are all versioned in this repository)
+- Fenrir Doctor local assistant, system diagnostics, GitHub release tracking, configuration recovery and rights-aware wallpaper intelligence; Ollama models remain opt-in
+  - `fenrir-doctor` provides the integrated local UI; `fenrir-upgrade` fetches the latest tagged Fenrir-Arch release and starts the interactive installer.
+  - Complete source map: [apps/fenrir-doctor/README.md](apps/fenrir-doctor/README.md) (server, web assets, CLI, user service, desktop entry, icon and tests are all versioned in this repository)
 - Keep-awake session inhibitor; no automatic lock, display-off or idle-suspend timers. Manual lock remains `Super+L`.
 
 ## Wallpaper policy
@@ -42,7 +43,7 @@ Open **Fenrir Welcome & Tutorial** to search first-login guidance, shortcuts, wo
 ```bash
 python3 -m compileall -q bin apps scripts tests
 python3 -m unittest discover -s tests -v
-bash -n bin/fenrir-settings bin/fenrir-welcome bin/fenrir-monitor bin/fenrir-record bin/sun-ai
+bash -n bin/fenrir-settings bin/fenrir-welcome bin/fenrir-monitor bin/fenrir-record bin/fenrir-doctor
 ```
 
 The software license has not yet been selected. Publication does not grant redistribution rights to third-party artwork, applications or assets.

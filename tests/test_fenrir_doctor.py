@@ -2,8 +2,8 @@ import importlib.util
 import unittest
 from pathlib import Path
 
-SERVER = Path(__file__).resolve().parents[1] / "apps" / "sun-ai" / "server.py"
-spec = importlib.util.spec_from_file_location("sun_ai_server", SERVER)
+SERVER = Path(__file__).resolve().parents[1] / "apps" / "fenrir-doctor" / "server.py"
+spec = importlib.util.spec_from_file_location("fenrir_doctor_server", SERVER)
 server = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(server)
 
@@ -24,6 +24,7 @@ class SettingsTests(unittest.TestCase):
         self.assertIsNone(settings["weather"]["latitude"])
         self.assertIsNone(settings["weather"]["longitude"])
         self.assertEqual(settings["weather"]["location"], "")
+        self.assertEqual(settings["wallpaper_target_count"], 5000)
 
     def test_unconfigured_weather_does_not_make_network_request(self):
         from unittest.mock import patch
@@ -77,6 +78,63 @@ class SettingsTests(unittest.TestCase):
 
         self.assertEqual(result["gpu_percent"], 67.0)
         self.assertEqual(result["gpu_name"], "AMD Radeon RX 6750 XT")
+
+class DoctorUtilityTests(unittest.TestCase):
+    def test_release_version_comparison(self):
+        self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
+        self.assertEqual(server._version_key("v1.2.3"), (1, 2, 3))
+
+    def test_diagnostic_snapshot_reports_named_groups(self):
+        from unittest.mock import patch
+        with patch.object(server, "_command_result", return_value=(True, "ok")), \
+             patch.object(server.shutil, "disk_usage", return_value=server.shutil._ntuple_diskusage(total=100, used=50, free=50)):
+            result = server.diagnostics_snapshot()
+        names = {item["name"] for item in result["checks"]}
+        self.assertIn("Hyprland", names)
+        self.assertIn("PipeWire audio", names)
+        self.assertIn("Wallpaper Catalog", names)
+        self.assertEqual(result["summary"]["total"], len(result["checks"]))
+
+    def test_backup_restore_creates_rollback_snapshot(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            backup = home / ".local/state/fenrir/backups/test-backup/.config/hypr"
+            backup.mkdir(parents=True)
+            (backup / "hyprland.lua").write_text("-- old config", encoding="utf-8")
+            current = home / ".config/hypr"
+            current.mkdir(parents=True)
+            (current / "hyprland.lua").write_text("-- current config", encoding="utf-8")
+            with patch.object(Path, "home", return_value=home):
+                result = server.restore_backup("test-backup")
+            self.assertEqual((current / "hyprland.lua").read_text(encoding="utf-8"), "-- old config")
+            self.assertIsNotNone(result["rollback_backup"])
+            rollback = home / ".local/state/fenrir/backups" / result["rollback_backup"] / ".config/hypr/hyprland.lua"
+            self.assertEqual(rollback.read_text(encoding="utf-8"), "-- current config")
+
+    def test_restore_rejects_invalid_backup_id(self):
+        with self.assertRaises(ValueError):
+            server.restore_backup("../outside")
+
+    def test_restore_rejects_nested_symlink_before_changing_files(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            backup = home / ".local/state/fenrir/backups/test-backup/.config/hypr"
+            backup.mkdir(parents=True)
+            (backup / "hyprland.lua").write_text("-- old config", encoding="utf-8")
+            current = home / ".config/hypr"
+            current.mkdir(parents=True)
+            outside = home / "outside.txt"
+            outside.write_text("do not overwrite", encoding="utf-8")
+            (current / "linked.lua").symlink_to(outside)
+            with patch.object(Path, "home", return_value=home):
+                with self.assertRaisesRegex(ValueError, "symbolic link"):
+                    server.restore_backup("test-backup")
+            self.assertEqual(outside.read_text(encoding="utf-8"), "do not overwrite")
+            self.assertFalse((current / "hyprland.lua").exists())
 
 
 if __name__ == "__main__":

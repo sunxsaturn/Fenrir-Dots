@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="dark">
   <meta name="theme-color" content="#090b12">
-  <title>Sun AI — Your private assistant</title>
+  <title>Fenrir Doctor — Your private assistant</title>
   <link rel="stylesheet" href="/assets/style.css">
   <script src="/assets/app.js" defer></script>
 </head>
@@ -16,7 +16,7 @@
     <aside class="sidebar glass">
       <div class="brand">
         <div class="brand-mark" aria-hidden="true">✧</div>
-        <div><strong>Sun AI</strong><small>YOUR PRIVATE ASSISTANT</small></div>
+        <div><strong>Fenrir Doctor</strong><small>YOUR PRIVATE ASSISTANT</small></div>
       </div>
 
       <button class="new-chat" id="new-chat" type="button"><span aria-hidden="true">＋</span> New conversation</button>
@@ -25,6 +25,8 @@
         <button class="nav-item active" type="button" data-view="chat"><span class="nav-icon">◌</span> Chat</button>
         <button class="nav-item" type="button" data-view="weather"><span class="nav-icon">☼</span> Weather</button>
         <button class="nav-item" type="button" data-view="system"><span class="nav-icon">⌁</span> System</button>
+        <button class="nav-item" type="button" data-view="doctor"><span class="nav-icon">✧</span> Doctor</button>
+        <button class="nav-item" type="button" data-view="wallpapers"><span class="nav-icon">▧</span> Wallpapers</button>
         <button class="nav-item" type="button" data-view="history"><span class="nav-icon">◷</span> History</button>
         <button class="nav-item" type="button" data-view="settings"><span class="nav-icon">⚙</span> Settings</button>
       </nav>
@@ -38,7 +40,7 @@
         <span class="privacy-dot"></span>
         <div><strong>Local · Private</strong><small>Runs on this computer</small></div>
       </div>
-      <div class="sidebar-version">FENRIR DESKTOP · SUN AI 0.2.0</div>
+      <div class="sidebar-version">FENRIR DESKTOP · FENRIR DOCTOR 0.2.0</div>
     </aside>
 
     <main class="main-column">
@@ -57,7 +59,7 @@
               <div class="welcome">
                 <div class="welcome-orb">✧</div>
                 <div class="eyebrow">A QUIET SPACE TO THINK</div>
-                <h2>Hello. I'm Sun AI.</h2>
+                <h2>Hello. I'm Fenrir Doctor.</h2>
                 <p>Your private assistant, running locally on your own machine. Let's work through something.</p>
                 <div class="suggestions">
                   <button type="button" data-prompt="Help me plan a project step by step.">Plan a project</button>
@@ -67,7 +69,7 @@
               </div>
             </div>
             <form class="composer glass-inset" id="composer">
-              <textarea id="prompt" rows="1" maxlength="30000" placeholder="Message Sun AI…" aria-label="Message Sun AI" required></textarea>
+              <textarea id="prompt" rows="1" maxlength="30000" placeholder="Message Fenrir Doctor…" aria-label="Message Fenrir Doctor" required></textarea>
               <div class="composer-footer"><span>Local model · No cloud relay</span><button id="send" type="submit"><span>Send</span><span class="send-arrow">↗</span></button></div>
             </form>
           </section>
@@ -82,25 +84,55 @@
             <div class="system-grid" id="system-content"></div>
           </section>
 
+          <section class="page-view hidden" id="doctor-view">
+            <div class="page-heading"><div><div class="eyebrow">DIAGNOSTICS · UPDATES · RECOVERY</div><h2>Fenrir Doctor</h2><p>Read-only system checks, release tracking and safe configuration recovery.</p></div><div class="page-symbol">✧</div></div>
+            <div id="doctor-summary" class="loading-card">Checking this Fenrir installation…</div>
+            <div class="doctor-grid" id="doctor-checks"></div>
+            <section class="settings-section doctor-section">
+              <div class="eyebrow">VERSION MANAGEMENT</div><h3>Project updates</h3>
+              <p class="field-help">Release checks compare installed versions with GitHub. Applying updates opens an interactive terminal; review and confirm every Arch package transaction.</p>
+              <div id="update-content" class="doctor-list"><p class="loading-card">Checking GitHub releases…</p></div>
+              <div class="settings-actions"><span id="update-status" role="status"></span><button class="primary-button" id="upgrade-button" type="button">Open Fenrir updater</button></div>
+            </section>
+            <section class="settings-section doctor-section">
+              <div class="eyebrow">RECOVERY</div><h3>Configuration backups</h3>
+              <p class="field-help">Restoring a backup first snapshots current configuration. Only Fenrir-managed user paths are restored; system partitions and personal documents are untouched.</p>
+              <div id="backup-content" class="doctor-list"><p class="loading-card">Loading backups…</p></div>
+            </section>
+          </section>
+
+          <section class="page-view hidden" id="wallpapers-view">
+            <div class="page-heading"><div><div class="eyebrow">RIGHTS-AWARE WALLPAPER LIBRARY</div><h2>Wallpaper intelligence</h2><p>Grow the local Fenrir wallpaper collection from accepted catalog assets.</p></div><div class="page-symbol">▧</div></div>
+            <div id="wallpaper-summary" class="loading-card">Connecting to the local wallpaper catalog…</div>
+            <div class="system-grid" id="wallpaper-metrics"></div>
+            <section class="settings-section doctor-section">
+              <div class="eyebrow">LOCAL COLLECTION</div><h3>Collection target</h3>
+              <label for="wallpaper-target">Choose a target size</label>
+              <select id="wallpaper-target"><option value="5000">5,000 images</option><option value="10000">10,000 images</option><option value="20000">20,000 images</option></select>
+              <p class="field-help">Only locally quarantined images with approved license policy, human rights approval and explicit catalog acceptance are copied. Images are hash-verified and attribution is retained. This step does not fetch provider URLs.</p>
+              <div class="settings-actions"><span id="wallpaper-sync-status" role="status"></span><button class="primary-button" id="wallpaper-sync-button" type="button">Sync accepted wallpapers</button></div>
+              <pre id="wallpaper-sync-log" class="doctor-log" aria-live="polite"></pre>
+            </section>
+          </section>
           <section class="page-view hidden" id="history-view">
             <div class="page-heading"><div><div class="eyebrow">YOUR PRIVATE ARCHIVE</div><h2>Conversation history</h2><p>Stored in a private SQLite database under your local user state directory.</p></div><div class="page-symbol">◷</div></div>
             <div class="history-list" id="history-content"><p class="loading-card">Loading conversations…</p></div>
           </section>
 
           <section class="page-view hidden" id="settings-view">
-            <div class="page-heading"><div><div class="eyebrow">PERSONALIZE SUN AI</div><h2>Settings</h2><p>These preferences remain on this computer.</p></div><div class="page-symbol">⚙</div></div>
+            <div class="page-heading"><div><div class="eyebrow">PERSONALIZE FENRIR DOCTOR</div><h2>Settings</h2><p>These preferences remain on this computer.</p></div><div class="page-symbol">⚙</div></div>
             <form class="settings-form" id="settings-form">
               <section class="settings-section">
                 <div class="eyebrow">LOCAL MODEL</div><h3>Default model</h3>
                 <label for="settings-model">Use this model for new conversations</label>
                 <select id="settings-model"><option value="">Choose after installing a model</option></select>
-                <p class="field-help">Manage model downloads from a terminal with <code>ollama pull MODEL:TAG</code>. Sun AI never downloads a model automatically.</p>
+                <p class="field-help">Manage model downloads from a terminal with <code>ollama pull MODEL:TAG</code>. Fenrir Doctor never downloads a model automatically.</p>
               </section>
               <section class="settings-section">
                 <div class="eyebrow">WEATHER</div><h3>Your forecast location</h3>
                 <label for="weather-location">Location label</label><input id="weather-location" maxlength="100" placeholder="e.g. São Paulo">
                 <div class="coordinate-grid"><div><label for="weather-latitude">Latitude</label><input id="weather-latitude" type="number" min="-90" max="90" step="any" placeholder="-23.55"></div><div><label for="weather-longitude">Longitude</label><input id="weather-longitude" type="number" min="-180" max="180" step="any" placeholder="-46.63"></div></div>
-                <p class="field-help">Weather is disabled until you enter coordinates. Sun AI does not request browser geolocation.</p>
+                <p class="field-help">Weather is disabled until you enter coordinates. Fenrir Doctor does not request browser geolocation.</p>
               </section>
               <div class="settings-actions"><span id="settings-status" role="status"></span><button class="primary-button" type="submit">Save preferences</button></div>
             </form>
