@@ -79,10 +79,6 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(result["gpu_percent"], 67.0)
         self.assertEqual(result["gpu_name"], "AMD Radeon RX 6750 XT")
 
-
-if __name__ == "__main__":
-    unittest.main()
-
 class DoctorUtilityTests(unittest.TestCase):
     def test_release_version_comparison(self):
         self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
