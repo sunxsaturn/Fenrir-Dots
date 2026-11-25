@@ -117,6 +117,25 @@ class DoctorUtilityTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             server.restore_backup("../outside")
 
+    def test_restore_rejects_nested_symlink_before_changing_files(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            backup = home / ".local/state/fenrir/backups/test-backup/.config/hypr"
+            backup.mkdir(parents=True)
+            (backup / "hyprland.lua").write_text("-- old config", encoding="utf-8")
+            current = home / ".config/hypr"
+            current.mkdir(parents=True)
+            outside = home / "outside.txt"
+            outside.write_text("do not overwrite", encoding="utf-8")
+            (current / "linked.lua").symlink_to(outside)
+            with patch.object(Path, "home", return_value=home):
+                with self.assertRaisesRegex(ValueError, "symbolic link"):
+                    server.restore_backup("test-backup")
+            self.assertEqual(outside.read_text(encoding="utf-8"), "do not overwrite")
+            self.assertFalse((current / "hyprland.lua").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
