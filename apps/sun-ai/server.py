@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Sun AI: local-only dashboard and Ollama bridge using the Python standard library."""
+"""Fenrir Doctor: local-only dashboard and Ollama bridge using the Python standard library."""
 from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -284,7 +285,7 @@ def weather_snapshot() -> dict[str, Any]:
     })
     request = urllib.request.Request(
         f"https://api.open-meteo.com/v1/forecast?{query}",
-        headers={"User-Agent": "SunAI/0.2 (local desktop weather panel)"},
+        headers={"User-Agent": "FenrirDoctor/0.2 (local desktop weather panel)"},
     )
     with urllib.request.urlopen(request, timeout=8) as response:
         data = strict_json(response.read(512 * 1024))
@@ -521,19 +522,19 @@ def wallpaper_snapshot() -> dict[str, Any]:
     catalog_available = shutil.which("fenrir-catalog") is not None and CATALOG_DB.is_file() and QUARANTINE_ROOT.is_dir()
     detail = "Catalog is not installed or its local database has not been initialized."
     if catalog_available:
-        ok, output = _command_result([
-            "fenrir-catalog", "catalog", "library", "facets",
-            "--database", str(CATALOG_DB),
-        ], timeout=12)
-        if ok:
-            try:
-                payload = strict_json(output.encode("utf-8"))
+        try:
+            result = subprocess.run(
+                ["fenrir-catalog", "catalog", "library", "facets", "--database", str(CATALOG_DB)],
+                capture_output=True, text=True, timeout=12, check=False,
+            )
+            if result.returncode == 0:
+                payload = strict_json(result.stdout.encode("utf-8"))
                 accepted = int(payload.get("accepted_asset_count", 0))
                 detail = "Accepted-library count loaded from the local catalog."
-            except (ValueError, TypeError):
-                detail = "Catalog returned an unreadable status response."
-        else:
-            detail = output
+            else:
+                detail = (result.stderr or result.stdout or "Catalog query failed.")[:220]
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+            detail = "Catalog status could not be loaded."
     WALLPAPER_DIRECTORY.mkdir(parents=True, exist_ok=True)
     local_count = sum(
         1 for path in WALLPAPER_DIRECTORY.iterdir()
