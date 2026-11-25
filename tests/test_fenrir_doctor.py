@@ -84,6 +84,23 @@ class DoctorUtilityTests(unittest.TestCase):
         self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
         self.assertEqual(server._version_key("v1.2.3"), (1, 2, 3))
 
+    def test_release_snapshot_caches_github_checks(self):
+        from unittest.mock import patch
+        original_cache, original_time = server.RELEASE_CACHE, server.RELEASE_CACHE_AT
+        try:
+            server.RELEASE_CACHE = None
+            server.RELEASE_CACHE_AT = 0.0
+            with patch.object(server, "_latest_release", side_effect=lambda name: {
+                "repository": name, "current": "0.5.0", "latest": "0.5.0",
+                "update_available": False, "status": "available",
+            }) as fetch:
+                first = server.updates_snapshot()
+                second = server.updates_snapshot()
+            self.assertEqual(first, second)
+            self.assertEqual(fetch.call_count, len(server.LOCAL_RELEASES))
+        finally:
+            server.RELEASE_CACHE, server.RELEASE_CACHE_AT = original_cache, original_time
+
     def test_diagnostic_snapshot_reports_named_groups(self):
         from unittest.mock import patch
         with patch.object(server, "_command_result", return_value=(True, "ok")), \
