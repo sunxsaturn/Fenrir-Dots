@@ -1,0 +1,15 @@
+[wallpaper]
+directory = "~/Pictures/Wallpapers"
+interval_minutes = 15
+minimum_count = 5000
+minimum_width = 2560
+minimum_height = 1440
+preferred_width = 3840
+preferred_height = 2160
+orientation = "landscape"
+extensions = [".jpg", ".jpeg", ".png", ".webp"]
+
+[theme]
+# Fimbulwinter Glass: keep frosted surfaces at 60% opacity (40% transparent).
+surface_opacity = 0.60
+# Accent colors are extracted from every wallpaper change; the obsidian base stays fixed.

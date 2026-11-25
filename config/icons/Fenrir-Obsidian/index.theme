@@ -1,0 +1,12 @@
+[Icon Theme]
+Name=Fenrir Obsidian
+Comment=Fenrir Desktop symbolic application icons, inheriting Papirus Dark
+Inherits=Papirus-Dark,hicolor
+Directories=scalable/apps
+
+[scalable/apps]
+Size=scalable
+Type=Scalable
+MinSize=16
+MaxSize=512
+Context=Applications

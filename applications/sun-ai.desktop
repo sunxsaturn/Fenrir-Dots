@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Sun AI
+Comment=Private local AI assistant
+Exec=sun-ai open
+Icon=sun-ai
+Terminal=false
+Categories=Utility;Development;ArtificialIntelligence;
+StartupNotify=false

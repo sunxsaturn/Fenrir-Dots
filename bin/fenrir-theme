@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+"""Generate a restrained Fimbulwinter palette from a wallpaper image."""
+from __future__ import annotations
+import argparse, json, os, shutil, subprocess, sys
+from pathlib import Path
+
+DEFAULTS = {"accent":"#9b87f5", "accent_soft":"#51447f", "foreground":"#e8e9f2", "muted":"#9699ab", "border":"#7665bd"}
+
+def home_path() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config"))
+
+def extract(path: Path) -> dict[str, str]:
+    try:
+        from PIL import Image, ImageOps
+    except ImportError as exc:
+        raise RuntimeError("python-pillow is required for wallpaper color extraction") from exc
+    with Image.open(path) as original:
+        image = ImageOps.exif_transpose(original).convert("RGB")
+        image.thumbnail((160, 160))
+        quantized = image.quantize(colors=12, method=Image.Quantize.MEDIANCUT)
+        palette = quantized.getpalette() or []
+        counts = quantized.getcolors(160*160) or []
+    samples: list[tuple[int, int, int, int]] = []
+    for count, index in sorted(counts, reverse=True):
+        offset = index * 3
+        if offset + 2 < len(palette):
+            r, g, b = palette[offset:offset+3]
+            samples.append((count, r, g, b))
+    if not samples:
+        return DEFAULTS.copy()
+    # Prefer a saturated mid-light color for accent; retain a fixed obsidian base.
+    def score(item: tuple[int,int,int,int]) -> float:
+        count, r, g, b = item
+        mx, mn = max(r,g,b), min(r,g,b)
+        saturation = 0 if mx == 0 else (mx-mn)/mx
+        brightness = (r+g+b)/3
+        if brightness < 48 or brightness > 235:
+            return -1
+        return saturation * 0.82 + min(count/(160*160), 0.08)
+    chosen = max(samples, key=score)
+    _, r, g, b = chosen
+    accent = f"#{r:02x}{g:02x}{b:02x}"
+    accent_soft = f"#{int(r*.42):02x}{int(g*.42):02x}{int(b*.42):02x}"
+    return {"accent":accent, "accent_soft":accent_soft, "foreground":"#e8e9f2", "muted":"#9699ab", "border":accent}
+
+def configured_surface_opacity() -> float:
+    settings = home_path()/"fenrir"/"settings.toml"
+    try:
+        import tomllib
+        value = float(tomllib.loads(settings.read_text(encoding="utf-8")).get("theme", {}).get("surface_opacity", 0.60))
+    except (OSError, ValueError, TypeError, KeyError):
+        value = 0.60
+    # Keep glass translucent but readable; do not let config edits make panels invisible.
+    return max(0.35, min(0.85, value))
+
+def rgba(hex_color: str, alpha: float) -> str:
+    value = hex_color.lstrip("#")
+    r, g, b = (int(value[i:i+2], 16) for i in (0, 2, 4))
+    return f"rgba({r}, {g}, {b}, {alpha:.2f})"
+
+def atomic_text(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
+    temporary.write_text(content, encoding="utf-8")
+    temporary.replace(path)
+
+def alpha_hex(alpha: float) -> str:
+    return f"{round(max(0.0, min(1.0, alpha)) * 255):02x}"
+
+def update_ini_section(path: Path, section: str, values: dict[str, str]) -> None:
+    """Update only managed keys in one INI section, preserving other user options."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    header = f"[{section}]"
+    try:
+        start = lines.index(header)
+    except ValueError:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(header)
+        start = len(lines) - 1
+    end = next((index for index in range(start + 1, len(lines)) if lines[index].lstrip().startswith("[")), len(lines))
+    existing = {key: False for key in values}
+    for index in range(start + 1, end):
+        stripped = lines[index].strip()
+        if not stripped or stripped.startswith(("#", ";")) or "=" not in stripped:
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in values:
+            lines[index] = f"{key}={values[key]}"
+            existing[key] = True
+    additions = [f"{key}={value}" for key, value in values.items() if not existing[key]]
+    lines[end:end] = additions
+    atomic_text(path, "\n".join(lines).rstrip() + "\n")
+
+def update_key_values(path: Path, values: dict[str, str]) -> None:
+    """Update simple key=value settings without replacing unrelated options."""
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        lines = []
+    existing = {key: False for key in values}
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped or stripped.startswith(("#", ";")) or "=" not in stripped:
+            continue
+        key = stripped.split("=", 1)[0].strip()
+        if key in values:
+            lines[index] = f"{key}={values[key]}"
+            existing[key] = True
+    lines.extend(f"{key}={value}" for key, value in values.items() if not existing[key])
+    atomic_text(path, "\n".join(lines).rstrip() + "\n")
+
+def write_palette(colors: dict[str,str]) -> None:
+    cfg = home_path()
+    fenrir = cfg/"fenrir"
+    surface_opacity = configured_surface_opacity()
+    colors = {**colors, "surface_opacity": surface_opacity}
+    atomic_text(fenrir/"palette.json", json.dumps(colors, indent=2)+"\n")
+    waybar = cfg/"waybar"
+    atomic_text(waybar/"palette.css", "\n".join([
+        f"@define-color fenrir_accent {colors['accent']};",
+        f"@define-color fenrir_accent_soft {colors['accent_soft']};",
+        f"@define-color fenrir_fg {colors['foreground']};",
+        f"@define-color fenrir_muted {colors['muted']};",
+        f"@define-color fenrir_border {colors['border']};",
+        f"@define-color fenrir_surface {rgba('#090b12', surface_opacity)};", ""]))
+    kitty = cfg/"kitty"; kitty.mkdir(parents=True, exist_ok=True)
+    atomic_text(kitty/"fenrir-palette.conf", "\n".join([
+        "background #090b12", "foreground #e8e9f2", f"cursor {colors['accent']}",
+        f"color4 {colors['accent']}", f"color5 {colors['accent_soft']}", ""]))
+    # Update just the managed color keys; preserve layout and user preferences.
+    alpha = alpha_hex(surface_opacity)
+    update_ini_section(cfg/"fuzzel"/"fuzzel.ini", "colors", {
+        "background": f"090b12{alpha}",
+        "text": "e8e9f2ff",
+        "match": colors["accent"].lstrip("#") + "ff",
+        "selection": colors["accent_soft"].lstrip("#") + "cc",
+        "selection-text": "ffffffff",
+        "border": colors["accent"].lstrip("#") + "cc",
+    })
+    update_key_values(cfg/"mako"/"config", {
+        "background-color": f"#090b12{alpha}",
+        "text-color": "#e8e9f2",
+        "border-color": colors["accent"],
+    })
+    for gtk_dir in (cfg/"gtk-3.0", cfg/"gtk-4.0"):
+        gtk_dir.mkdir(parents=True, exist_ok=True)
+        atomic_text(gtk_dir/"fenrir-palette.css", "\n".join([
+            f"@define-color fenrir_accent {colors['accent']};",
+            f"@define-color fenrir_accent_soft {colors['accent_soft']};",
+            f"@define-color fenrir_fg {colors['foreground']};",
+            f"@define-color fenrir_muted {colors['muted']};",
+            f"@define-color fenrir_surface {rgba('#090b12', surface_opacity)};", ""]))
+    # Hyprland 0.57+ uses Lua configuration; update the live border through
+    # `hyprctl eval` rather than the removed legacy `keyword` path.
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        try:
+            active = f"rgba({colors['accent'][1:]}ff)"
+            soft = f"rgba({colors['accent_soft'][1:]}ff)"
+            lua_colors = "{" + json.dumps(active) + ", " + json.dumps(soft) + "}"
+            expression = (
+                "hl.config({ general = { col = { active_border = { colors = "
+                + lua_colors
+                + ", angle = 45 } } } })"
+            )
+            subprocess.run(["hyprctl", "eval", expression], check=False, timeout=3, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["pkill", "-USR2", "waybar"], check=False, timeout=3, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Mako re-reads managed colors immediately; Fuzzel and new GTK/Kitty
+            # windows consume their rewritten files the next time they launch.
+            makoctl = shutil.which("makoctl")
+            if makoctl:
+                subprocess.run([makoctl, "reload"], check=False, timeout=3, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except (OSError, subprocess.SubprocessError):
+            pass
+
+def main() -> int:
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--wallpaper", type=Path)
+    args=parser.parse_args()
+    try:
+        colors=extract(args.wallpaper) if args.wallpaper else DEFAULTS.copy()
+        write_palette(colors)
+    except Exception as exc:
+        print(f"fenrir-theme: {exc}", file=sys.stderr); return 1
+    print(json.dumps(colors))
+    return 0
+if __name__ == "__main__": raise SystemExit(main())

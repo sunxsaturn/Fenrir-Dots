@@ -1,0 +1,16 @@
+[Unit]
+Description=Sun AI local chat interface
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python %h/.local/share/sun-ai/server.py --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/sun-ai %h/.config/sun-ai
+
+

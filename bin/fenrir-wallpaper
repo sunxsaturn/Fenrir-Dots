@@ -1,0 +1,238 @@
+#!/usr/bin/env python3
+"""Validated random wallpaper rotation for Hyprland + hyprpaper."""
+from __future__ import annotations
+import argparse
+import json
+import os
+import random
+import shutil
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+INDEX_VERSION = 1
+DEFAULT_MIN_WIDTH = 2560
+DEFAULT_MIN_HEIGHT = 1440
+DEFAULT_MIN_COUNT = 5000
+
+
+def config_dir() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config"))
+
+
+def state_dir() -> Path:
+    return Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "fenrir"
+
+
+def settings() -> dict:
+    cfg = config_dir() / "fenrir" / "settings.toml"
+    if cfg.exists():
+        try:
+            import tomllib
+            data = tomllib.loads(cfg.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception as exc:
+            print(f"fenrir-wallpaper: ignoring invalid settings.toml: {exc}", file=sys.stderr)
+    return {}
+
+
+def wallpaper_dir() -> Path:
+    raw = settings().get("wallpaper", {}).get("directory", "~/Pictures/Wallpapers")
+    return Path(raw).expanduser()
+
+
+def resolution_policy() -> tuple[int, int, int]:
+    block = settings().get("wallpaper", {})
+    width = max(DEFAULT_MIN_WIDTH, int(block.get("minimum_width", DEFAULT_MIN_WIDTH)))
+    height = max(DEFAULT_MIN_HEIGHT, int(block.get("minimum_height", DEFAULT_MIN_HEIGHT)))
+    count = max(DEFAULT_MIN_COUNT, int(block.get("minimum_count", DEFAULT_MIN_COUNT)))
+    return width, height, count
+
+
+def inspect_image(path: Path) -> tuple[int, int] | None:
+    try:
+        from PIL import Image
+        with Image.open(path) as image:
+            image.verify()
+        with Image.open(path) as image:
+            width, height = image.size
+            orientation = image.getexif().get(274, 1)
+            if orientation in {5, 6, 7, 8}:
+                width, height = height, width
+        return width, height
+    except Exception:
+        return None
+
+
+def _write_index(records: dict[str, dict]) -> None:
+    root = state_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    destination = root / "wallpaper-index.json"
+    temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}")
+    temporary.write_text(json.dumps({"version": INDEX_VERSION, "items": records}, separators=(",", ":")) + "\n", encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(destination)
+
+
+def validated_wallpapers() -> tuple[list[Path], int, int]:
+    root = wallpaper_dir()
+    if not root.is_dir():
+        raise RuntimeError(f"Wallpaper directory does not exist: {root}")
+    min_width, min_height, _ = resolution_policy()
+    index_path = state_dir() / "wallpaper-index.json"
+    try:
+        cached = json.loads(index_path.read_text(encoding="utf-8"))
+        if cached.get("version") != INDEX_VERSION or not isinstance(cached.get("items"), dict):
+            cached = {"items": {}}
+    except (OSError, ValueError, TypeError):
+        cached = {"items": {}}
+    old = cached.get("items", {})
+    records: dict[str, dict] = {}
+    valid: list[Path] = []
+    invalid = 0
+    files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in EXTENSIONS and not p.is_symlink())
+    for path in files:
+        try:
+            stat = path.stat()
+        except OSError:
+            invalid += 1
+            continue
+        key = str(path.resolve())
+        entry = old.get(key)
+        if entry and entry.get("size") == stat.st_size and entry.get("mtime_ns") == stat.st_mtime_ns:
+            width, height, is_valid = int(entry.get("width", 0)), int(entry.get("height", 0)), bool(entry.get("valid"))
+        else:
+            dimensions = inspect_image(path)
+            width, height = dimensions if dimensions else (0, 0)
+            is_valid = bool(dimensions and width >= min_width and height >= min_height and width > height)
+        records[key] = {
+            "size": stat.st_size, "mtime_ns": stat.st_mtime_ns,
+            "width": width, "height": height, "valid": is_valid,
+        }
+        if is_valid:
+            valid.append(path)
+        else:
+            invalid += 1
+    _write_index(records)
+    return valid, invalid, len(files)
+
+
+def get_monitors() -> list[str]:
+    result = subprocess.run(["hyprctl", "-j", "monitors"], capture_output=True, text=True, check=True, timeout=5)
+    data = json.loads(result.stdout)
+    return [str(m["name"]) for m in data if m.get("name")]
+
+
+def apply(path: Path) -> None:
+    if not path.is_file() or path.suffix.lower() not in EXTENSIONS:
+        raise RuntimeError("Selected wallpaper is not a supported regular image file")
+    path = path.resolve(strict=True)
+    monitors = []
+    for _ in range(12):
+        try:
+            monitors = get_monitors()
+            if monitors:
+                break
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
+            pass
+        time.sleep(1)
+    if not monitors:
+        raise RuntimeError("Hyprland monitors unavailable; run this inside a Hyprland session")
+    last_error = None
+    for _ in range(12):
+        try:
+            for monitor in monitors:
+                subprocess.run(["hyprctl", "hyprpaper", "wallpaper", f"{monitor},{path},cover"], check=True, timeout=20)
+            last_error = None
+            break
+        except (OSError, subprocess.SubprocessError) as exc:
+            last_error = exc
+            time.sleep(1)
+    if last_error is not None:
+        raise RuntimeError(f"hyprpaper IPC did not become available: {last_error}")
+    root = state_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    state_file = root / "wallpaper.json"
+    temporary = state_file.with_name(state_file.name + f".tmp-{os.getpid()}")
+    temporary.write_text(json.dumps({"path": str(path), "changed_at": int(time.time())}, indent=2) + "\n", encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(state_file)
+    theme = shutil.which("fenrir-theme")
+    if theme:
+        subprocess.run([theme, "--wallpaper", str(path)], check=False, timeout=30, stdout=subprocess.DEVNULL)
+    print(path)
+
+
+def next_wallpaper() -> Path:
+    files, invalid, total = validated_wallpapers()
+    min_width, min_height, minimum_count = resolution_policy()
+    if len(files) < minimum_count:
+        raise RuntimeError(
+            f"Wallpaper library incomplete: {len(files)} valid images; {minimum_count} required "
+            f"(landscape, at least {min_width}x{min_height}; checked {total} files, {invalid} rejected). "
+            "Rotation remains paused until the complete Fenrir library is installed."
+        )
+    state = state_dir() / "wallpaper.json"
+    current = None
+    try:
+        current = json.loads(state.read_text(encoding="utf-8")).get("path")
+    except (OSError, ValueError, TypeError):
+        pass
+    candidates = [path for path in files if str(path.resolve()) != current]
+    return random.choice(candidates or files)
+
+
+def report_status(as_json: bool = False) -> int:
+    valid, invalid, total = validated_wallpapers()
+    _, _, minimum_count = resolution_policy()
+    result = {
+        "directory": str(wallpaper_dir()), "valid_count": len(valid),
+        "rejected_count": invalid, "file_count": total,
+        "minimum_count": minimum_count, "minimum_resolution": "2560x1440",
+        "preferred_resolution": "3840x2160+", "interval_minutes": int(settings().get("wallpaper", {}).get("interval_minutes", 15)),
+        "requirement_met": len(valid) >= minimum_count,
+    }
+    if as_json:
+        print(json.dumps(result, indent=2))
+    else:
+        print(f"Fenrir wallpapers: {len(valid):,} valid / {total:,} image files; {invalid:,} rejected")
+        print(f"Target: at least {minimum_count:,}; minimum 2560x1440 landscape; preferred 3840x2160+")
+        print(f"Directory: {result['directory']}")
+        print(f"Rotation: every {result['interval_minutes']} minutes; dynamic accent extraction enabled")
+        print("Requirement: " + ("MET" if result["requirement_met"] else "NOT MET"))
+    return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=["next", "watch", "status"], nargs="?", default="next")
+    parser.add_argument("--interval", type=int, default=0, help="Rotation interval in minutes (default: 15 or config)")
+    parser.add_argument("--json", action="store_true", help="Emit machine-readable status")
+    args = parser.parse_args()
+    try:
+        if args.action == "next":
+            apply(next_wallpaper())
+            return 0
+        if args.action == "status":
+            return report_status(args.json)
+        interval = args.interval or int(settings().get("wallpaper", {}).get("interval_minutes", 15))
+        if not 1 <= interval <= 1440:
+            raise RuntimeError("Rotation interval must be between 1 and 1440 minutes")
+        while True:
+            try:
+                apply(next_wallpaper())
+                time.sleep(interval * 60)
+            except Exception as exc:
+                print(f"fenrir-wallpaper: {exc}", file=sys.stderr)
+                time.sleep(min(interval * 60, 60))
+    except KeyboardInterrupt:
+        return 0
+    except Exception as exc:
+        print(f"fenrir-wallpaper: {exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

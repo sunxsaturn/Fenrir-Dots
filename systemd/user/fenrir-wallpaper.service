@@ -1,0 +1,13 @@
+[Unit]
+Description=Fenrir wallpaper rotation and dynamic accent service
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/fenrir-wallpaper watch
+Restart=on-failure
+RestartSec=8
+
+[Install]
+WantedBy=graphical-session.target
