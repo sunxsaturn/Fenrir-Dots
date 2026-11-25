@@ -1,0 +1,61 @@
+name: Publish Fenrir Settings feature
+on:
+  push:
+    branches: [feat/settings-control-center]
+    paths:
+      - "fenrir-settings-feature-0.4.0.xz.part-*"
+      - ".fenrir-settings-feature-0.4.0.sha256"
+permissions:
+  contents: write
+jobs:
+  expand-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install Python test dependency
+        run: python -m pip install --disable-pip-version-check Pillow
+      - name: Verify archive, install into source tree, and test
+        shell: bash
+        run: |
+          set -euo pipefail
+          tmp="$(mktemp -d)"
+          trap 'rm -rf "$tmp"' EXIT
+          shopt -s nullglob
+          parts=(fenrir-settings-feature-0.4.0.xz.part-*)
+          test "${#parts[@]}" -eq 5
+          for i in "${!parts[@]}"; do
+            expected="fenrir-settings-feature-0.4.0.xz.part-$(printf '%02d' "$i")"
+            test "${parts[$i]}" = "$expected"
+          done
+          cat "${parts[@]}" > "$tmp/archive.b64"
+          base64 --decode "$tmp/archive.b64" > "$tmp/source.tar.xz"
+          expected_sha="$(awk '{print $1}' .fenrir-settings-feature-0.4.0.sha256)"
+          actual_sha="$(sha256sum "$tmp/source.tar.xz" | awk '{print $1}')"
+          test "$actual_sha" = "$expected_sha"
+          xz --test "$tmp/source.tar.xz"
+          if tar -tJf "$tmp/source.tar.xz" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+            echo "Unsafe archive path detected" >&2
+            exit 1
+          fi
+          mkdir "$tmp/unpack"
+          tar -xJf "$tmp/source.tar.xz" -C "$tmp/unpack" --no-same-owner
+          test -f "$tmp/unpack/apps/fenrir_settings/main.py"
+          test -f "$tmp/unpack/apps/fenrir_settings/settings_core.py"
+          test -x "$tmp/unpack/bin/fenrir-settings"
+          test -f "$tmp/unpack/config/hypr/fenrir-settings.lua"
+          cp -a "$tmp/unpack/." .
+          python -m compileall -q bin apps scripts tests
+          python -m unittest discover -s tests -v
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
+          find . -type f -name '*.py[co]' -delete
+          rm -f "${parts[@]}" .fenrir-settings-feature-0.4.0.sha256
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat: add functional Fenrir Settings control center"
+          git push
