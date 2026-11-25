@@ -298,6 +298,70 @@ class FenrirWallpaperTests(unittest.TestCase):
                 self.assertEqual(len(valid), 1)
                 self.assertEqual(wallpaper.resolution_policy()[2], 5000)
 
+    def test_catalog_collection_sync_uses_configured_rotation_directory(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            config = root / "config"
+            (config / "fenrir").mkdir(parents=True)
+            wallpapers = root / "Pictures" / "Wallpapers"
+            (config / "fenrir" / "settings.toml").write_text(
+                f'[wallpaper]\ndirectory = "{wallpapers}"\ninterval_minutes = 15\n',
+                encoding="utf-8",
+            )
+            database = root / "catalog" / "catalog.sqlite3"
+            database.parent.mkdir()
+            database.write_bytes(b"test database placeholder")
+            quarantine = root / "catalog" / "quarantine"
+            quarantine.mkdir()
+            executable = root / "bin" / "fenrir-catalog"
+            executable.parent.mkdir()
+            executable.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+            executable.chmod(0o755)
+
+            completed = wallpaper.subprocess.CompletedProcess(
+                args=["fenrir-catalog"],
+                returncode=0,
+                stdout=json.dumps({
+                    "installed": 2,
+                    "already_present": 1,
+                    "skipped": {"low_resolution": 3},
+                    "collection_id": "collection-winter",
+                }),
+                stderr="",
+            )
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config)}, clear=False), patch.object(
+                wallpaper.shutil, "which", return_value=str(executable)
+            ), patch.object(
+                wallpaper.subprocess, "run", return_value=completed
+            ) as run, patch.object(
+                wallpaper,
+                "validated_wallpapers",
+                return_value=([wallpapers / "one.jpg"], 1, 4, 0, {}),
+            ):
+                result = wallpaper.sync_catalog_collection(
+                    "collection-winter",
+                    target_count=5000,
+                    database=database,
+                    quarantine_root=quarantine,
+                )
+
+            command = run.call_args.args[0]
+            self.assertIn("catalog", command)
+            self.assertIn("library", command)
+            self.assertIn("sync", command)
+            self.assertIn("--collection-id", command)
+            self.assertEqual(command[command.index("--collection-id") + 1], "collection-winter")
+            self.assertEqual(command[command.index("--destination") + 1], str(wallpapers))
+            self.assertEqual(result["catalog_sync"]["installed"], 2)
+            self.assertTrue(result["wallpaper_index"]["refreshed"])
+            self.assertEqual(result["wallpaper_index"]["valid_count"], 1)
+            self.assertTrue(result["rotation_uses_new_images_on_next_cycle"])
+            self.assertFalse(result["rights_or_acceptance_changed"])
+
+    def test_catalog_collection_sync_requires_an_explicit_collection_id(self):
+        with self.assertRaisesRegex(RuntimeError, "--collection-id"):
+            wallpaper.sync_catalog_collection("")
+
     def test_apply_records_wallpaper_state_atomically(self):
         with tempfile.TemporaryDirectory() as temp:
             image = Path(temp) / "wallpaper.jpg"

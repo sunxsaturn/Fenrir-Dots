@@ -20,6 +20,7 @@ Do not install this repository as a complete system installer. It expects Arch p
 - Fimbulwinter Glass: obsidian foundation, moderate blur, 60% frosted-surface opacity and wallpaper-derived dynamic accents
 - Waybar, Kitty, Fuzzel, Mako, GTK and Fenrir-Obsidian icon theme
 - Validated random wallpaper engine and palette synchronization
+- Explicit, collection-scoped Fenrir Catalog synchronization into the configured wallpaper directory, with integrity/rights checks retained and rotation index refresh
 - Manual screen recording toggle (`Super+Shift+F9`), screenshots and clipboard workflow
 - Fenrir Doctor local assistant, system diagnostics, GitHub release tracking, configuration recovery and rights-aware wallpaper intelligence; Ollama models remain opt-in
   - Supervised wallpaper metadata scheduler: sequential, resumable discovery slices (up to two queries and two pages per scheduled slice), conservative 1–24 hour cooldowns, safe pause on errors, and automatic stop at the human-review boundary; no automated downloads, rights decisions, acceptance or sync.
@@ -48,3 +49,28 @@ bash -n bin/fenrir-settings bin/fenrir-welcome bin/fenrir-monitor bin/fenrir-rec
 ```
 
 The software license has not yet been selected. Publication does not grant redistribution rights to third-party artwork, applications or assets.
+
+
+## Sync a curated Catalog collection into wallpaper rotation
+
+Fenrir Desktop can stage one explicitly curated collection from the private
+Fenrir Wallpaper Catalog into the wallpaper directory configured in
+`~/.config/fenrir/settings.toml`:
+
+    fenrir-wallpaper sync-catalog --collection-id COLLECTION_ID
+
+The command uses the installed `fenrir-catalog` companion and the default
+private database/quarantine paths under
+`~/.local/share/fenrir/catalog`. Optional `--database` and
+`--quarantine-root` arguments support an explicitly selected local Catalog.
+Use `--target-count 5000|10000|20000` to choose the destination target; the
+default is 5000. The Catalog command only copies assets which are already
+human-accepted, rights-approved, license-approved, sufficiently high
+resolution, palette-eligible, and verified against quarantine SHA-256/size
+evidence. Collection membership alone never grants rights approval or
+acceptance.
+
+The wallpaper index is refreshed after a successful sync. The normal Fenrir
+rotation service picks up new qualifying files on its next cycle; the sync
+command does not switch the active wallpaper immediately. The destination
+must be a safe local directory outside `/mnt/storage`.
