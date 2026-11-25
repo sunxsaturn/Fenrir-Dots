@@ -346,7 +346,7 @@ async function loadWallpapers(showError = false) {
     state.wallpaperTarget = data.target_count || state.wallpaperTarget;
     $('wallpaper-target').value = String(state.wallpaperTarget);
     const sync = data.sync || {};
-    $('wallpaper-sync-button').disabled = Boolean(sync.running) || !data.catalog_available;
+    $('wallpaper-sync-button').disabled = Boolean(sync.running) || !data.catalog_available || !data.sync_destination_allowed;
     $('wallpaper-sync-button').textContent = sync.running ? 'Synchronization running…' : 'Sync accepted wallpapers';
     $('wallpaper-sync-status').textContent = sync.running ? 'Copying verified local assets…' : (sync.returncode === 0 ? 'Last synchronization completed.' : (sync.returncode ? 'Synchronization stopped (exit ' + sync.returncode + ').' : 'Ready'));
     $('wallpaper-sync-log').textContent = sync.log || '';
