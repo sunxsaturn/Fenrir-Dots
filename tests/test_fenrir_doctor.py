@@ -80,6 +80,45 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(result["gpu_name"], "AMD Radeon RX 6750 XT")
 
 class DoctorUtilityTests(unittest.TestCase):
+    def test_private_catalog_release_uses_authenticated_git_tags(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            catalog = Path(temporary) / "catalog-source"
+            (catalog / ".git").mkdir(parents=True)
+            completed = server.subprocess.CompletedProcess(
+                args=["git"], returncode=0,
+                stdout="abc123\\trefs/tags/v0.19.0\\ndef456\\trefs/tags/v0.20.0\\n",
+                stderr="",
+            )
+            with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
+                server.subprocess, "run", return_value=completed,
+            ) as run:
+                result = server._latest_private_catalog_release()
+            self.assertEqual(result["latest"], "0.20.0")
+            self.assertTrue(result["update_available"])
+            self.assertEqual(result["status"], "available")
+            self.assertIn("/releases/tag/v0.20.0", result["url"])
+            self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
+
+    def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            catalog = Path(temporary) / "catalog-source"
+            (catalog / ".git").mkdir(parents=True)
+            completed = server.subprocess.CompletedProcess(
+                args=["git"], returncode=128, stdout="",
+                stderr="fatal: Authentication failed",
+            )
+            with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
+                server.subprocess, "run", return_value=completed,
+            ):
+                result = server._latest_private_catalog_release()
+            self.assertEqual(result["status"], "unavailable")
+            self.assertFalse(result["update_available"])
+            self.assertIn("Authentication failed", result["detail"])
+
     def test_release_version_comparison(self):
         self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
         self.assertEqual(server._version_key("v1.2.3"), (1, 2, 3))
