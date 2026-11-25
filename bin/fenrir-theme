@@ -5,6 +5,26 @@ import argparse, json, os, shutil, subprocess, sys
 from pathlib import Path
 
 DEFAULTS = {"accent":"#9b87f5", "accent_soft":"#51447f", "foreground":"#e8e9f2", "muted":"#9699ab", "border":"#7665bd"}
+PRESETS = {
+    "obsidian": "#9b87f5",
+    "arctic": "#69c9ef",
+    "violet": "#a78bfa",
+    "emerald": "#5cc9a1",
+}
+
+
+def configured_defaults() -> dict[str, str]:
+    try:
+        import tomllib
+        settings = tomllib.loads((home_path()/"fenrir"/"settings.toml").read_text(encoding="utf-8"))
+        preset = settings.get("theme", {}).get("preset", "obsidian")
+    except (OSError, ValueError, TypeError):
+        preset = "obsidian"
+    accent = PRESETS.get(preset, PRESETS["obsidian"])
+    value = accent.lstrip("#")
+    rgb = tuple(int(value[i:i+2], 16) for i in (0, 2, 4))
+    soft = "#" + "".join(f"{int(channel * .42):02x}" for channel in rgb)
+    return {"accent": accent, "accent_soft": soft, "foreground": "#e8e9f2", "muted": "#9699ab", "border": accent}
 
 def home_path() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config"))
@@ -181,7 +201,8 @@ def main() -> int:
     parser.add_argument("--wallpaper", type=Path)
     args=parser.parse_args()
     try:
-        colors=extract(args.wallpaper) if args.wallpaper else DEFAULTS.copy()
+        defaults = configured_defaults()
+        colors=extract(args.wallpaper) if args.wallpaper else defaults
         write_palette(colors)
     except Exception as exc:
         print(f"fenrir-theme: {exc}", file=sys.stderr); return 1

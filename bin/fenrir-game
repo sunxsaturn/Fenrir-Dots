@@ -1,0 +1,19 @@
+#!/usr/bin/env python3
+"""Apply Fenrir's optional GameMode/MangoHud/Gamescope profile to a game command."""
+from __future__ import annotations
+import json, os, shutil, sys
+from pathlib import Path
+try:
+    profile = json.loads((Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "fenrir/gaming.json").read_text())
+except (OSError, ValueError):
+    profile = {"gamemode": True, "mangohud": False, "gamescope": False}
+command = sys.argv[1:]
+if not command:
+    raise SystemExit("usage: fenrir-game %command% [game arguments]")
+if profile.get("mangohud") and shutil.which("mangohud"):
+    command = [shutil.which("mangohud"), *command]
+if profile.get("gamescope") and shutil.which("gamescope"):
+    command = [shutil.which("gamescope"), "-f", "--", *command]
+if profile.get("gamemode") and shutil.which("gamemoderun"):
+    command = [shutil.which("gamemoderun"), *command]
+os.execvp(command[0], command)

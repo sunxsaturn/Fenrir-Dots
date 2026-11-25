@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Settings
+Comment=Customize the Fenrir desktop environment
+Exec=fenrir-settings
+Icon=fenrir-desktop
+Terminal=false
+Categories=Settings;DesktopSettings;Utility;

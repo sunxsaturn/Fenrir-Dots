@@ -153,19 +153,36 @@ class FenrirWallpaperTests(unittest.TestCase):
             self.assertEqual(rejected, 2)
             self.assertEqual([p.name for p in valid], ["valid.webp"])
 
-    def test_rotation_stays_paused_until_5000_valid_wallpapers_exist(self):
+    def test_rotation_works_below_5000_target_without_falsely_marking_it_complete(self):
         from PIL import Image
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "wallpapers"
             root.mkdir()
-            Image.new("RGB", (2560, 1440), "#112233").save(root / "one.jpg", format="JPEG")
+            image = root / "one.jpg"
+            Image.new("RGB", (2560, 1440), "#112233").save(image, format="JPEG")
             config = Path(temp) / "config"
             (config / "fenrir").mkdir(parents=True)
             (config / "fenrir" / "settings.toml").write_text(
                 f'[wallpaper]\ndirectory = "{root}"\nminimum_count = 5000\n', encoding="utf-8"
             )
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
-                with self.assertRaisesRegex(RuntimeError, "Wallpaper library incomplete.*5000 required"):
+                selected = wallpaper.next_wallpaper()
+                self.assertEqual(selected.resolve(), image.resolve())
+                valid, _, _ = wallpaper.validated_wallpapers()
+                self.assertEqual(len(valid), 1)
+                self.assertGreater(wallpaper.resolution_policy()[2], len(valid))
+
+    def test_rotation_refuses_empty_qualifying_library(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "wallpapers"
+            root.mkdir()
+            config = Path(temp) / "config"
+            (config / "fenrir").mkdir(parents=True)
+            (config / "fenrir" / "settings.toml").write_text(
+                f'[wallpaper]\ndirectory = "{root}"\nminimum_count = 5000\n', encoding="utf-8"
+            )
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
+                with self.assertRaisesRegex(RuntimeError, "No qualifying wallpapers"):
                     wallpaper.next_wallpaper()
 
     def test_status_reports_5000_wallpaper_target(self):

@@ -160,7 +160,8 @@ def apply(path: Path) -> None:
     os.chmod(temporary, 0o600)
     temporary.replace(state_file)
     theme = shutil.which("fenrir-theme")
-    if theme:
+    dynamic_colors = settings().get("theme", {}).get("dynamic_colors", True)
+    if theme and dynamic_colors:
         subprocess.run([theme, "--wallpaper", str(path)], check=False, timeout=30, stdout=subprocess.DEVNULL)
     print(path)
 
@@ -168,11 +169,11 @@ def apply(path: Path) -> None:
 def next_wallpaper() -> Path:
     files, invalid, total = validated_wallpapers()
     min_width, min_height, minimum_count = resolution_policy()
-    if len(files) < minimum_count:
+    if not files:
         raise RuntimeError(
-            f"Wallpaper library incomplete: {len(files)} valid images; {minimum_count} required "
-            f"(landscape, at least {min_width}x{min_height}; checked {total} files, {invalid} rejected). "
-            "Rotation remains paused until the complete Fenrir library is installed."
+            f"No qualifying wallpapers found (checked {total} files; {invalid} rejected). "
+            f"Add readable landscape images at least {min_width}x{min_height}. "
+            f"The long-term collection target is {minimum_count}, but rotation does not wait for it."
         )
     state = state_dir() / "wallpaper.json"
     current = None
@@ -200,8 +201,10 @@ def report_status(as_json: bool = False) -> int:
         print(f"Fenrir wallpapers: {len(valid):,} valid / {total:,} image files; {invalid:,} rejected")
         print(f"Target: at least {minimum_count:,}; minimum 2560x1440 landscape; preferred 3840x2160+")
         print(f"Directory: {result['directory']}")
-        print(f"Rotation: every {result['interval_minutes']} minutes; dynamic accent extraction enabled")
-        print("Requirement: " + ("MET" if result["requirement_met"] else "NOT MET"))
+        dynamic = bool(settings().get("theme", {}).get("dynamic_colors", True))
+        print(f"Rotation: every {result['interval_minutes']} minutes; dynamic accent extraction {'enabled' if dynamic else 'disabled'}")
+        print("5000-image collection target: " + ("MET" if result["requirement_met"] else "NOT MET"))
+        print("Rotation uses all currently qualifying images; the 5000-image target is not a prerequisite.")
     return 0
 
 

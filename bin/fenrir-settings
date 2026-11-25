@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+APP="$HOME/.local/share/fenrir/apps/fenrir-settings/app.py"
+[[ -f "$APP" ]] || { printf 'Fenrir Settings is not deployed: %s\n' "$APP" >&2; exit 1; }
+exec python3 "$APP" "$@"

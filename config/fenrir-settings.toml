@@ -12,4 +12,41 @@ extensions = [".jpg", ".jpeg", ".png", ".webp"]
 [theme]
 # Fimbulwinter Glass: keep frosted surfaces at 60% opacity (40% transparent).
 surface_opacity = 0.60
+preset = "obsidian"
 # Accent colors are extracted from every wallpaper change; the obsidian base stays fixed.
+blur_enabled = true
+dynamic_colors = true
+
+
+[display]
+preferred_width = 2560
+preferred_height = 1440
+preferred_refresh = 155
+scale = 1.0
+
+[hyprland]
+layout = "dwindle"
+workspace_count = 10
+animations = true
+
+[keyboard]
+layout = "us"
+variant = "intl"
+
+[session]
+keep_awake = true
+
+[waybar]
+show_workspaces = true
+show_window = true
+show_network = true
+show_audio = true
+show_system = true
+show_tray = true
+position = "top"
+
+[gaming]
+gamemode = true
+mangohud = false
+gamescope = false
+fps_limit = 0

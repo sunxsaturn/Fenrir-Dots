@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+STATE_DIR="$STATE_HOME/fenrir"
+PID_FILE="$STATE_DIR/recording.pid"
+ACTION="${1:-toggle}"
+mkdir -p "$STATE_DIR" "$HOME/Videos/Fenrir"
+
+stop_recording() {
+  [[ -f "$PID_FILE" ]] || { echo "Fenrir: no active recording."; return 1; }
+  local pid comm
+  read -r pid < "$PID_FILE" || true
+  [[ "$pid" =~ ^[0-9]+$ ]] || { rm -f "$PID_FILE"; echo "Fenrir: invalid recording state cleared." >&2; return 1; }
+  if ! kill -0 "$pid" 2>/dev/null; then
+    rm -f "$PID_FILE"
+    echo "Fenrir: recording process is no longer running."
+    return 1
+  fi
+  comm="$(ps -p "$pid" -o comm= 2>/dev/null | tr -d '[:space:]' || true)"
+  [[ "$comm" == "wf-recorder" ]] || { echo "Fenrir: refusing to signal unrelated process $pid ($comm)." >&2; return 1; }
+  kill -INT "$pid"
+  for _ in {1..50}; do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  rm -f "$PID_FILE"
+  echo "Fenrir: recording stopped."
+}
+
+case "$ACTION" in
+  stop) stop_recording; exit $? ;;
+  start|toggle) ;;
+  *) echo "Usage: fenrir-record [start|stop|toggle]" >&2; exit 2 ;;
+esac
+if [[ -f "$PID_FILE" ]]; then
+  if [[ "$ACTION" == "start" ]]; then echo "Fenrir: a recording is already active."; exit 1; fi
+  stop_recording
+  exit $?
+fi
+command -v wf-recorder >/dev/null 2>&1 || { echo "Fenrir: wf-recorder is not installed." >&2; exit 1; }
+STAMP="$(date +%Y%m%d-%H%M%S)"
+OUTPUT="$HOME/Videos/Fenrir/Fenrir-$STAMP.mp4"
+wf-recorder -f "$OUTPUT" >/dev/null 2>&1 &
+PID=$!
+sleep 0.2
+if ! kill -0 "$PID" 2>/dev/null; then wait "$PID" || true; echo "Fenrir: recording could not be started. Check Wayland capture permissions." >&2; exit 1; fi
+COMM="$(ps -p "$PID" -o comm= 2>/dev/null | tr -d '[:space:]' || true)"
+[[ "$COMM" == "wf-recorder" ]] || { kill -INT "$PID" 2>/dev/null || true; echo "Fenrir: recorder process validation failed." >&2; exit 1; }
+printf '%s\n' "$PID" > "$PID_FILE"
+chmod 600 "$PID_FILE"
+echo "Fenrir: recording started: $OUTPUT"

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+APP="$HOME/.local/share/fenrir/apps/fenrir-settings/monitor.py"
+[[ -f "$APP" ]] || { printf 'Fenrir monitor helper is not deployed: %s\n' "$APP" >&2; exit 1; }
+exec python3 "$APP" "$@"
