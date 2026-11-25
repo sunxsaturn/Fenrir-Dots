@@ -354,6 +354,46 @@ async function loadWallpapers(showError = false) {
     $('wallpaper-sync-button').textContent = sync.running ? 'Synchronization running…' : 'Sync accepted wallpapers';
     $('wallpaper-sync-status').textContent = sync.running ? 'Copying verified local assets…' : (sync.returncode === 0 ? 'Last synchronization completed.' : (sync.returncode ? 'Synchronization stopped (exit ' + sync.returncode + ').' : 'Ready'));
     $('wallpaper-sync-log').textContent = sync.log || '';
+
+    const discovery = data.discovery || {};
+    const campaign = discovery.campaign;
+    const discoverySummary = $('wallpaper-discovery-summary');
+    discoverySummary.replaceChildren();
+    if (campaign) {
+      const progress = campaign.progress || {};
+      const heading = document.createElement('strong');
+      heading.textContent = campaign.profile_key || 'Wallpaper campaign';
+      const detail = document.createElement('small');
+      detail.textContent = (campaign.status || 'unknown').toUpperCase() + ' · '
+        + Number(progress.completed_queries || 0) + '/' + Number(progress.total_queries || 0) + ' queries · '
+        + Number(progress.new_assets || 0).toLocaleString() + ' new metadata records · '
+        + Number(progress.observations_recorded || 0).toLocaleString() + ' observations';
+      const id = document.createElement('small');
+      id.textContent = 'Campaign ID: ' + campaign.campaign_id;
+      discoverySummary.append(heading, detail, id);
+      if (campaign.error_summary) {
+        const error = document.createElement('small');
+        error.textContent = campaign.error_summary;
+        discoverySummary.append(error);
+      }
+      $('wallpaper-source').value = discovery.source || campaign.source_key || 'openverse';
+      $('wallpaper-profile').value = discovery.profile || campaign.profile_key || 'fenrir-nordic-fantasy-v1';
+    } else {
+      const empty = document.createElement('p');
+      empty.className = 'loading-card';
+      empty.textContent = discovery.error || 'No wallpaper discovery campaign has been started.';
+      discoverySummary.append(empty);
+    }
+    $('wallpaper-discovery-log').textContent = discovery.log || '';
+    const discoveryRunning = Boolean(discovery.process_running);
+    $('wallpaper-discover-button').disabled = discoveryRunning || !data.catalog_available;
+    $('wallpaper-discover-button').textContent = discoveryRunning
+      ? 'Discovery running…'
+      : (campaign && campaign.status !== 'completed' ? 'Resume discovery campaign' : 'Start discovery campaign');
+    $('wallpaper-discovery-status').textContent = discoveryRunning
+      ? 'Searching provider metadata only…'
+      : (campaign ? 'Last campaign: ' + campaign.status : 'Ready');
+    updateCommonsContactVisibility();
   } catch (error) { if (showError) toast(error.message); }
 }
 
@@ -410,6 +450,44 @@ $('wallpaper-target').addEventListener('change', async () => {
     toast('Wallpaper target saved');
     loadWallpapers();
   } catch (error) { toast(error.message); }
+});
+
+function updateCommonsContactVisibility() {
+  const group = $('commons-contact-group');
+  if (group) group.classList.toggle('hidden', $('wallpaper-source').value !== 'wikimedia_commons');
+}
+
+$('wallpaper-source').addEventListener('change', updateCommonsContactVisibility);
+
+$('wallpaper-discover-button').addEventListener('click', async () => {
+  const source = $('wallpaper-source').value;
+  const profile = $('wallpaper-profile').value;
+  const contact = $('wallpaper-contact').value.trim();
+  if (source === 'wikimedia_commons' && !contact) {
+    toast('Enter a contact email or project URL for Wikimedia Commons.');
+    $('wallpaper-contact').focus();
+    return;
+  }
+  const confirmText = source === 'openverse'
+    ? 'Run a bounded Openverse metadata search? No image files will be downloaded or accepted.'
+    : 'Run a bounded Wikimedia Commons metadata search using this contact identifier? No image files will be downloaded or accepted.';
+  if (!window.confirm(confirmText)) return;
+  $('wallpaper-discover-button').disabled = true;
+  $('wallpaper-discovery-status').textContent = 'Creating resumable campaign…';
+  try {
+    const result = await api('/api/doctor/wallpapers/discover', {
+      method: 'POST',
+      body: JSON.stringify({ source, profile, contact: source === 'wikimedia_commons' ? contact : null })
+    });
+    $('wallpaper-discovery-status').textContent = 'Campaign started: ' + result.campaign_id;
+    toast('Wallpaper discovery started');
+    loadWallpapers();
+    window.setTimeout(loadWallpapers, 1500);
+  } catch (error) {
+    $('wallpaper-discovery-status').textContent = error.message;
+    $('wallpaper-discover-button').disabled = false;
+    toast(error.message);
+  }
 });
 
 $('wallpaper-sync-button').addEventListener('click', async () => {
