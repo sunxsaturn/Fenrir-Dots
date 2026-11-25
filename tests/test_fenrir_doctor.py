@@ -119,6 +119,57 @@ class DoctorUtilityTests(unittest.TestCase):
             self.assertFalse(result["update_available"])
             self.assertIn("Authentication failed", result["detail"])
 
+    def test_installed_version_manifest_overrides_fallback_values(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = root / "installed-versions.json"
+            manifest.write_text(
+                '{"Fenrir-Arch":"0.6.0","Fenrir-Dots":"0.6.0","Fenrir-Wallpaper-Catalog":"0.20.0"}',
+                encoding="utf-8",
+            )
+            with patch.object(server, "INSTALLED_VERSIONS_FILE", manifest):
+                versions = server.installed_release_versions()
+            self.assertEqual(versions["Fenrir-Arch"], "0.6.0")
+            self.assertEqual(versions["Fenrir-Dots"], "0.6.0")
+            self.assertEqual(versions["Fenrir-Wallpaper-Catalog"], "0.20.0")
+
+    def test_installed_version_manifest_ignores_unknown_and_invalid_entries(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            manifest = root / "installed-versions.json"
+            manifest.write_text(
+                '{"Fenrir-Arch":"0.6.0","Unknown":"9.9.9","Fenrir-Dots":"latest"}',
+                encoding="utf-8",
+            )
+            with patch.object(server, "INSTALLED_VERSIONS_FILE", manifest):
+                versions = server.installed_release_versions()
+            self.assertEqual(versions["Fenrir-Arch"], "0.6.0")
+            self.assertEqual(versions["Fenrir-Dots"], server.LOCAL_RELEASES["Fenrir-Dots"])
+            self.assertNotIn("Unknown", versions)
+
+    def test_installed_version_manifest_rejects_symlink_and_oversized_file(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "target.json"
+            target.write_text('{"Fenrir-Arch":"9.9.9"}', encoding="utf-8")
+            link = root / "manifest.json"
+            link.symlink_to(target)
+            with patch.object(server, "INSTALLED_VERSIONS_FILE", link):
+                versions = server.installed_release_versions()
+            self.assertEqual(versions, server.LOCAL_RELEASES)
+
+            oversized = root / "oversized.json"
+            oversized.write_text(" " * 4097, encoding="utf-8")
+            with patch.object(server, "INSTALLED_VERSIONS_FILE", oversized):
+                versions = server.installed_release_versions()
+            self.assertEqual(versions, server.LOCAL_RELEASES)
+
     def test_release_version_comparison(self):
         self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
         self.assertEqual(server._version_key("v1.2.3"), (1, 2, 3))
