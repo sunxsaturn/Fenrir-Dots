@@ -1,0 +1,14 @@
+[Unit]
+Description=Keep the Fenrir desktop session awake during inactivity
+Documentation=man:systemd-inhibit(1)
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/systemd-inhibit --what=idle:sleep --mode=block --why=Fenrir-idle-and-suspend-policy /usr/bin/sleep infinity
+Restart=on-failure
+RestartSec=2s
+
+[Install]
+WantedBy=graphical-session.target
