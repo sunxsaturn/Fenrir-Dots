@@ -54,6 +54,8 @@ jobs:
             python -m compileall -q bin apps/sun-ai scripts tests
             python -m unittest discover -s tests -v
           )
+          # This runner token cannot push workflow files; publish CI separately via the repository API.
+          rm -f "$tmp/unpack/.github/workflows/ci.yml"
           find "$tmp/unpack" -type d -name __pycache__ -prune -exec rm -rf {} +
           find "$tmp/unpack" -type f -name '*.py[co]' -delete
           cp -a "$tmp/unpack/." .
