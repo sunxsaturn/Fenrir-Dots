@@ -77,14 +77,14 @@ hl.layer_rule({ match = { namespace = "waybar" }, blur = true, ignore_alpha = 0.
 hl.layer_rule({ match = { namespace = "mako" }, blur = true, ignore_alpha = 0.10 })
 hl.layer_rule({ match = { namespace = "fuzzel" }, blur = true, ignore_alpha = 0.10 })
 
--- Sun AI opens in the user-selected browser and remains bound to localhost.
+-- Fenrir Doctor opens in the user-selected browser and remains bound to localhost.
 
 -- Application launch and session controls.
 hl.bind(mainMod .. " + Return", hl.dsp.exec_cmd(terminal))
 hl.bind(mainMod .. " + Space", hl.dsp.exec_cmd(launcher))
 hl.bind(mainMod .. " + E", hl.dsp.exec_cmd(fileManager))
 hl.bind(mainMod .. " + B", hl.dsp.exec_cmd(browser))
-hl.bind(mainMod .. " + A", hl.dsp.exec_cmd("sun-ai open"))
+hl.bind(mainMod .. " + A", hl.dsp.exec_cmd("fenrir-doctor open"))
 hl.bind(mainMod .. " + W", hl.dsp.exec_cmd("fenrir-wallpaper next"))
 hl.bind(mainMod .. " + SHIFT + W", hl.dsp.exec_cmd("fenrir-wallpaper next"))
 hl.bind(mainMod .. " + L", hl.dsp.exec_cmd("hyprlock"))
