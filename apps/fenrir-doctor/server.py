@@ -847,6 +847,7 @@ def wallpaper_snapshot() -> dict[str, Any]:
         "accepted_asset_count": accepted,
         "local_image_count": local_count,
         "palette_metrics": palette_metrics,
+        "discovery": wallpaper_campaign_snapshot(),
         "target_count": target_count,
         "remaining": max(0, target_count - local_count),
         "target_reached": local_count >= target_count,
@@ -1000,6 +1001,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, backups_snapshot())
         if path == "/api/doctor/wallpapers":
             return self.send_bytes(200, wallpaper_snapshot())
+        if path == "/api/doctor/wallpapers/campaign":
+            return self.send_bytes(200, wallpaper_campaign_snapshot())
         if path == "/api/weather":
             try:
                 return self.send_bytes(200, weather_snapshot())
@@ -1080,6 +1083,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_bytes(202, start_wallpaper_sync(obj.get("target_count", 5000)))
             except (OSError, ValueError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:260]})
+
+        if path == "/api/doctor/wallpapers/discover":
+            try:
+                return self.send_bytes(202, start_wallpaper_discovery(
+                    obj.get("source"), obj.get("profile"), obj.get("contact")
+                ))
+            except (OSError, ValueError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
 
         if path != "/api/chat":
             return self.send_bytes(404, {"error": "not found"})
