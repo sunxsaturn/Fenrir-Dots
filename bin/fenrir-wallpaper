@@ -147,7 +147,7 @@ def _write_index(records: dict[str, dict]) -> None:
         "version": INDEX_VERSION,
         "palette_policy": PALETTE_POLICY_ID,
         "items": records,
-    }, separators=(",", ":")) + "\\n", encoding="utf-8")
+    }, separators=(",", ":")) + "\n", encoding="utf-8")
     os.chmod(temporary, 0o600)
     temporary.replace(destination)
 
@@ -327,7 +327,8 @@ def report_status(as_json: bool = False) -> int:
         print(json.dumps(result, indent=2))
     else:
         print(f"Fenrir wallpapers: {len(valid):,} valid / {total:,} image files; {invalid:,} rejected ({palette_excluded:,} excluded by color palette)")
-        print(f"Target: at least {minimum_count:,}; minimum 2560x1440 landscape; preferred 3840x2160+")\n        print("Palette: exclude yellow/orange/brown; prefer red/purple/blue/white/black; green allowed")
+        print(f"Target: at least {minimum_count:,}; minimum 2560x1440 landscape; preferred 3840x2160+")
+        print("Palette: exclude yellow/orange/brown; prefer red/purple/blue/white/black; green allowed")
         print(f"Directory: {result['directory']}")
         dynamic = bool(settings().get("theme", {}).get("dynamic_colors", True))
         print(f"Rotation: every {result['interval_minutes']} minutes; dynamic accent extraction {'enabled' if dynamic else 'disabled'}")
