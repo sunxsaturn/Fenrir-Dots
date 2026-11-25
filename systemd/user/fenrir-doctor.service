@@ -3,6 +3,8 @@ Description=Fenrir Doctor local assistant and desktop diagnostics
 After=network.target
 
 [Service]
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/bin
+
 Type=simple
 ExecStart=/usr/bin/python %h/.local/share/fenrir-doctor/server.py --host 127.0.0.1 --port 8765
 Restart=on-failure
