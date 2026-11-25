@@ -114,6 +114,38 @@ class FenrirThemeTests(unittest.TestCase):
                 theme.EXCLUDED_FAMILIES,
             )
 
+    def test_accent_contrast_is_enforced_without_changing_its_hue_family(self):
+        dark_accent = "#102040"
+        adjusted = theme.ensure_accent_contrast(dark_accent)
+        self.assertGreaterEqual(theme.contrast_ratio(adjusted, theme.OBSIDIAN_BASE), 3.0)
+        self.assertEqual(
+            theme.classify_rgb(*theme._rgb(adjusted)),
+            theme.classify_rgb(*theme._rgb(dark_accent)),
+        )
+
+    def test_accessible_palette_chooses_readable_text_for_accent_surfaces(self):
+        palette = theme.accessible_palette({
+            "accent": "#80d0f0",
+            "accent_soft": "#24364c",
+        })
+        self.assertGreaterEqual(float(palette["accent_contrast_on_obsidian"]), 3.0)
+        self.assertGreaterEqual(float(palette["selection_contrast"]), 4.5)
+        self.assertEqual(palette["accent_foreground"], "#000000")
+        self.assertEqual(palette["selection_foreground"], "#ffffff")
+
+    def test_write_palette_exports_accessible_foregrounds_and_contrast_metadata(self):
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "config"
+            for name in ("fenrir", "waybar", "kitty", "fuzzel", "mako", "gtk-3.0", "gtk-4.0"):
+                (config / name).mkdir(parents=True, exist_ok=True)
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config)}, clear=False):
+                theme.write_palette({"accent": "#14223a", "accent_soft": "#18283e"})
+            palette = json.loads((config / "fenrir" / "palette.json").read_text(encoding="utf-8"))
+            self.assertIn("accent_foreground", palette)
+            self.assertGreaterEqual(float(palette["accent_contrast_on_obsidian"]), 3.0)
+            self.assertIn("fenrir_accent_fg", (config / "waybar" / "palette.css").read_text())
+            self.assertIn("cursor_text_color", (config / "kitty" / "fenrir-palette.conf").read_text())
+
     def test_surface_opacity_is_clamped_to_readable_range(self):
         with tempfile.TemporaryDirectory() as temp:
             config = Path(temp) / "config"

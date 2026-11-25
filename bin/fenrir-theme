@@ -13,6 +13,86 @@ PRESETS = {
 }
 
 PALETTE_POLICY_ID = "fenrir-wallpaper-palette-v1"
+OBSIDIAN_BASE = "#090b12"
+MIN_ACCENT_CONTRAST = 3.0
+MIN_SELECTION_CONTRAST = 4.5
+
+
+def _rgb(hex_color: str) -> tuple[int, int, int]:
+    value = hex_color.lstrip("#")
+    if len(value) != 6:
+        raise ValueError("Expected a six-digit RGB color.")
+    try:
+        return tuple(int(value[index:index + 2], 16) for index in (0, 2, 4))
+    except ValueError as exc:
+        raise ValueError("Invalid RGB color.") from exc
+
+
+def relative_luminance(hex_color: str) -> float:
+    channels = _rgb(hex_color)
+    linear = []
+    for channel in channels:
+        value = channel / 255.0
+        linear.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+
+def contrast_ratio(first: str, second: str) -> float:
+    high, low = sorted((relative_luminance(first), relative_luminance(second)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def contrast_foreground(background: str, minimum: float = MIN_SELECTION_CONTRAST) -> str:
+    """Select black or white text with the stronger contrast on a color surface."""
+    candidates = ("#000000", "#ffffff")
+    selected = max(candidates, key=lambda candidate: contrast_ratio(candidate, background))
+    if contrast_ratio(selected, background) < minimum:
+        raise ValueError("Neither black nor white meets the requested contrast threshold.")
+    return selected
+
+
+def ensure_accent_contrast(
+    accent: str,
+    background: str = OBSIDIAN_BASE,
+    minimum: float = MIN_ACCENT_CONTRAST,
+) -> str:
+    """Raise a too-dark accent's brightness without changing its hue or saturation."""
+    red, green, blue = _rgb(accent)
+    if contrast_ratio(accent, background) >= minimum:
+        return accent.lower()
+    hue, saturation, brightness = colorsys.rgb_to_hsv(red / 255, green / 255, blue / 255)
+    candidates = []
+    for step in range(101):
+        value = step / 100
+        channels = colorsys.hsv_to_rgb(hue, saturation, value)
+        candidate = "#" + "".join(f"{round(channel * 255):02x}" for channel in channels)
+        ratio = contrast_ratio(candidate, background)
+        if ratio >= minimum:
+            candidates.append((abs(value - brightness), candidate))
+    if not candidates:
+        return "#ffffff"
+    return min(candidates)[1]
+
+
+def accessible_palette(colors: dict[str, str]) -> dict[str, str]:
+    """Normalize generated colors and record the contrast of interactive surfaces."""
+    result = dict(DEFAULTS)
+    result.update(colors)
+    accent = ensure_accent_contrast(result["accent"])
+    accent_soft = result.get("accent_soft", DEFAULTS["accent_soft"])
+    _rgb(accent_soft)
+    result.update({
+        "accent": accent,
+        "accent_soft": accent_soft.lower(),
+        "border": accent,
+        "accent_foreground": contrast_foreground(accent),
+        "selection_foreground": contrast_foreground(accent_soft),
+        "accent_contrast_on_obsidian": f"{contrast_ratio(accent, OBSIDIAN_BASE):.2f}",
+        "selection_contrast": f"{contrast_ratio(contrast_foreground(accent_soft), accent_soft):.2f}",
+    })
+    return result
+
+
 EXCLUDED_FAMILIES = {"yellow", "orange", "brown"}
 PREFERRED_FAMILIES = {"red", "purple", "blue", "white", "black"}
 
@@ -52,7 +132,7 @@ def configured_defaults() -> dict[str, str]:
     value = accent.lstrip("#")
     rgb = tuple(int(value[i:i+2], 16) for i in (0, 2, 4))
     soft = "#" + "".join(f"{int(channel * .42):02x}" for channel in rgb)
-    return {"accent": accent, "accent_soft": soft, "foreground": "#e8e9f2", "muted": "#9699ab", "border": accent}
+    return accessible_palette({"accent": accent, "accent_soft": soft, "foreground": "#e8e9f2", "muted": "#9699ab", "border": accent})
 
 def home_path() -> Path:
     return Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config"))
@@ -99,7 +179,7 @@ def extract(path: Path) -> dict[str, str]:
     _, r, g, b = chosen
     accent = f"#{r:02x}{g:02x}{b:02x}"
     accent_soft = f"#{int(r*.42):02x}{int(g*.42):02x}{int(b*.42):02x}"
-    return {"accent":accent, "accent_soft":accent_soft, "foreground":"#e8e9f2", "muted":"#9699ab", "border":accent}
+    return accessible_palette({"accent":accent, "accent_soft":accent_soft, "foreground":"#e8e9f2", "muted":"#9699ab", "border":accent})
 
 def configured_surface_opacity() -> float:
     settings = home_path()/"fenrir"/"settings.toml"
@@ -175,7 +255,7 @@ def write_palette(colors: dict[str,str]) -> None:
     cfg = home_path()
     fenrir = cfg/"fenrir"
     surface_opacity = configured_surface_opacity()
-    colors = {**colors, "surface_opacity": surface_opacity}
+    colors = {**accessible_palette(colors), "surface_opacity": surface_opacity}
     atomic_text(fenrir/"palette.json", json.dumps(colors, indent=2)+"\n")
     waybar = cfg/"waybar"
     atomic_text(waybar/"palette.css", "\n".join([
@@ -184,11 +264,14 @@ def write_palette(colors: dict[str,str]) -> None:
         f"@define-color fenrir_fg {colors['foreground']};",
         f"@define-color fenrir_muted {colors['muted']};",
         f"@define-color fenrir_border {colors['border']};",
-        f"@define-color fenrir_surface {rgba('#090b12', surface_opacity)};", ""]))
+        f"@define-color fenrir_accent_fg {colors['accent_foreground']};",
+        f"@define-color fenrir_selection_fg {colors['selection_foreground']};",
+        f"@define-color fenrir_surface {rgba(OBSIDIAN_BASE, surface_opacity)};", ""]))
     kitty = cfg/"kitty"; kitty.mkdir(parents=True, exist_ok=True)
     atomic_text(kitty/"fenrir-palette.conf", "\n".join([
         "background #090b12", "foreground #e8e9f2", f"cursor {colors['accent']}",
-        f"color4 {colors['accent']}", f"color5 {colors['accent_soft']}", ""]))
+        f"color4 {colors['accent']}", f"color5 {colors['accent_soft']}",
+        f"cursor_text_color {colors['accent_foreground']}", ""]))
     # Update just the managed color keys; preserve layout and user preferences.
     alpha = alpha_hex(surface_opacity)
     update_ini_section(cfg/"fuzzel"/"fuzzel.ini", "colors", {
@@ -196,7 +279,7 @@ def write_palette(colors: dict[str,str]) -> None:
         "text": "e8e9f2ff",
         "match": colors["accent"].lstrip("#") + "ff",
         "selection": colors["accent_soft"].lstrip("#") + "cc",
-        "selection-text": "ffffffff",
+        "selection-text": colors["selection_foreground"].lstrip("#") + "ff",
         "border": colors["accent"].lstrip("#") + "cc",
     })
     update_key_values(cfg/"mako"/"config", {
@@ -211,7 +294,9 @@ def write_palette(colors: dict[str,str]) -> None:
             f"@define-color fenrir_accent_soft {colors['accent_soft']};",
             f"@define-color fenrir_fg {colors['foreground']};",
             f"@define-color fenrir_muted {colors['muted']};",
-            f"@define-color fenrir_surface {rgba('#090b12', surface_opacity)};", ""]))
+            f"@define-color fenrir_accent_fg {colors['accent_foreground']};",
+            f"@define-color fenrir_selection_fg {colors['selection_foreground']};",
+            f"@define-color fenrir_surface {rgba(OBSIDIAN_BASE, surface_opacity)};", ""]))
     # Hyprland 0.57+ uses Lua configuration; update the live border through
     # `hyprctl eval` rather than the removed legacy `keyword` path.
     if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
