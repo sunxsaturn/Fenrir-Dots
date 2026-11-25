@@ -95,10 +95,10 @@ class DoctorUtilityTests(unittest.TestCase):
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.25.0")
+            self.assertEqual(result["latest"], "0.26.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.25.0", result["url"])
+            self.assertIn("/releases/tag/v0.26.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
