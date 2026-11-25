@@ -217,11 +217,34 @@ class FenrirSettings(Gtk.Application):
             if not self.save("wallpaper", {"directory": directory.get_text(), "interval_minutes": interval.get_value_as_int()}): return
             self.run_command(["systemctl", "--user", "restart", "fenrir-wallpaper.service"], "Wallpaper folder and interval applied; rotation restarts with the new settings.")
         self.button(page, "Save wallpaper settings", save_wallpaper, True)
+        studio_box = self.group(page, "Wallpaper Studio")
+        studio_intro = Gtk.Label(
+            label="Curate accepted wallpapers, inspect rights and provenance, preview 16:9 through 32:9 display fits, and sync new collection additions into the rotation library.",
+            xalign=0,
+            wrap=True,
+        )
+        studio_intro.add_css_class("dim-label")
+        studio_box.append(studio_intro)
+        self.button(studio_box, "Open Wallpaper Studio", self.open_wallpaper_studio, True)
         status_box = self.group(page, "Library status")
         self._wallpaper_status_box = Gtk.Label(label="Use Refresh to inspect the actual qualifying image count.", xalign=0, wrap=True)
         status_box.append(self._wallpaper_status_box)
         self.button(status_box, "Refresh library status", self.refresh_wallpaper_status)
         self.button(status_box, "Choose next wallpaper", lambda *_: self.run_command(["fenrir-wallpaper", "next"], "A new wallpaper has been selected and its accent palette updated."))
+
+    def open_wallpaper_studio(self, *_):
+        try:
+            subprocess.Popen(
+                ["fenrir-wallpaper", "studio"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+            self.set_status("Wallpaper Studio is opening in your browser. New accepted collection additions sync into rotation automatically.")
+        except OSError as exc:
+            self.set_status(str(exc), True)
 
     def refresh_wallpaper_status(self, *_):
         box = self._wallpaper_status_box
