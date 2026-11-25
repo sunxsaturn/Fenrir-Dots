@@ -708,32 +708,54 @@ def start_wallpaper_discovery(
     elif contact not in (None, ""):
         raise ValueError("A contact field is accepted only for Wikimedia Commons.")
 
-    create_args = [
-        executable, "campaign", "create",
-        "--database", str(CATALOG_DB),
-        "--source", source,
-        "--profile", profile,
-        "--limit", "20",
-        "--max-pages-per-query", "2",
-    ]
-    created = subprocess.run(
-        create_args, capture_output=True, text=True, timeout=20, check=False,
-    )
-    if created.returncode != 0:
-        raise ValueError((created.stderr or created.stdout or "Could not create discovery campaign.")[:300])
-    payload = strict_json(created.stdout.encode("utf-8"))
-    campaign_id = payload.get("campaign_id")
-    if not isinstance(campaign_id, str) or not campaign_id:
-        raise ValueError("Catalog did not return a campaign identifier.")
+    campaign_id = None
+    resumed = False
+    if DISCOVERY_STATE.is_file() and not DISCOVERY_STATE.is_symlink():
+        try:
+            previous = strict_json(DISCOVERY_STATE.read_bytes())
+            if previous.get("source") == source and previous.get("profile") == profile:
+                status_result = subprocess.run(
+                    [
+                        executable, "campaign", "status",
+                        "--database", str(CATALOG_DB), previous.get("campaign_id", ""),
+                    ],
+                    capture_output=True, text=True, timeout=12, check=False,
+                )
+                if status_result.returncode == 0:
+                    previous_status = strict_json(status_result.stdout.encode("utf-8"))
+                    if previous_status.get("status") in {"planned", "running", "paused", "failed"}:
+                        campaign_id = previous.get("campaign_id")
+                        resumed = True
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError, BadJSON):
+            campaign_id = None
 
-    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    atomic_json(DISCOVERY_STATE, {
-        "campaign_id": campaign_id,
-        "source": source,
-        "profile": profile,
-        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-    })
-    log = DISCOVERY_LOG.open("w", encoding="utf-8")
+    if campaign_id is None:
+        create_args = [
+            executable, "campaign", "create",
+            "--database", str(CATALOG_DB),
+            "--source", source,
+            "--profile", profile,
+            "--limit", "20",
+            "--max-pages-per-query", "2",
+        ]
+        created = subprocess.run(
+            create_args, capture_output=True, text=True, timeout=20, check=False,
+        )
+        if created.returncode != 0:
+            raise ValueError((created.stderr or created.stdout or "Could not create discovery campaign.")[:300])
+        payload = strict_json(created.stdout.encode("utf-8"))
+        campaign_id = payload.get("campaign_id")
+        if not isinstance(campaign_id, str) or not campaign_id:
+            raise ValueError("Catalog did not return a campaign identifier.")
+        STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+        atomic_json(DISCOVERY_STATE, {
+            "campaign_id": campaign_id,
+            "source": source,
+            "profile": profile,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+
+    log = DISCOVERY_LOG.open("a" if resumed else "w", encoding="utf-8")
     run_args = [
         executable, "campaign", "run",
         "--database", str(CATALOG_DB),
@@ -759,6 +781,7 @@ def start_wallpaper_discovery(
     log.close()
     return {
         "started": True,
+        "resumed": resumed,
         "pid": DISCOVERY_PROCESS.pid,
         "campaign_id": campaign_id,
         "max_queries_per_slice": 2,
