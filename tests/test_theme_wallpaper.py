@@ -429,3 +429,51 @@ class FenrirWallpaperTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class IntelligentWallpaperRotationTests(unittest.TestCase):
+    def test_monitor_aspect_ratio_prefers_closest_image(self):
+        standard = Path("/wallpapers/standard.jpg")
+        ultrawide = Path("/wallpapers/ultrawide.jpg")
+        images = [standard, ultrawide]
+        dimensions = {
+            str(standard.resolve()): (3840, 2160),
+            str(ultrawide.resolve()): (5120, 1440),
+        }
+        monitor = {"name": "DP-1", "width": 5120, "height": 1440}
+        with patch.object(wallpaper.random, "choices", side_effect=lambda options, weights, k: [options[weights.index(max(weights))]]):
+            selected = wallpaper.choose_monitor_wallpaper(
+                images, monitor, {}, dimensions, [], None, 0
+            )
+        self.assertEqual(selected, ultrawide)
+
+    def test_no_repeat_cooldown_excludes_recent_wallpapers_when_alternatives_exist(self):
+        old = Path("/wallpapers/recent.jpg")
+        fresh = Path("/wallpapers/fresh.jpg")
+        with patch.object(wallpaper.random, "choices", side_effect=lambda options, weights, k: [options[0]]) as choose:
+            selected = wallpaper.choose_monitor_wallpaper(
+                [old, fresh],
+                {"name": "DP-1", "width": 2560, "height": 1440},
+                {},
+                {},
+                [str(old.resolve())],
+                str(old.resolve()),
+                20,
+            )
+        self.assertEqual(selected, fresh)
+        self.assertEqual(choose.call_args.args[0], [fresh])
+
+    def test_history_cooldown_falls_back_without_repeating_current_when_library_is_small(self):
+        old = Path("/wallpapers/old.jpg")
+        current = Path("/wallpapers/current.jpg")
+        with patch.object(wallpaper.random, "choices", side_effect=lambda options, weights, k: [options[0]]):
+            selected = wallpaper.choose_monitor_wallpaper(
+                [old, current],
+                {"name": "DP-1", "width": 2560, "height": 1440},
+                {},
+                {},
+                [str(old.resolve()), str(current.resolve())],
+                str(current.resolve()),
+                20,
+            )
+        self.assertEqual(selected, old)

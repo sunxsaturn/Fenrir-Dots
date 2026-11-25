@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import colorsys
 import json
+import math
 import os
 import random
 import re
@@ -241,32 +242,194 @@ def validated_wallpapers() -> tuple[list[Path], int, int, int, dict[str, int]]:
     return valid, invalid, len(files), palette_excluded, scores
 
 
-def get_monitors() -> list[str]:
-    result = subprocess.run(["hyprctl", "-j", "monitors"], capture_output=True, text=True, check=True, timeout=5)
+def get_monitor_details() -> list[dict]:
+    """Return connected monitor geometry without changing compositor state."""
+    result = subprocess.run(
+        ["hyprctl", "-j", "monitors"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
     data = json.loads(result.stdout)
-    return [str(m["name"]) for m in data if m.get("name")]
+    if not isinstance(data, list):
+        raise RuntimeError("Hyprland returned an invalid monitor list")
+    return [
+        item for item in data
+        if isinstance(item, dict)
+        and re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", str(item.get("name", "")))
+    ]
 
 
-def apply(path: Path) -> None:
-    if not path.is_file() or path.suffix.lower() not in EXTENSIONS:
-        raise RuntimeError("Selected wallpaper is not a supported regular image file")
-    path = path.resolve(strict=True)
-    monitors = []
-    for _ in range(12):
-        try:
-            monitors = get_monitors()
-            if monitors:
-                break
-        except (OSError, subprocess.SubprocessError, json.JSONDecodeError):
-            pass
-        time.sleep(1)
+def get_monitors() -> list[str]:
+    return [str(m["name"]) for m in get_monitor_details()]
+
+
+def _read_json_object(path: Path) -> dict:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, TypeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def _write_private_json(path: Path, value: dict) -> None:
+    root = state_dir()
+    root.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    os.chmod(temporary, 0o600)
+    temporary.replace(path)
+
+
+def wallpaper_dimensions(path: Path) -> tuple[int, int] | None:
+    """Read dimensions from the current validated-image index."""
+    index = _read_json_object(state_dir() / "wallpaper-index.json")
+    entry = index.get("items", {}).get(str(path.resolve()), {})
+    details = entry.get("details") if isinstance(entry, dict) else None
+    if not isinstance(details, dict):
+        return None
+    try:
+        width, height = int(details.get("width", 0)), int(details.get("height", 0))
+    except (TypeError, ValueError):
+        return None
+    return (width, height) if width > 0 and height > 0 else None
+
+
+def choose_monitor_wallpaper(
+    files: list[Path],
+    monitor: dict,
+    scores: dict[str, int],
+    dimensions: dict[str, tuple[int, int] | None],
+    recent_paths: list[str],
+    current_path: str | None,
+    history_depth: int,
+) -> Path:
+    """Choose an aspect-aware wallpaper outside that monitor's no-repeat window."""
+    if not files:
+        raise RuntimeError("No qualifying wallpapers are available for this monitor")
+    recent = set(recent_paths[-history_depth:]) if history_depth > 0 else set()
+    fresh = [path for path in files if str(path.resolve()) not in recent]
+    if not fresh:
+        fresh = [path for path in files if str(path.resolve()) != current_path] or list(files)
+
+    width, height = monitor.get("width"), monitor.get("height")
+    try:
+        target_ratio = float(width) / float(height) if float(width) > 0 and float(height) > 0 else None
+    except (TypeError, ValueError, ZeroDivisionError):
+        target_ratio = None
+
+    weights = []
+    for path in fresh:
+        key = str(path.resolve())
+        preference = max(1, int(scores.get(key, 0)))
+        size = dimensions.get(key)
+        ratio_fit = 1.0
+        if target_ratio and size and size[0] > 0 and size[1] > 0:
+            source_ratio = size[0] / size[1]
+            # Smoothly prefer closer aspect ratios without excluding good images.
+            ratio_fit = 1.0 / (1.0 + 4.0 * abs(math.log(source_ratio / target_ratio)))
+        weights.append(max(0.05, preference * ratio_fit))
+    return random.choices(fresh, weights=weights, k=1)[0]
+
+
+def next_wallpapers() -> dict[str, Path]:
+    """Build a per-output rotation plan, retaining the legacy shared mode."""
+    try:
+        monitors = get_monitor_details()
+    except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Could not inspect connected monitors: {exc}") from exc
     if not monitors:
-        raise RuntimeError("Hyprland monitors unavailable; run this inside a Hyprland session")
+        raise RuntimeError("No connected Hyprland monitors were found")
+
+    wallpaper_settings = settings().get("wallpaper", {})
+    if wallpaper_settings.get("monitor_mode", "shared") != "independent":
+        selected = next_wallpaper()
+        return {str(item["name"]): selected for item in monitors}
+
+    files, invalid, total, _palette_excluded, scores = validated_wallpapers()
+    if not files:
+        min_width, min_height, _minimum_count = resolution_policy()
+        raise RuntimeError(
+            f"No qualifying wallpapers found (checked {total} files; {invalid} rejected). "
+            f"Add readable landscape images at least {min_width}x{min_height}."
+        )
+    state = _read_json_object(state_dir() / "wallpaper.json")
+    history = _read_json_object(state_dir() / "wallpaper-history.json")
+    histories = history.get("monitors", {}) if isinstance(history.get("monitors"), dict) else {}
+    current = state.get("monitor_paths", {}) if isinstance(state.get("monitor_paths"), dict) else {}
+    depth = wallpaper_settings.get("history_depth", 20)
+    if isinstance(depth, bool) or not isinstance(depth, int):
+        depth = 20
+    depth = max(0, min(100, depth))
+    dimensions = {str(path.resolve()): wallpaper_dimensions(path) for path in files}
+    # Prefer the focused display first, then avoid duplicating choices on other outputs.
+    ordered = sorted(monitors, key=lambda item: not bool(item.get("focused", False)))
+    selected: dict[str, Path] = {}
+    reserved: list[str] = []
+    for monitor in ordered:
+        name = str(monitor["name"])
+        recent = list(histories.get(name, [])) if isinstance(histories.get(name, []), list) else []
+        recent.extend(reserved)
+        choice = choose_monitor_wallpaper(
+            files,
+            monitor,
+            scores,
+            dimensions,
+            recent,
+            current.get(name),
+            depth,
+        )
+        selected[name] = choice
+        reserved.append(str(choice.resolve()))
+    return selected
+
+
+
+
+def apply(path: Path | dict[str, Path]) -> None:
+    """Apply one shared path or an explicit independently selected path per output."""
+    details = get_monitor_details()
+    if not details:
+        last_error = None
+        for _ in range(12):
+            try:
+                details = get_monitor_details()
+                if details:
+                    break
+            except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+                last_error = exc
+            time.sleep(1)
+        if not details:
+            raise RuntimeError(f"Hyprland monitors unavailable; run this inside a Hyprland session ({last_error})")
+
+    if isinstance(path, dict):
+        requested = {str(name): Path(value) for name, value in path.items()}
+        connected = {str(item["name"]) for item in details}
+        unknown = set(requested) - connected
+        if unknown:
+            raise RuntimeError("Wallpaper plan references disconnected monitor(s): " + ", ".join(sorted(unknown)))
+        if not requested:
+            raise RuntimeError("Wallpaper plan contains no monitor selections")
+        monitor_paths = requested
+    else:
+        monitor_paths = {str(item["name"]): Path(path) for item in details}
+
+    resolved_paths: dict[str, Path] = {}
+    for monitor_name, selected in monitor_paths.items():
+        if not selected.is_file() or selected.is_symlink() or selected.suffix.lower() not in EXTENSIONS:
+            raise RuntimeError(f"Selected wallpaper for {monitor_name} is not a supported regular image file")
+        resolved_paths[monitor_name] = selected.resolve(strict=True)
+
     last_error = None
     for _ in range(12):
         try:
-            for monitor in monitors:
-                subprocess.run(["hyprctl", "hyprpaper", "wallpaper", f"{monitor},{path},cover"], check=True, timeout=20)
+            for monitor_name, selected in resolved_paths.items():
+                subprocess.run(
+                    ["hyprctl", "hyprpaper", "wallpaper", f"{monitor_name},{selected},cover"],
+                    check=True,
+                    timeout=20,
+                )
             last_error = None
             break
         except (OSError, subprocess.SubprocessError) as exc:
@@ -274,18 +437,41 @@ def apply(path: Path) -> None:
             time.sleep(1)
     if last_error is not None:
         raise RuntimeError(f"hyprpaper IPC did not become available: {last_error}")
-    root = state_dir()
-    root.mkdir(parents=True, exist_ok=True)
-    state_file = root / "wallpaper.json"
-    temporary = state_file.with_name(state_file.name + f".tmp-{os.getpid()}")
-    temporary.write_text(json.dumps({"path": str(path), "changed_at": int(time.time())}, indent=2) + "\n", encoding="utf-8")
-    os.chmod(temporary, 0o600)
-    temporary.replace(state_file)
+
+    ordered = sorted(details, key=lambda item: not bool(item.get("focused", False)))
+    primary_name = str(ordered[0]["name"])
+    primary_path = resolved_paths.get(primary_name) or next(iter(resolved_paths.values()))
+    state_payload = {
+        "path": str(primary_path),
+        "monitor_paths": {name: str(value) for name, value in resolved_paths.items()},
+        "mode": "independent" if len(set(map(str, resolved_paths.values()))) > 1 else "shared",
+        "changed_at": int(time.time()),
+    }
+    _write_private_json(state_dir() / "wallpaper.json", state_payload)
+
+    history_path = state_dir() / "wallpaper-history.json"
+    history = _read_json_object(history_path)
+    histories = history.get("monitors", {}) if isinstance(history.get("monitors"), dict) else {}
+    depth = settings().get("wallpaper", {}).get("history_depth", 20)
+    if isinstance(depth, bool) or not isinstance(depth, int):
+        depth = 20
+    depth = max(0, min(100, depth))
+    updated: dict[str, list[str]] = {}
+    for name, selected in resolved_paths.items():
+        prior = histories.get(name, [])
+        prior = [item for item in prior if isinstance(item, str)] if isinstance(prior, list) else []
+        value = str(selected)
+        if not prior or prior[-1] != value:
+            prior.append(value)
+        updated[name] = prior[-depth:] if depth else []
+    _write_private_json(history_path, {"version": 1, "monitors": updated})
+
     theme = shutil.which("fenrir-theme")
     dynamic_colors = settings().get("theme", {}).get("dynamic_colors", True)
     if theme and dynamic_colors:
-        subprocess.run([theme, "--wallpaper", str(path)], check=False, timeout=30, stdout=subprocess.DEVNULL)
-    print(path)
+        subprocess.run([theme, "--wallpaper", str(primary_path)], check=False, timeout=30, stdout=subprocess.DEVNULL)
+    for name, selected in resolved_paths.items():
+        print(f"{name}: {selected}")
 
 
 def next_wallpaper() -> Path:
@@ -321,6 +507,8 @@ def report_status(as_json: bool = False) -> int:
         "preferred_colors": sorted(PREFERRED_FAMILIES),
         "allowed_accents": sorted(ALLOWED_ACCENTS),
         "interval_minutes": int(settings().get("wallpaper", {}).get("interval_minutes", 15)),
+        "monitor_mode": settings().get("wallpaper", {}).get("monitor_mode", "shared"),
+        "history_depth": settings().get("wallpaper", {}).get("history_depth", 20),
         "requirement_met": len(valid) >= minimum_count,
     }
     if as_json:
@@ -331,7 +519,8 @@ def report_status(as_json: bool = False) -> int:
         print("Palette: exclude yellow/orange/brown; prefer red/purple/blue/white/black; green allowed")
         print(f"Directory: {result['directory']}")
         dynamic = bool(settings().get("theme", {}).get("dynamic_colors", True))
-        print(f"Rotation: every {result['interval_minutes']} minutes; dynamic accent extraction {'enabled' if dynamic else 'disabled'}")
+        print(f"Rotation: every {result['interval_minutes']} minutes; monitor mode: {result['monitor_mode']}; no-repeat depth: {result['history_depth']}")
+        print(f"Dynamic accent extraction {'enabled' if dynamic else 'disabled'}")
         print("5000-image collection target: " + ("MET" if result["requirement_met"] else "NOT MET"))
         print("Rotation uses all currently qualifying images; the 5000-image target is not a prerequisite.")
     return 0
@@ -508,7 +697,7 @@ def main() -> int:
                     print(f"Wallpaper index refresh could not complete: {index.get('error', 'unknown error')}")
             return 0
         if args.action == "next":
-            apply(next_wallpaper())
+            apply(next_wallpapers())
             return 0
         if args.action == "status":
             return report_status(args.json)
@@ -517,7 +706,7 @@ def main() -> int:
             raise RuntimeError("Rotation interval must be between 1 and 1440 minutes")
         while True:
             try:
-                apply(next_wallpaper())
+                apply(next_wallpapers())
                 time.sleep(interval * 60)
             except Exception as exc:
                 print(f"fenrir-wallpaper: {exc}", file=sys.stderr)
