@@ -427,10 +427,6 @@ class FenrirWallpaperTests(unittest.TestCase):
             self.assertTrue(any(call.args[0][:3] == ["hyprctl", "hyprpaper", "wallpaper"] for call in run.call_args_list))
 
 
-if __name__ == "__main__":
-    unittest.main()
-
-
 class IntelligentWallpaperRotationTests(unittest.TestCase):
     def test_monitor_aspect_ratio_prefers_closest_image(self):
         standard = Path("/wallpapers/standard.jpg")
@@ -477,3 +473,7 @@ class IntelligentWallpaperRotationTests(unittest.TestCase):
                 20,
             )
         self.assertEqual(selected, old)
+
+
+if __name__ == "__main__":
+    unittest.main()

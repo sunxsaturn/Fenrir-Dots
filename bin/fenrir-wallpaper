@@ -277,14 +277,15 @@ def _write_private_json(path: Path, value: dict) -> None:
     root = state_dir()
     root.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + f".tmp-{os.getpid()}")
-    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\\n", encoding="utf-8")
+    temporary.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     os.chmod(temporary, 0o600)
     temporary.replace(path)
 
 
-def wallpaper_dimensions(path: Path) -> tuple[int, int] | None:
+def wallpaper_dimensions(path: Path, index: dict | None = None) -> tuple[int, int] | None:
     """Read dimensions from the current validated-image index."""
-    index = _read_json_object(state_dir() / "wallpaper-index.json")
+    if index is None:
+        index = _read_json_object(state_dir() / "wallpaper-index.json")
     entry = index.get("items", {}).get(str(path.resolve()), {})
     details = entry.get("details") if isinstance(entry, dict) else None
     if not isinstance(details, dict):
@@ -309,7 +310,10 @@ def choose_monitor_wallpaper(
     if not files:
         raise RuntimeError("No qualifying wallpapers are available for this monitor")
     recent = set(recent_paths[-history_depth:]) if history_depth > 0 else set()
-    fresh = [path for path in files if str(path.resolve()) not in recent]
+    fresh = [
+        path for path in files
+        if str(path.resolve()) not in recent and str(path.resolve()) != current_path
+    ]
     if not fresh:
         fresh = [path for path in files if str(path.resolve()) != current_path] or list(files)
 
@@ -362,7 +366,11 @@ def next_wallpapers() -> dict[str, Path]:
     if isinstance(depth, bool) or not isinstance(depth, int):
         depth = 20
     depth = max(0, min(100, depth))
-    dimensions = {str(path.resolve()): wallpaper_dimensions(path) for path in files}
+    image_index = _read_json_object(state_dir() / "wallpaper-index.json")
+    dimensions = {
+        str(path.resolve()): wallpaper_dimensions(path, image_index)
+        for path in files
+    }
     # Prefer the focused display first, then avoid duplicating choices on other outputs.
     ordered = sorted(monitors, key=lambda item: not bool(item.get("focused", False)))
     selected: dict[str, Path] = {}
@@ -389,19 +397,18 @@ def next_wallpapers() -> dict[str, Path]:
 
 def apply(path: Path | dict[str, Path]) -> None:
     """Apply one shared path or an explicit independently selected path per output."""
-    details = get_monitor_details()
+    details = []
+    last_error = None
+    for _ in range(12):
+        try:
+            details = get_monitor_details()
+            if details:
+                break
+        except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
+            last_error = exc
+        time.sleep(1)
     if not details:
-        last_error = None
-        for _ in range(12):
-            try:
-                details = get_monitor_details()
-                if details:
-                    break
-            except (OSError, subprocess.SubprocessError, json.JSONDecodeError) as exc:
-                last_error = exc
-            time.sleep(1)
-        if not details:
-            raise RuntimeError(f"Hyprland monitors unavailable; run this inside a Hyprland session ({last_error})")
+        raise RuntimeError(f"Hyprland monitors unavailable; run this inside a Hyprland session ({last_error})")
 
     if isinstance(path, dict):
         requested = {str(name): Path(value) for name, value in path.items()}
