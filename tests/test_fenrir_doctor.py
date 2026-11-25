@@ -286,5 +286,73 @@ class DoctorUtilityTests(unittest.TestCase):
             self.assertFalse((current / "hyprland.lua").exists())
 
 
+class WallpaperDiscoveryTests(unittest.TestCase):
+    def test_wallhaven_starts_bounded_metadata_only_campaign_without_contact(self):
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = root / "state"
+            state.mkdir()
+            catalog_db = root / "catalog.sqlite3"
+            catalog_db.write_bytes(b"test database placeholder")
+            discovery_state = state / "wallpaper-discovery.json"
+            discovery_log = state / "wallpaper-discovery.log"
+            process = Mock(pid=4321)
+            created = SimpleNamespace(
+                returncode=0,
+                stdout='{"campaign_id":"wallhaven-campaign-test"}',
+                stderr="",
+            )
+
+            with (
+                patch.object(server, "STATE", state),
+                patch.object(server, "CATALOG_DB", catalog_db),
+                patch.object(server, "DISCOVERY_STATE", discovery_state),
+                patch.object(server, "DISCOVERY_LOG", discovery_log),
+                patch.object(server, "DISCOVERY_PROCESS", None),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "run", return_value=created),
+                patch.object(server.subprocess, "Popen", return_value=process) as popen,
+            ):
+                result = server.start_wallpaper_discovery(
+                    "wallhaven",
+                    "fenrir-nordic-fantasy-v1",
+                )
+
+            command = popen.call_args.args[0]
+            self.assertTrue(result["started"])
+            self.assertEqual(result["campaign_id"], "wallhaven-campaign-test")
+            self.assertEqual(result["downloads_started"], False)
+            self.assertEqual(result["rights_decisions_created"], 0)
+            self.assertEqual(result["acceptances_created"], 0)
+            self.assertEqual(command[command.index("--source") + 1], "wallhaven")
+            self.assertEqual(command[command.index("--max-queries") + 1], "2")
+            self.assertEqual(command[command.index("--max-pages-per-query") + 1], "2")
+            self.assertNotIn("--contact", command)
+
+    def test_wallhaven_rejects_commons_contact_parameter(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            catalog_db = root / "catalog.sqlite3"
+            catalog_db.write_bytes(b"test database placeholder")
+            with (
+                patch.object(server, "CATALOG_DB", catalog_db),
+                patch.object(server, "DISCOVERY_PROCESS", None),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+            ):
+                with self.assertRaisesRegex(ValueError, "only for Wikimedia Commons"):
+                    server.start_wallpaper_discovery(
+                        "wallhaven",
+                        "fenrir-nordic-fantasy-v1",
+                        contact="unexpected@example.org",
+                    )
+
+
 if __name__ == "__main__":
     unittest.main()
