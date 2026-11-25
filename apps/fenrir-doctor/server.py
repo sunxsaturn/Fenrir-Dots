@@ -43,6 +43,34 @@ LOCAL_RELEASES = {
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
 RELEASE_CACHE_TTL = 900.0
+INSTALLED_VERSIONS_FILE = Path.home() / ".local/share/fenrir/installed-versions.json"
+
+
+def installed_release_versions() -> dict[str, str]:
+    """Read exact local component versions written by the Arch installer.
+
+    Missing manifests preserve compatibility with existing installations.
+    Malformed, oversized, symlinked or unknown entries are ignored; this file
+    is local status metadata and never supplies executable paths or URLs.
+    """
+    versions = dict(LOCAL_RELEASES)
+    path = INSTALLED_VERSIONS_FILE
+    try:
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 4096:
+            return versions
+        raw = strict_json(path.read_bytes())
+        if not isinstance(raw, dict):
+            return versions
+        for name, version in raw.items():
+            if (
+                name in versions
+                and isinstance(version, str)
+                and re.fullmatch(r"\d+\.\d+\.\d+", version)
+            ):
+                versions[name] = version
+    except (OSError, ValueError, TypeError, BadJSON):
+        return versions
+    return versions
 WALLPAPER_SYNC: subprocess.Popen | None = None
 WALLPAPER_SYNC_LOG = STATE / "wallpaper-sync.log"
 DISCOVERY_PROCESS: subprocess.Popen | None = None
@@ -412,7 +440,7 @@ def _version_key(value: str) -> tuple[int, ...]:
 
 
 def _latest_private_catalog_release() -> dict[str, Any]:
-    current = LOCAL_RELEASES["Fenrir-Wallpaper-Catalog"]
+    current = installed_release_versions()["Fenrir-Wallpaper-Catalog"]
     if not (CATALOG_SOURCE / ".git").is_dir():
         return {
             "repository": "Fenrir-Wallpaper-Catalog",
@@ -491,7 +519,7 @@ def _latest_release(repository: str) -> dict[str, Any]:
             payload = strict_json(response.read(256 * 1024))
         tag = payload.get("tag_name", "")
         latest = tag[1:] if isinstance(tag, str) and tag.startswith("v") else str(tag)
-        current = LOCAL_RELEASES[repository]
+        current = installed_release_versions()[repository]
         return {
             "repository": repository,
             "current": current,
