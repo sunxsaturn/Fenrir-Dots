@@ -106,6 +106,24 @@
             <div id="wallpaper-summary" class="loading-card">Connecting to the local wallpaper catalog…</div>
             <div class="system-grid" id="wallpaper-metrics"></div>
             <section class="settings-section doctor-section">
+              <div class="eyebrow">DISCOVER CANDIDATES</div><h3>Search wallpaper sources</h3>
+              <label for="wallpaper-source">Metadata source</label>
+              <select id="wallpaper-source"><option value="openverse">Openverse</option><option value="wikimedia_commons">Wikimedia Commons</option></select>
+              <label for="wallpaper-profile">Search profile</label>
+              <select id="wallpaper-profile">
+                <option value="fenrir-nordic-fantasy-v1">Nordic mythology and dark fantasy</option>
+                <option value="fenrir-cinematic-nature-v1">Cinematic nature and landscapes</option>
+              </select>
+              <div id="commons-contact-group" class="hidden">
+                <label for="wallpaper-contact">Commons contact email or project URL</label>
+                <input id="wallpaper-contact" maxlength="300" placeholder="https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog">
+              </div>
+              <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Searches run in small resumable slices and preserve progress.</p>
+              <div class="settings-actions"><span id="wallpaper-discovery-status" role="status"></span><button class="primary-button" id="wallpaper-discover-button" type="button">Start / resume discovery</button></div>
+              <div id="wallpaper-discovery-summary" class="doctor-list"><p class="loading-card">No discovery campaign started yet.</p></div>
+              <pre id="wallpaper-discovery-log" class="doctor-log" aria-live="polite"></pre>
+            </section>
+            <section class="settings-section doctor-section">
               <div class="eyebrow">LOCAL COLLECTION</div><h3>Collection target</h3>
               <label for="wallpaper-target">Choose a target size</label>
               <select id="wallpaper-target"><option value="5000">5,000 images</option><option value="10000">10,000 images</option><option value="20000">20,000 images</option></select>
