@@ -716,8 +716,6 @@ def start_wallpaper_discovery(
         "--limit", "20",
         "--max-pages-per-query", "2",
     ]
-    if source == "wikimedia_commons":
-        create_args.extend(["--contact", contact.strip()])
     created = subprocess.run(
         create_args, capture_output=True, text=True, timeout=20, check=False,
     )
