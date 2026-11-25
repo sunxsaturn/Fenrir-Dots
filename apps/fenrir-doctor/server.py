@@ -28,6 +28,7 @@ SETTINGS_FILE = CONFIG_HOME / "fenrir-doctor" / "settings.json"
 LEGACY_STATE = STATE_HOME / "sun-ai"
 LEGACY_DB = LEGACY_STATE / "history.sqlite3"
 LEGACY_SETTINGS = CONFIG_HOME / "sun-ai" / "settings.json"
+CATALOG_SOURCE = Path(os.environ.get("FENRIR_CATALOG_SOURCE", Path.home() / ".local/share/fenrir/catalog-source"))
 CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/share/fenrir/catalog"))
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
