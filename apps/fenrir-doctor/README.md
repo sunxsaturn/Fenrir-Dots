@@ -10,6 +10,10 @@ Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the
 - Interactive upgrade handoff to a terminal. The user reviews and confirms pacman -Syu; no silent privileged update occurs.
 - Recovery from Fenrir-managed configuration backups. Existing files are snapshotted before restore.
 - Local wallpaper synchronization through fenrir-catalog catalog library sync, with 5,000, 10,000 and 20,000 image targets.
+- Resumable Openverse and Wikimedia Commons metadata campaigns with saved per-query cursors; discovery never downloads or accepts images.
+- Dominant-pixel palette policy: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed.
+- A cached local wallpaper index reports qualifying files, excluded palettes and invalid images using the same quality/color rules as desktop sync.
+- A shared cached palette index: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed.
 
 ## Privacy and safety
 
@@ -17,7 +21,7 @@ The HTTP service binds only to 127.0.0.1:8765. Ollama is restricted to the local
 
 Diagnostics are read-only. Upgrade is launched in a terminal and requires interactive confirmation. Recovery accepts only a Fenrir backup identifier and restores a fixed allowlist of user configuration paths, creating a rollback snapshot first.
 
-Wallpaper sync copies only locally quarantined, SHA-256-verified, human-accepted and human-rights-approved assets with an approved license-policy decision. It does not contact providers, publish files or grant redistribution rights. Creator, source and license attribution is retained in fenrir-catalog-attribution.json.
+Wallpaper sync copies only locally quarantined, SHA-256-verified, human-accepted and human-rights-approved assets with an approved license-policy decision and a dominant palette that passes Fenrir’s color policy. It does not contact providers, publish files or grant redistribution rights. Creator, source and license attribution is retained in fenrir-catalog-attribution.json.
 
 ## Run
 

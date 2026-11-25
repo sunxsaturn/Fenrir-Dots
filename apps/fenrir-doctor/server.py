@@ -10,7 +10,6 @@ import sqlite3
 import subprocess
 import time
 import tomllib
-import warnings
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,7 +17,6 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from PIL import Image, UnidentifiedImageError
 from typing import Any
 from urllib.parse import urlparse
 
@@ -36,17 +34,20 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.6.0"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.5.0",
-    "Fenrir-Dots": "0.5.0",
-    "Fenrir-Wallpaper-Catalog": "0.19.0",
+    "Fenrir-Dots": "0.6.0",
+    "Fenrir-Wallpaper-Catalog": "0.20.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
 RELEASE_CACHE_TTL = 900.0
 WALLPAPER_SYNC: subprocess.Popen | None = None
 WALLPAPER_SYNC_LOG = STATE / "wallpaper-sync.log"
+DISCOVERY_PROCESS: subprocess.Popen | None = None
+DISCOVERY_LOG = STATE / "wallpaper-discovery.log"
+DISCOVERY_STATE = STATE / "wallpaper-discovery.json"
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 MAX_BODY = 256 * 1024
 MAX_OLLAMA_RESPONSE = 8 * 1024 * 1024
@@ -645,24 +646,150 @@ def wallpaper_sync_destination_allowed(path: Path) -> bool:
     return resolved == pictures or pictures in resolved.parents
 
 
-def count_qualifying_wallpapers(directory: Path) -> int:
-    if not directory.is_dir() or directory.is_symlink():
-        return 0
-    count = 0
-    for path in directory.iterdir():
-        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
-            continue
+def wallpaper_campaign_snapshot() -> dict[str, Any]:
+    global DISCOVERY_PROCESS
+    process_running = DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None
+    if DISCOVERY_PROCESS is not None and not process_running:
+        DISCOVERY_PROCESS = None
+    log_tail = ""
+    try:
+        if DISCOVERY_LOG.is_file() and not DISCOVERY_LOG.is_symlink():
+            log_tail = DISCOVERY_LOG.read_text(encoding="utf-8", errors="replace")[-5000:]
+    except OSError:
+        pass
+
+    if not DISCOVERY_STATE.is_file() or DISCOVERY_STATE.is_symlink():
+        return {"campaign": None, "process_running": process_running, "log": log_tail}
+    try:
+        state = strict_json(DISCOVERY_STATE.read_bytes())
+        if not isinstance(state, dict) or not isinstance(state.get("campaign_id"), str):
+            raise ValueError("Saved campaign state is invalid.")
+        executable = shutil.which("fenrir-catalog")
+        if not executable or not CATALOG_DB.is_file():
+            return {"campaign": None, "process_running": process_running, "log": log_tail, "error": "Catalog CLI or database is unavailable."}
+        result = subprocess.run(
+            [executable, "campaign", "status", "--database", str(CATALOG_DB), state["campaign_id"]],
+            capture_output=True, text=True, timeout=12, check=False,
+        )
+        if result.returncode != 0:
+            return {"campaign": None, "process_running": process_running, "log": log_tail, "error": (result.stderr or result.stdout or "Campaign status unavailable.")[:220]}
+        payload = strict_json(result.stdout.encode("utf-8"))
+        return {
+            "campaign": payload,
+            "process_running": process_running,
+            "source": state.get("source"),
+            "profile": state.get("profile"),
+            "log": log_tail,
+        }
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError, BadJSON) as exc:
+        return {"campaign": None, "process_running": process_running, "log": log_tail, "error": str(exc)[:220]}
+
+
+def start_wallpaper_discovery(
+    source: Any,
+    profile: Any,
+    contact: Any = None,
+) -> dict[str, Any]:
+    global DISCOVERY_PROCESS
+    allowed_sources = {"openverse", "wikimedia_commons"}
+    allowed_profiles = {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}
+    if source not in allowed_sources:
+        raise ValueError("Choose Openverse or Wikimedia Commons.")
+    if profile not in allowed_profiles:
+        raise ValueError("Choose a supported Fenrir wallpaper discovery profile.")
+    if DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None:
+        raise ValueError("A wallpaper discovery campaign is already running.")
+    executable = shutil.which("fenrir-catalog")
+    if not executable or not CATALOG_DB.is_file():
+        raise ValueError("The local Fenrir Wallpaper Catalog is not ready.")
+    if source == "wikimedia_commons":
+        if not isinstance(contact, str) or not contact.strip() or len(contact) > 300:
+            raise ValueError("Commons discovery requires a contact email or HTTPS project URL.")
+    elif contact not in (None, ""):
+        raise ValueError("A contact field is accepted only for Wikimedia Commons.")
+
+    campaign_id = None
+    resumed = False
+    if DISCOVERY_STATE.is_file() and not DISCOVERY_STATE.is_symlink():
         try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(path) as image:
-                    width, height = image.size
-                    image.verify()
-            if width >= 2560 and height >= 1440 and width > height:
-                count += 1
-        except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning):
-            continue
-    return count
+            previous = strict_json(DISCOVERY_STATE.read_bytes())
+            if previous.get("source") == source and previous.get("profile") == profile:
+                status_result = subprocess.run(
+                    [
+                        executable, "campaign", "status",
+                        "--database", str(CATALOG_DB), previous.get("campaign_id", ""),
+                    ],
+                    capture_output=True, text=True, timeout=12, check=False,
+                )
+                if status_result.returncode == 0:
+                    previous_status = strict_json(status_result.stdout.encode("utf-8"))
+                    if previous_status.get("status") in {"planned", "running", "paused", "failed"}:
+                        campaign_id = previous.get("campaign_id")
+                        resumed = True
+        except (OSError, ValueError, TypeError, subprocess.SubprocessError, BadJSON):
+            campaign_id = None
+
+    if campaign_id is None:
+        create_args = [
+            executable, "campaign", "create",
+            "--database", str(CATALOG_DB),
+            "--source", source,
+            "--profile", profile,
+            "--limit", "20",
+            "--max-pages-per-query", "2",
+        ]
+        created = subprocess.run(
+            create_args, capture_output=True, text=True, timeout=20, check=False,
+        )
+        if created.returncode != 0:
+            raise ValueError((created.stderr or created.stdout or "Could not create discovery campaign.")[:300])
+        payload = strict_json(created.stdout.encode("utf-8"))
+        campaign_id = payload.get("campaign_id")
+        if not isinstance(campaign_id, str) or not campaign_id:
+            raise ValueError("Catalog did not return a campaign identifier.")
+        STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+        atomic_json(DISCOVERY_STATE, {
+            "campaign_id": campaign_id,
+            "source": source,
+            "profile": profile,
+            "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+
+    log = DISCOVERY_LOG.open("a" if resumed else "w", encoding="utf-8")
+    run_args = [
+        executable, "campaign", "run",
+        "--database", str(CATALOG_DB),
+        "--source", source,
+        "--profile", profile,
+        "--campaign-id", campaign_id,
+        "--max-queries", "2",
+        "--max-pages-per-query", "2",
+        "--limit", "20",
+    ]
+    if source == "wikimedia_commons":
+        run_args.extend(["--contact", contact.strip()])
+    try:
+        DISCOVERY_PROCESS = subprocess.Popen(
+            run_args,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        log.close()
+        raise
+    log.close()
+    return {
+        "started": True,
+        "resumed": resumed,
+        "pid": DISCOVERY_PROCESS.pid,
+        "campaign_id": campaign_id,
+        "max_queries_per_slice": 2,
+        "max_pages_per_query": 2,
+        "downloads_started": False,
+        "rights_decisions_created": 0,
+        "acceptances_created": 0,
+    }
 
 
 def wallpaper_snapshot() -> dict[str, Any]:
@@ -688,7 +815,40 @@ def wallpaper_snapshot() -> dict[str, Any]:
     sync_destination_allowed = wallpaper_sync_destination_allowed(wallpaper_directory)
     if not sync_destination_allowed:
         detail = "The selected wallpaper folder is outside ~/Pictures; choose a folder under Pictures before catalog sync."
-    local_count = count_qualifying_wallpapers(wallpaper_directory)
+    local_count = 0
+    palette_metrics = {
+        "excluded_palette_color": 0,
+        "below_resolution_or_wrong_orientation": 0,
+        "invalid_files": 0,
+        "checked_files": 0,
+        "cached_files": 0,
+        "palette_policy": "fenrir-wallpaper-palette-v1",
+    }
+    if catalog_available and wallpaper_directory.is_dir() and sync_destination_allowed:
+        try:
+            count_result = subprocess.run(
+                [
+                    "fenrir-catalog", "catalog", "library", "count-local",
+                    "--directory", str(wallpaper_directory),
+                    "--cache-file", str(STATE / "wallpaper-palette-index.json"),
+                ],
+                capture_output=True, text=True, timeout=90, check=False,
+            )
+            if count_result.returncode == 0:
+                count_payload = strict_json(count_result.stdout.encode("utf-8"))
+                local_count = int(count_payload.get("count", 0))
+                palette_metrics = {
+                    "excluded_palette_color": int(count_payload.get("excluded_palette_color", 0)),
+                    "below_resolution_or_wrong_orientation": int(count_payload.get("below_resolution_or_wrong_orientation", 0)),
+                    "invalid_files": int(count_payload.get("invalid_files", 0)),
+                    "checked_files": int(count_payload.get("checked_files", 0)),
+                    "cached_files": int(count_payload.get("cached_files", 0)),
+                    "palette_policy": count_payload.get("palette_policy", "fenrir-wallpaper-palette-v1"),
+                }
+            else:
+                detail = (count_result.stderr or count_result.stdout or "Wallpaper palette index failed.")[:220]
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+            detail = "The Catalog palette index could not be loaded."
     sync = {"running": False, "log": ""}
     global WALLPAPER_SYNC
     if WALLPAPER_SYNC is not None:
@@ -707,6 +867,8 @@ def wallpaper_snapshot() -> dict[str, Any]:
         "destination": str(wallpaper_directory),
         "accepted_asset_count": accepted,
         "local_image_count": local_count,
+        "palette_metrics": palette_metrics,
+        "discovery": wallpaper_campaign_snapshot(),
         "target_count": target_count,
         "remaining": max(0, target_count - local_count),
         "target_reached": local_count >= target_count,
@@ -772,7 +934,7 @@ def launch_upgrade_terminal() -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FenrirDoctor/0.5"
+    server_version = "FenrirDoctor/0.6"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Never log prompt, response, or request-body content.
@@ -860,6 +1022,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, backups_snapshot())
         if path == "/api/doctor/wallpapers":
             return self.send_bytes(200, wallpaper_snapshot())
+        if path == "/api/doctor/wallpapers/campaign":
+            return self.send_bytes(200, wallpaper_campaign_snapshot())
         if path == "/api/weather":
             try:
                 return self.send_bytes(200, weather_snapshot())
@@ -940,6 +1104,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_bytes(202, start_wallpaper_sync(obj.get("target_count", 5000)))
             except (OSError, ValueError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:260]})
+
+        if path == "/api/doctor/wallpapers/discover":
+            try:
+                return self.send_bytes(202, start_wallpaper_discovery(
+                    obj.get("source"), obj.get("profile"), obj.get("contact")
+                ))
+            except (OSError, ValueError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
 
         if path != "/api/chat":
             return self.send_bytes(404, {"error": "not found"})

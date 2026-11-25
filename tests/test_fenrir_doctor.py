@@ -88,17 +88,17 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.19.0\ndef456\trefs/tags/v0.20.0\n",
+                stdout="abc123\trefs/tags/v0.20.0\ndef456\trefs/tags/v0.21.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.20.0")
+            self.assertEqual(result["latest"], "0.21.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.20.0", result["url"])
+            self.assertIn("/releases/tag/v0.21.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
@@ -123,16 +123,37 @@ class DoctorUtilityTests(unittest.TestCase):
         self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
         self.assertEqual(server._version_key("v1.2.3"), (1, 2, 3))
 
-    def test_doctor_counts_only_valid_landscape_1440p_wallpapers(self):
+    def test_wallpaper_snapshot_uses_catalog_palette_index(self):
         import tempfile
-        from PIL import Image
+        from unittest.mock import patch
         with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)
-            Image.new("RGB", (3840, 2160)).save(folder / "valid.jpg")
-            Image.new("RGB", (1920, 1080)).save(folder / "small.jpg")
-            Image.new("RGB", (2160, 3840)).save(folder / "portrait.jpg")
-            (folder / "broken.png").write_bytes(b"broken")
-            self.assertEqual(server.count_qualifying_wallpapers(folder), 1)
+            root = Path(temporary)
+            wallpaper_dir = root / "Pictures" / "Wallpapers"
+            wallpaper_dir.mkdir(parents=True)
+            database = root / "catalog.sqlite3"
+            database.write_bytes(b"catalog")
+            quarantine = root / "quarantine"
+            quarantine.mkdir()
+            facets = server.subprocess.CompletedProcess(
+                args=["fenrir-catalog"], returncode=0,
+                stdout='{"accepted_asset_count":12}', stderr="",
+            )
+            palette = server.subprocess.CompletedProcess(
+                args=["fenrir-catalog"], returncode=0,
+                stdout='{"count":7,"excluded_palette_color":3,"below_resolution_or_wrong_orientation":2,"invalid_files":1,"checked_files":4,"cached_files":9,"palette_policy":"fenrir-wallpaper-palette-v1"}',
+                stderr="",
+            )
+            with patch.object(server, "CATALOG_DB", database), \
+                 patch.object(server, "QUARANTINE_ROOT", quarantine), \
+                 patch.object(server.shutil, "which", return_value="/home/test/.local/bin/fenrir-catalog"), \
+                 patch.object(server, "current_wallpaper_directory", return_value=wallpaper_dir), \
+                 patch.object(server, "wallpaper_sync_destination_allowed", return_value=True), \
+                 patch.object(server.subprocess, "run", side_effect=[facets, palette]):
+                result = server.wallpaper_snapshot()
+            self.assertEqual(result["local_image_count"], 7)
+            self.assertEqual(result["accepted_asset_count"], 12)
+            self.assertEqual(result["palette_metrics"]["excluded_palette_color"], 3)
+            self.assertEqual(result["palette_metrics"]["cached_files"], 9)
 
     def test_wallpaper_sync_is_confined_to_pictures_directory(self):
         import tempfile
