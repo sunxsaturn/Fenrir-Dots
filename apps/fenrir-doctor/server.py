@@ -38,8 +38,8 @@ WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.hom
 APP_VERSION = "0.9.0"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.7.6",
-    "Fenrir-Dots": "0.9.0",
-    "Fenrir-Wallpaper-Catalog": "0.24.0",
+    "Fenrir-Dots": "0.10.0",
+    "Fenrir-Wallpaper-Catalog": "0.25.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
