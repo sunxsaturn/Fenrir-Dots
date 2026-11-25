@@ -10,7 +10,6 @@ import sqlite3
 import subprocess
 import time
 import tomllib
-import warnings
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,7 +17,6 @@ from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-from PIL import Image, UnidentifiedImageError
 from typing import Any
 from urllib.parse import urlparse
 
@@ -645,26 +643,6 @@ def wallpaper_sync_destination_allowed(path: Path) -> bool:
     return resolved == pictures or pictures in resolved.parents
 
 
-def count_qualifying_wallpapers(directory: Path) -> int:
-    if not directory.is_dir() or directory.is_symlink():
-        return 0
-    count = 0
-    for path in directory.iterdir():
-        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
-            continue
-        try:
-            with warnings.catch_warnings():
-                warnings.simplefilter("error", Image.DecompressionBombWarning)
-                with Image.open(path) as image:
-                    width, height = image.size
-                    image.verify()
-            if width >= 2560 and height >= 1440 and width > height:
-                count += 1
-        except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning):
-            continue
-    return count
-
-
 def wallpaper_snapshot() -> dict[str, Any]:
     target_count = read_settings().get("wallpaper_target_count", 5000)
     accepted = None
@@ -688,7 +666,40 @@ def wallpaper_snapshot() -> dict[str, Any]:
     sync_destination_allowed = wallpaper_sync_destination_allowed(wallpaper_directory)
     if not sync_destination_allowed:
         detail = "The selected wallpaper folder is outside ~/Pictures; choose a folder under Pictures before catalog sync."
-    local_count = count_qualifying_wallpapers(wallpaper_directory)
+    local_count = 0
+    palette_metrics = {
+        "excluded_palette_color": 0,
+        "below_resolution_or_wrong_orientation": 0,
+        "invalid_files": 0,
+        "checked_files": 0,
+        "cached_files": 0,
+        "palette_policy": "fenrir-wallpaper-palette-v1",
+    }
+    if catalog_available and wallpaper_directory.is_dir() and sync_destination_allowed:
+        try:
+            count_result = subprocess.run(
+                [
+                    "fenrir-catalog", "catalog", "library", "count-local",
+                    "--directory", str(wallpaper_directory),
+                    "--cache-file", str(STATE / "wallpaper-palette-index.json"),
+                ],
+                capture_output=True, text=True, timeout=90, check=False,
+            )
+            if count_result.returncode == 0:
+                count_payload = strict_json(count_result.stdout.encode("utf-8"))
+                local_count = int(count_payload.get("count", 0))
+                palette_metrics = {
+                    "excluded_palette_color": int(count_payload.get("excluded_palette_color", 0)),
+                    "below_resolution_or_wrong_orientation": int(count_payload.get("below_resolution_or_wrong_orientation", 0)),
+                    "invalid_files": int(count_payload.get("invalid_files", 0)),
+                    "checked_files": int(count_payload.get("checked_files", 0)),
+                    "cached_files": int(count_payload.get("cached_files", 0)),
+                    "palette_policy": count_payload.get("palette_policy", "fenrir-wallpaper-palette-v1"),
+                }
+            else:
+                detail = (count_result.stderr or count_result.stdout or "Wallpaper palette index failed.")[:220]
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+            detail = "The Catalog palette index could not be loaded."
     sync = {"running": False, "log": ""}
     global WALLPAPER_SYNC
     if WALLPAPER_SYNC is not None:
@@ -707,6 +718,7 @@ def wallpaper_snapshot() -> dict[str, Any]:
         "destination": str(wallpaper_directory),
         "accepted_asset_count": accepted,
         "local_image_count": local_count,
+        "palette_metrics": palette_metrics,
         "target_count": target_count,
         "remaining": max(0, target_count - local_count),
         "target_reached": local_count >= target_count,
