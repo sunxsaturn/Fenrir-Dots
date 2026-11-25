@@ -270,7 +270,7 @@ class FenrirWallpaperTests(unittest.TestCase):
                 f'[wallpaper]\ndirectory = "{root}"\nminimum_count = 5000\ninterval_minutes = 15\n', encoding="utf-8"
             )
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
-                valid, _, _ = wallpaper.validated_wallpapers()
+                valid, _, _, _, _ = wallpaper.validated_wallpapers()
                 self.assertEqual(len(valid), 1)
                 self.assertEqual(wallpaper.resolution_policy()[2], 5000)
 
