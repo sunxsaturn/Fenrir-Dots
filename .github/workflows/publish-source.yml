@@ -2,12 +2,11 @@ name: Expand Fenrir source archive
 on:
   push:
     branches: [main]
-    paths: ["fenrir-source.tar.gz"]
+    paths: ["fenrir-dots-source-0.3.0.tar.gz"]
 permissions:
   contents: write
 jobs:
   expand:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -17,7 +16,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          archive="fenrir-source.tar.gz"
+          archive="fenrir-dots-source-0.3.0.tar.gz"
           if [[ ! -f "$archive" ]]; then exit 0; fi
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
