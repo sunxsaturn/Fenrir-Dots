@@ -9,6 +9,7 @@ import shutil
 import sqlite3
 import subprocess
 import time
+import tomllib
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -550,6 +551,26 @@ def restore_backup(backup_id: str) -> dict[str, Any]:
     return {"restored": restored, "rollback_backup": rollback_root.name if rollback_root.exists() else None}
 
 
+def current_wallpaper_directory() -> Path:
+    configured = os.environ.get("FENRIR_WALLPAPER_DIRECTORY")
+    if not configured:
+        settings_path = Path.home() / ".config/fenrir/settings.toml"
+        try:
+            with settings_path.open("rb") as stream:
+                settings = tomllib.load(stream)
+            configured = settings.get("wallpaper", {}).get("directory")
+        except (OSError, tomllib.TOMLDecodeError, AttributeError):
+            configured = None
+    path = Path(configured).expanduser() if isinstance(configured, str) and configured.strip() else Path.home() / "Pictures/Wallpapers"
+    return path.resolve()
+
+
+def wallpaper_sync_destination_allowed(path: Path) -> bool:
+    pictures = (Path.home() / "Pictures").resolve()
+    resolved = path.resolve()
+    return resolved == pictures or pictures in resolved.parents
+
+
 def wallpaper_snapshot() -> dict[str, Any]:
     target_count = read_settings().get("wallpaper_target_count", 5000)
     accepted = None
@@ -569,11 +590,14 @@ def wallpaper_snapshot() -> dict[str, Any]:
                 detail = (result.stderr or result.stdout or "Catalog query failed.")[:220]
         except (OSError, subprocess.SubprocessError, ValueError, TypeError):
             detail = "Catalog status could not be loaded."
-    WALLPAPER_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    wallpaper_directory = current_wallpaper_directory()
+    sync_destination_allowed = wallpaper_sync_destination_allowed(wallpaper_directory)
+    if not sync_destination_allowed:
+        detail = "The selected wallpaper folder is outside ~/Pictures; choose a folder under Pictures before catalog sync."
     local_count = sum(
-        1 for path in WALLPAPER_DIRECTORY.iterdir()
+        1 for path in wallpaper_directory.iterdir()
         if path.is_file() and not path.is_symlink() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
-    )
+    ) if wallpaper_directory.is_dir() else 0
     sync = {"running": False, "log": ""}
     global WALLPAPER_SYNC
     if WALLPAPER_SYNC is not None:
@@ -588,6 +612,8 @@ def wallpaper_snapshot() -> dict[str, Any]:
             WALLPAPER_SYNC = None
     return {
         "catalog_available": catalog_available,
+        "sync_destination_allowed": sync_destination_allowed,
+        "destination": str(wallpaper_directory),
         "accepted_asset_count": accepted,
         "local_image_count": local_count,
         "target_count": target_count,
@@ -607,7 +633,10 @@ def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
     executable = shutil.which("fenrir-catalog")
     if not executable or not CATALOG_DB.is_file() or not QUARANTINE_ROOT.is_dir():
         raise ValueError("The local Fenrir Wallpaper Catalog is not ready.")
-    WALLPAPER_DIRECTORY.mkdir(parents=True, exist_ok=True)
+    wallpaper_directory = current_wallpaper_directory()
+    if not wallpaper_sync_destination_allowed(wallpaper_directory):
+        raise ValueError("Catalog sync is sandboxed to folders under ~/Pictures. Change the wallpaper directory in Fenrir Settings first.")
+    wallpaper_directory.mkdir(parents=True, exist_ok=True)
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     log = WALLPAPER_SYNC_LOG.open("w", encoding="utf-8")
     try:
@@ -616,7 +645,7 @@ def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
                 executable, "catalog", "library", "sync",
                 "--database", str(CATALOG_DB),
                 "--quarantine-root", str(QUARANTINE_ROOT),
-                "--destination", str(WALLPAPER_DIRECTORY),
+                "--destination", str(wallpaper_directory),
                 "--target-count", str(target_count),
             ],
             stdout=log,
