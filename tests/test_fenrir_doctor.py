@@ -123,6 +123,17 @@ class DoctorUtilityTests(unittest.TestCase):
         self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
         self.assertEqual(server._version_key("v1.2.3"), (1, 2, 3))
 
+    def test_doctor_counts_only_valid_landscape_1440p_wallpapers(self):
+        import tempfile
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temporary:
+            folder = Path(temporary)
+            Image.new("RGB", (3840, 2160)).save(folder / "valid.jpg")
+            Image.new("RGB", (1920, 1080)).save(folder / "small.jpg")
+            Image.new("RGB", (2160, 3840)).save(folder / "portrait.jpg")
+            (folder / "broken.png").write_bytes(b"broken")
+            self.assertEqual(server.count_qualifying_wallpapers(folder), 1)
+
     def test_wallpaper_sync_is_confined_to_pictures_directory(self):
         import tempfile
         from unittest.mock import patch
