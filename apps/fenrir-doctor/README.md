@@ -12,9 +12,15 @@ Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the
 - Recovery from Fenrir-managed configuration backups. Existing files are snapshotted before restore.
 - Local wallpaper synchronization through fenrir-catalog catalog library sync, with 5,000, 10,000 and 20,000 image targets.
 - Full-profile resumable Openverse, Wikimedia Commons and SFW Wallhaven metadata campaigns (up to 100 queries and two pages per query per user-started run), with saved per-query cursors. Discovery never downloads or accepts images.
+- Optional automatic discovery scheduler controlled in Wallpaper Intelligence: one sequential bounded slice per selected interval (1, 3, 6, 12 or 24 hours; six hours by default), persisted across restarts, with a 30-second scheduler poll and stop-on-error behavior.
+- Completed campaigns automatically pause with a human-review status. Rights decisions, acquisition authorization, quarantine/downloads, explicit acceptance and desktop sync remain independent, user-controlled workflows. Pausing scheduling does not interrupt a provider slice already in progress.
 - Dominant-pixel palette policy: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed.
 - A cached local wallpaper index reports qualifying files, excluded palettes and invalid images using the same quality/color rules as desktop sync.
 - A shared cached palette index: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed.
+
+## Automatic discovery policy
+
+The scheduler is disabled by default and must be explicitly enabled in Wallpaper Intelligence. Each slice is bounded to two queries and two pages per query, runs sequentially, and uses the Catalog's persisted cursor state. The default interval is six hours; one hour is the minimum supported interval. Commons scheduling requires a contact identifier. Scheduler state is stored with restrictive local file permissions and malformed or symlinked state fails closed. A campaign completion stops scheduling and requests human review; provider/catalog errors also stop scheduling rather than retrying aggressively.
 
 ## Privacy and safety
 

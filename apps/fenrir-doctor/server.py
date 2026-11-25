@@ -8,6 +8,7 @@ import re
 import shutil
 import sqlite3
 import subprocess
+import threading
 import time
 import tomllib
 import urllib.error
@@ -34,10 +35,10 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.7.3"
+APP_VERSION = "0.8.0"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.7.1",
-    "Fenrir-Dots": "0.7.3",
+    "Fenrir-Arch": "0.7.2",
+    "Fenrir-Dots": "0.8.0",
     "Fenrir-Wallpaper-Catalog": "0.21.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
@@ -76,6 +77,13 @@ WALLPAPER_SYNC_LOG = STATE / "wallpaper-sync.log"
 DISCOVERY_PROCESS: subprocess.Popen | None = None
 DISCOVERY_LOG = STATE / "wallpaper-discovery.log"
 DISCOVERY_STATE = STATE / "wallpaper-discovery.json"
+DISCOVERY_SCHEDULE_FILE = STATE / "wallpaper-discovery-schedule.json"
+DISCOVERY_LOCK = threading.RLock()
+DISCOVERY_SCHEDULER_STOP = threading.Event()
+DISCOVERY_SCHEDULER_THREAD: threading.Thread | None = None
+DISCOVERY_SCHEDULE_INTERVALS = {60, 180, 360, 720, 1440}
+DISCOVERY_SLICE_MAX_QUERIES = 2
+DISCOVERY_SLICE_MAX_PAGES = 2
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
 MAX_BODY = 256 * 1024
 MAX_OLLAMA_RESPONSE = 8 * 1024 * 1024
@@ -686,21 +694,33 @@ def wallpaper_campaign_snapshot() -> dict[str, Any]:
     except OSError:
         pass
 
+    schedule = wallpaper_discovery_schedule_snapshot()
     if not DISCOVERY_STATE.is_file() or DISCOVERY_STATE.is_symlink():
-        return {"campaign": None, "process_running": process_running, "log": log_tail}
+        return {
+            "campaign": None, "process_running": process_running,
+            "log": log_tail, "scheduler": schedule,
+        }
     try:
         state = strict_json(DISCOVERY_STATE.read_bytes())
         if not isinstance(state, dict) or not isinstance(state.get("campaign_id"), str):
             raise ValueError("Saved campaign state is invalid.")
         executable = shutil.which("fenrir-catalog")
         if not executable or not CATALOG_DB.is_file():
-            return {"campaign": None, "process_running": process_running, "log": log_tail, "error": "Catalog CLI or database is unavailable."}
+            return {
+                "campaign": None, "process_running": process_running,
+                "log": log_tail, "scheduler": schedule,
+                "error": "Catalog CLI or database is unavailable.",
+            }
         result = subprocess.run(
             [executable, "campaign", "status", "--database", str(CATALOG_DB), state["campaign_id"]],
             capture_output=True, text=True, timeout=12, check=False,
         )
         if result.returncode != 0:
-            return {"campaign": None, "process_running": process_running, "log": log_tail, "error": (result.stderr or result.stdout or "Campaign status unavailable.")[:220]}
+            return {
+                "campaign": None, "process_running": process_running,
+                "log": log_tail, "scheduler": schedule,
+                "error": (result.stderr or result.stdout or "Campaign status unavailable.")[:220],
+            }
         payload = strict_json(result.stdout.encode("utf-8"))
         return {
             "campaign": payload,
@@ -708,19 +728,27 @@ def wallpaper_campaign_snapshot() -> dict[str, Any]:
             "source": state.get("source"),
             "profile": state.get("profile"),
             "log": log_tail,
+            "scheduler": schedule,
         }
     except (OSError, ValueError, TypeError, subprocess.SubprocessError, BadJSON) as exc:
-        return {"campaign": None, "process_running": process_running, "log": log_tail, "error": str(exc)[:220]}
+        return {
+            "campaign": None, "process_running": process_running,
+            "log": log_tail, "scheduler": schedule, "error": str(exc)[:220],
+        }
 
 
-def start_wallpaper_discovery(
+def _start_wallpaper_discovery_unlocked(
     source: Any,
     profile: Any,
     contact: Any = None,
+    *,
+    max_queries: int = 100,
 ) -> dict[str, Any]:
     global DISCOVERY_PROCESS
     allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
     allowed_profiles = {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}
+    if isinstance(max_queries, bool) or not isinstance(max_queries, int) or not 1 <= max_queries <= 100:
+        raise ValueError("Discovery max_queries must be between 1 and 100.")
     if source not in allowed_sources:
         raise ValueError("Choose Openverse, Wikimedia Commons or Wallhaven.")
     if profile not in allowed_profiles:
@@ -764,7 +792,7 @@ def start_wallpaper_discovery(
             "--source", source,
             "--profile", profile,
             "--limit", "20",
-            "--max-pages-per-query", "2",
+            "--max-pages-per-query", str(DISCOVERY_SLICE_MAX_PAGES),
         ]
         created = subprocess.run(
             create_args, capture_output=True, text=True, timeout=20, check=False,
@@ -790,8 +818,8 @@ def start_wallpaper_discovery(
         "--source", source,
         "--profile", profile,
         "--campaign-id", campaign_id,
-        "--max-queries", "100",
-        "--max-pages-per-query", "2",
+        "--max-queries", str(max_queries),
+        "--max-pages-per-query", str(DISCOVERY_SLICE_MAX_PAGES),
         "--limit", "20",
     ]
     if source == "wikimedia_commons":
@@ -812,12 +840,343 @@ def start_wallpaper_discovery(
         "resumed": resumed,
         "pid": DISCOVERY_PROCESS.pid,
         "campaign_id": campaign_id,
-        "max_queries_per_run": 100,
-        "max_pages_per_query": 2,
+        "max_queries_per_run": max_queries,
+        "max_pages_per_query": DISCOVERY_SLICE_MAX_PAGES,
         "downloads_started": False,
         "rights_decisions_created": 0,
         "acceptances_created": 0,
     }
+
+
+
+def _default_wallpaper_discovery_schedule() -> dict[str, Any]:
+    return {
+        "schema_version": 1,
+        "enabled": False,
+        "source": "openverse",
+        "profile": "fenrir-nordic-fantasy-v1",
+        "contact": None,
+        "interval_minutes": 360,
+        "next_run_at": None,
+        "last_run_at": None,
+        "last_status": "disabled",
+        "pause_reason": None,
+        "last_error": None,
+        "campaign_id": None,
+    }
+
+
+def read_wallpaper_discovery_schedule() -> dict[str, Any]:
+    """Read bounded scheduler state; malformed or symlinked state fails closed."""
+    defaults = _default_wallpaper_discovery_schedule()
+    path = DISCOVERY_SCHEDULE_FILE
+    try:
+        if path.is_symlink():
+            raise ValueError("Scheduler state must not be a symbolic link.")
+        if not path.exists():
+            return defaults
+        if not path.is_file() or path.stat().st_size > 8192:
+            raise ValueError("Scheduler state is not a regular file or exceeds 8 KiB.")
+        raw = strict_json(path.read_bytes())
+        if not isinstance(raw, dict) or raw.get("schema_version") != 1:
+            raise ValueError("Unsupported scheduler state format.")
+        if not isinstance(raw.get("enabled"), bool):
+            raise ValueError("Scheduler enabled state is invalid.")
+        if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven"}:
+            raise ValueError("Scheduler source is invalid.")
+        if raw.get("profile") not in {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}:
+            raise ValueError("Scheduler profile is invalid.")
+        interval = raw.get("interval_minutes")
+        if isinstance(interval, bool) or not isinstance(interval, int) or interval not in DISCOVERY_SCHEDULE_INTERVALS:
+            raise ValueError("Scheduler interval is invalid.")
+        contact = raw.get("contact")
+        if contact is not None and (not isinstance(contact, str) or len(contact) > 300):
+            raise ValueError("Scheduler contact value is invalid.")
+        for key in ("next_run_at", "last_run_at"):
+            value = raw.get(key)
+            if value is not None and (
+                isinstance(value, bool) or not isinstance(value, int)
+                or value < 1 or value > 4102444800
+            ):
+                raise ValueError(f"Scheduler {key} value is invalid.")
+        for key in ("pause_reason", "last_error"):
+            value = raw.get(key)
+            if value is not None and (not isinstance(value, str) or len(value) > 1000):
+                raise ValueError(f"Scheduler {key} value is invalid.")
+        campaign_id = raw.get("campaign_id")
+        if campaign_id is not None and (
+            not isinstance(campaign_id, str) or not campaign_id or len(campaign_id) > 128
+        ):
+            raise ValueError("Scheduler campaign identifier is invalid.")
+        status = raw.get("last_status", "disabled")
+        if status not in {
+            "disabled", "running", "scheduled", "paused", "needs_review",
+            "paused_error", "invalid",
+        }:
+            raise ValueError("Scheduler status is invalid.")
+        return {
+            **defaults,
+            "enabled": raw["enabled"],
+            "source": raw["source"],
+            "profile": raw["profile"],
+            "contact": contact,
+            "interval_minutes": interval,
+            "next_run_at": raw.get("next_run_at"),
+            "last_run_at": raw.get("last_run_at"),
+            "last_status": status,
+            "pause_reason": raw.get("pause_reason"),
+            "last_error": raw.get("last_error"),
+            "campaign_id": campaign_id,
+        }
+    except (OSError, ValueError, TypeError, BadJSON) as exc:
+        defaults["last_status"] = "invalid"
+        defaults["pause_reason"] = str(exc)[:500]
+        return defaults
+
+
+def _write_wallpaper_discovery_schedule(schedule: dict[str, Any]) -> None:
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    atomic_json(DISCOVERY_SCHEDULE_FILE, schedule)
+
+
+def wallpaper_discovery_schedule_snapshot() -> dict[str, Any]:
+    schedule = read_wallpaper_discovery_schedule()
+    return {
+        "enabled": schedule["enabled"],
+        "source": schedule["source"],
+        "profile": schedule["profile"],
+        "interval_minutes": schedule["interval_minutes"],
+        "next_run_at": schedule["next_run_at"],
+        "last_run_at": schedule["last_run_at"],
+        "last_status": schedule["last_status"],
+        "pause_reason": schedule["pause_reason"],
+        "last_error": schedule["last_error"],
+        "campaign_id": schedule["campaign_id"],
+        "contact_configured": bool(schedule["contact"]),
+    }
+
+
+def start_wallpaper_discovery(
+    source: Any,
+    profile: Any,
+    contact: Any = None,
+) -> dict[str, Any]:
+    with DISCOVERY_LOCK:
+        schedule = read_wallpaper_discovery_schedule()
+        if schedule["enabled"] and (
+            source != schedule["source"] or profile != schedule["profile"]
+        ):
+            raise ValueError(
+                "Pause automatic discovery before changing its source or profile."
+            )
+        return _start_wallpaper_discovery_unlocked(source, profile, contact)
+
+
+def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str, Any]:
+    """Enable or pause sequential bounded metadata discovery from Fenrir Doctor."""
+    if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
+        raise ValueError("Automatic discovery enabled state must be true or false.")
+    with DISCOVERY_LOCK:
+        schedule = read_wallpaper_discovery_schedule()
+        if payload["enabled"] is False:
+            was_enabled = schedule["enabled"]
+            schedule["enabled"] = False
+            schedule["next_run_at"] = None
+            schedule["last_status"] = "paused" if was_enabled else "disabled"
+            schedule["pause_reason"] = (
+                "Automatic scheduling paused. Any currently running metadata slice will finish."
+                if was_enabled else None
+            )
+            schedule["last_error"] = None
+            _write_wallpaper_discovery_schedule(schedule)
+            return wallpaper_discovery_schedule_snapshot()
+
+        source = payload.get("source", schedule["source"])
+        profile = payload.get("profile", schedule["profile"])
+        contact = payload.get("contact")
+        interval = payload.get("interval_minutes", schedule["interval_minutes"])
+        if source not in {"openverse", "wikimedia_commons", "wallhaven"}:
+            raise ValueError("Choose Openverse, Wikimedia Commons or Wallhaven.")
+        if profile not in {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}:
+            raise ValueError("Choose a supported Fenrir wallpaper discovery profile.")
+        if isinstance(interval, bool) or not isinstance(interval, int) or interval not in DISCOVERY_SCHEDULE_INTERVALS:
+            raise ValueError("Choose an automatic discovery interval of 1, 3, 6, 12 or 24 hours.")
+        if source == "wikimedia_commons":
+            if not isinstance(contact, str) or not contact.strip() or len(contact) > 300:
+                raise ValueError("Commons discovery requires a contact email or HTTPS project URL.")
+            contact = contact.strip()
+        elif contact not in (None, ""):
+            raise ValueError("A contact field is accepted only for Wikimedia Commons.")
+        else:
+            contact = None
+
+        process_running = DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None
+        if process_running:
+            if DISCOVERY_STATE.is_symlink() or not DISCOVERY_STATE.is_file():
+                raise ValueError("The active campaign state cannot be verified; pause it before scheduling.")
+            current = strict_json(DISCOVERY_STATE.read_bytes())
+            if current.get("source") != source or current.get("profile") != profile:
+                raise ValueError("The running campaign uses a different source or profile; let it finish or pause it first.")
+            campaign_id = current.get("campaign_id")
+            if not isinstance(campaign_id, str) or not campaign_id:
+                raise ValueError("The active campaign identifier is invalid.")
+        else:
+            started = _start_wallpaper_discovery_unlocked(
+                source, profile, contact,
+                max_queries=DISCOVERY_SLICE_MAX_QUERIES,
+            )
+            campaign_id = started["campaign_id"]
+
+        now = int(time.time())
+        schedule.update({
+            "schema_version": 1,
+            "enabled": True,
+            "source": source,
+            "profile": profile,
+            "contact": contact,
+            "interval_minutes": interval,
+            "next_run_at": now + interval * 60,
+            "last_run_at": now,
+            "last_status": "running",
+            "pause_reason": None,
+            "last_error": None,
+            "campaign_id": campaign_id,
+        })
+        _write_wallpaper_discovery_schedule(schedule)
+        return wallpaper_discovery_schedule_snapshot()
+
+
+def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]:
+    """Run at most one bounded slice when due; stop for review or any error."""
+    current_time = int(time.time()) if now is None else int(now)
+    with DISCOVERY_LOCK:
+        schedule = read_wallpaper_discovery_schedule()
+        if not schedule["enabled"]:
+            return wallpaper_discovery_schedule_snapshot()
+
+        snapshot = wallpaper_campaign_snapshot()
+        if snapshot.get("process_running"):
+            if schedule["last_status"] != "running":
+                schedule["last_status"] = "running"
+                _write_wallpaper_discovery_schedule(schedule)
+            return wallpaper_discovery_schedule_snapshot()
+
+        campaign = snapshot.get("campaign")
+        if campaign is not None:
+            campaign_status = campaign.get("status")
+            if campaign_status == "completed":
+                schedule.update({
+                    "enabled": False,
+                    "next_run_at": None,
+                    "last_status": "needs_review",
+                    "pause_reason": (
+                        "Metadata discovery is complete. Human rights review and explicit "
+                        "acceptance are required before acquisition or desktop synchronization."
+                    ),
+                })
+                _write_wallpaper_discovery_schedule(schedule)
+                return wallpaper_discovery_schedule_snapshot()
+            if campaign_status == "failed":
+                error = campaign.get("error_summary") or "The Catalog campaign failed."
+                schedule.update({
+                    "enabled": False,
+                    "next_run_at": None,
+                    "last_status": "paused_error",
+                    "pause_reason": "Automatic discovery stopped after a campaign error.",
+                    "last_error": str(error)[:1000],
+                })
+                _write_wallpaper_discovery_schedule(schedule)
+                return wallpaper_discovery_schedule_snapshot()
+            if campaign_status not in {"planned", "running", "paused"}:
+                schedule.update({
+                    "enabled": False,
+                    "next_run_at": None,
+                    "last_status": "paused_error",
+                    "pause_reason": "The campaign state is not resumable; inspect it before continuing.",
+                    "last_error": f"Unexpected campaign status: {campaign_status!r}"[:1000],
+                })
+                _write_wallpaper_discovery_schedule(schedule)
+                return wallpaper_discovery_schedule_snapshot()
+        elif snapshot.get("error"):
+            schedule.update({
+                "enabled": False,
+                "next_run_at": None,
+                "last_status": "paused_error",
+                "pause_reason": "Automatic discovery stopped because the Catalog status is unavailable.",
+                "last_error": str(snapshot["error"])[:1000],
+            })
+            _write_wallpaper_discovery_schedule(schedule)
+            return wallpaper_discovery_schedule_snapshot()
+
+        next_run_at = schedule["next_run_at"]
+        if next_run_at is not None and current_time < next_run_at:
+            if schedule["last_status"] != "scheduled":
+                schedule["last_status"] = "scheduled"
+                _write_wallpaper_discovery_schedule(schedule)
+            return wallpaper_discovery_schedule_snapshot()
+
+        try:
+            result = _start_wallpaper_discovery_unlocked(
+                schedule["source"], schedule["profile"], schedule["contact"],
+                max_queries=DISCOVERY_SLICE_MAX_QUERIES,
+            )
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+            schedule.update({
+                "enabled": False,
+                "next_run_at": None,
+                "last_status": "paused_error",
+                "pause_reason": "Automatic discovery stopped after an execution error.",
+                "last_error": str(exc)[:1000],
+            })
+            _write_wallpaper_discovery_schedule(schedule)
+            return wallpaper_discovery_schedule_snapshot()
+
+        schedule.update({
+            "next_run_at": current_time + schedule["interval_minutes"] * 60,
+            "last_run_at": current_time,
+            "last_status": "running",
+            "pause_reason": None,
+            "last_error": None,
+            "campaign_id": result["campaign_id"],
+        })
+        _write_wallpaper_discovery_schedule(schedule)
+        return wallpaper_discovery_schedule_snapshot()
+
+
+def _wallpaper_discovery_scheduler_loop() -> None:
+    while not DISCOVERY_SCHEDULER_STOP.wait(30):
+        try:
+            wallpaper_discovery_scheduler_tick()
+        except Exception as exc:
+            with DISCOVERY_LOCK:
+                schedule = read_wallpaper_discovery_schedule()
+                if schedule["enabled"]:
+                    schedule.update({
+                        "enabled": False,
+                        "next_run_at": None,
+                        "last_status": "paused_error",
+                        "pause_reason": "The scheduler encountered an unexpected error and stopped safely.",
+                        "last_error": str(exc)[:1000],
+                    })
+                    try:
+                        _write_wallpaper_discovery_schedule(schedule)
+                    except OSError:
+                        pass
+
+
+def start_wallpaper_discovery_scheduler() -> None:
+    global DISCOVERY_SCHEDULER_THREAD
+    if DISCOVERY_SCHEDULER_THREAD is not None and DISCOVERY_SCHEDULER_THREAD.is_alive():
+        return
+    DISCOVERY_SCHEDULER_STOP.clear()
+    DISCOVERY_SCHEDULER_THREAD = threading.Thread(
+        target=_wallpaper_discovery_scheduler_loop,
+        name="fenrir-wallpaper-discovery-scheduler",
+        daemon=True,
+    )
+    DISCOVERY_SCHEDULER_THREAD.start()
+
+
 
 
 def wallpaper_snapshot() -> dict[str, Any]:
@@ -1133,6 +1492,12 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:260]})
 
+        if path == "/api/doctor/wallpapers/schedule":
+            try:
+                return self.send_bytes(202, configure_wallpaper_discovery_schedule(obj))
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
+
         if path == "/api/doctor/wallpapers/discover":
             try:
                 return self.send_bytes(202, start_wallpaper_discovery(
@@ -1195,12 +1560,14 @@ def main() -> int:
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     server = ThreadingHTTPServer((args.host, args.port), Handler)
     server.daemon_threads = True
+    start_wallpaper_discovery_scheduler()
     print(f"Fenrir Doctor listening on http://{args.host}:{args.port} (loopback only)", flush=True)
     try:
         server.serve_forever(poll_interval=0.5)
     except KeyboardInterrupt:
         pass
     finally:
+        DISCOVERY_SCHEDULER_STOP.set()
         server.server_close()
     return 0
 

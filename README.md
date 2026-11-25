@@ -22,6 +22,7 @@ Do not install this repository as a complete system installer. It expects Arch p
 - Validated random wallpaper engine and palette synchronization
 - Manual screen recording toggle (`Super+Shift+F9`), screenshots and clipboard workflow
 - Fenrir Doctor local assistant, system diagnostics, GitHub release tracking, configuration recovery and rights-aware wallpaper intelligence; Ollama models remain opt-in
+  - Supervised wallpaper metadata scheduler: sequential, resumable discovery slices (up to two queries and two pages per scheduled slice), conservative 1–24 hour cooldowns, safe pause on errors, and automatic stop at the human-review boundary; no automated downloads, rights decisions, acceptance or sync.
   - `fenrir-doctor` provides the integrated local UI; `fenrir-upgrade` fetches the latest tagged Fenrir-Arch release and starts the interactive installer.
   - Complete source map: [apps/fenrir-doctor/README.md](apps/fenrir-doctor/README.md) (server, web assets, CLI, user service, desktop entry, icon and tests are all versioned in this repository)
 - Keep-awake session inhibitor; no automatic lock, display-off or idle-suspend timers. Manual lock remains `Super+L`.
