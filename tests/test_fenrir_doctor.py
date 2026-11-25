@@ -287,7 +287,7 @@ class DoctorUtilityTests(unittest.TestCase):
 
 
 class WallpaperDiscoveryTests(unittest.TestCase):
-    def test_wallhaven_starts_bounded_metadata_only_campaign_without_contact(self):
+    def test_wallhaven_starts_full_profile_metadata_only_campaign_without_contact(self):
         import tempfile
         from types import SimpleNamespace
         from unittest.mock import Mock, patch
@@ -326,10 +326,11 @@ class WallpaperDiscoveryTests(unittest.TestCase):
             self.assertTrue(result["started"])
             self.assertEqual(result["campaign_id"], "wallhaven-campaign-test")
             self.assertEqual(result["downloads_started"], False)
+            self.assertEqual(result["max_queries_per_run"], 100)
             self.assertEqual(result["rights_decisions_created"], 0)
             self.assertEqual(result["acceptances_created"], 0)
             self.assertEqual(command[command.index("--source") + 1], "wallhaven")
-            self.assertEqual(command[command.index("--max-queries") + 1], "2")
+            self.assertEqual(command[command.index("--max-queries") + 1], "100")
             self.assertEqual(command[command.index("--max-pages-per-query") + 1], "2")
             self.assertNotIn("--contact", command)
 
