@@ -337,13 +337,124 @@ def report_status(as_json: bool = False) -> int:
     return 0
 
 
+def sync_catalog_collection(
+    collection_id: str,
+    *,
+    target_count: int = 5000,
+    database: Path | None = None,
+    quarantine_root: Path | None = None,
+) -> dict:
+    """Stage one explicitly curated Catalog collection into the rotation directory."""
+    if (
+        not isinstance(collection_id, str)
+        or not collection_id.strip()
+        or len(collection_id.strip()) > 128
+        or any(ord(character) < 32 for character in collection_id)
+    ):
+        raise RuntimeError("A valid --collection-id is required for Catalog synchronization")
+    if target_count not in {5000, 10000, 20000}:
+        raise RuntimeError("Catalog target count must be 5000, 10000 or 20000")
+
+    catalog_cli = shutil.which("fenrir-catalog")
+    if not catalog_cli:
+        fallback = Path.home() / ".local/bin/fenrir-catalog"
+        catalog_cli = str(fallback) if fallback.is_file() else None
+    if not catalog_cli or not Path(catalog_cli).is_file() or not os.access(catalog_cli, os.X_OK):
+        raise RuntimeError("fenrir-catalog is unavailable; install the Fenrir Wallpaper Catalog companion first")
+
+    catalog_home = Path.home() / ".local/share/fenrir/catalog"
+    database_path = (database or catalog_home / "catalog.sqlite3").expanduser()
+    quarantine_path = (quarantine_root or catalog_home / "quarantine").expanduser()
+    destination = wallpaper_dir().expanduser()
+    if not database_path.is_file():
+        raise RuntimeError(f"Catalog database does not exist: {database_path}")
+    if not quarantine_path.is_dir():
+        raise RuntimeError(f"Catalog quarantine directory does not exist: {quarantine_path}")
+
+    command = [
+        catalog_cli,
+        "catalog", "library", "sync",
+        "--database", str(database_path),
+        "--quarantine-root", str(quarantine_path),
+        "--destination", str(destination),
+        "--target-count", str(target_count),
+        "--collection-id", collection_id.strip(),
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=1800,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"Catalog collection synchronization could not complete: {exc}") from exc
+    if completed.returncode != 0:
+        detail = (completed.stderr or completed.stdout or "Catalog command failed").strip()
+        raise RuntimeError(f"Catalog collection synchronization failed: {detail[-2000:]}")
+    try:
+        catalog_result = json.loads(completed.stdout)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("Catalog returned an invalid synchronization report") from exc
+    if not isinstance(catalog_result, dict):
+        raise RuntimeError("Catalog returned an invalid synchronization report")
+
+    index_refresh = {"refreshed": False, "valid_count": None, "rejected_count": None}
+    try:
+        valid, rejected, total, palette_excluded, _scores = validated_wallpapers()
+        index_refresh = {
+            "refreshed": True,
+            "valid_count": len(valid),
+            "rejected_count": rejected,
+            "file_count": total,
+            "palette_excluded_count": palette_excluded,
+        }
+    except Exception as exc:
+        index_refresh["error"] = str(exc)[:500]
+
+    return {
+        "collection_id": collection_id.strip(),
+        "destination": str(destination),
+        "catalog_sync": catalog_result,
+        "wallpaper_index": index_refresh,
+        "rotation_uses_new_images_on_next_cycle": True,
+        "image_files_modified_after_sync": False,
+        "rights_or_acceptance_changed": False,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["next", "watch", "status"], nargs="?", default="next")
+    parser.add_argument("action", choices=["next", "watch", "status", "sync-catalog"], nargs="?", default="next")
     parser.add_argument("--interval", type=int, default=0, help="Rotation interval in minutes (default: 15 or config)")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status")
+    parser.add_argument("--collection-id", help="Existing curated Fenrir Catalog collection to stage into the wallpaper rotation directory.")
+    parser.add_argument("--target-count", type=int, choices=(5000, 10000, 20000), default=5000)
+    parser.add_argument("--database", type=Path, help="Optional explicit Catalog database path.")
+    parser.add_argument("--quarantine-root", type=Path, help="Optional explicit Catalog quarantine path.")
     args = parser.parse_args()
     try:
+        if args.action == "sync-catalog":
+            result = sync_catalog_collection(
+                args.collection_id,
+                target_count=args.target_count,
+                database=args.database,
+                quarantine_root=args.quarantine_root,
+            )
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                sync = result["catalog_sync"]
+                index = result["wallpaper_index"]
+                print(f"Fenrir Catalog collection {result['collection_id']} synchronized.")
+                print(f"New: {sync.get('installed', 0)}; already present: {sync.get('already_present', 0)}; skipped: {sum(sync.get('skipped', {}).values())}.")
+                print(f"Rotation directory: {result['destination']}")
+                if index.get("refreshed"):
+                    print(f"Qualifying wallpapers now indexed: {index['valid_count']:,}. New images enter the next rotation cycle.")
+                else:
+                    print(f"Wallpaper index refresh could not complete: {index.get('error', 'unknown error')}")
+            return 0
         if args.action == "next":
             apply(next_wallpaper())
             return 0
