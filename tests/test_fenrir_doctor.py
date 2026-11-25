@@ -84,6 +84,16 @@ class DoctorUtilityTests(unittest.TestCase):
         self.assertGreater(server._version_key("0.10.0"), server._version_key("0.9.9"))
         self.assertEqual(server._version_key("v1.2.3"), (1, 2, 3))
 
+    def test_wallpaper_sync_is_confined_to_pictures_directory(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            with patch.object(Path, "home", return_value=home):
+                self.assertTrue(server.wallpaper_sync_destination_allowed(home / "Pictures" / "Wallpapers"))
+                self.assertFalse(server.wallpaper_sync_destination_allowed(home / "Downloads" / "Wallpapers"))
+                self.assertFalse(server.wallpaper_sync_destination_allowed(Path("/mnt/storage/wallpapers")))
+
     def test_release_snapshot_caches_github_checks(self):
         from unittest.mock import patch
         original_cache, original_time = server.RELEASE_CACHE, server.RELEASE_CACHE_AT
