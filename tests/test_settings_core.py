@@ -39,6 +39,17 @@ class SettingsCoreTests(unittest.TestCase):
         self.assertIn("interval_minutes = 30", content)
         self.assertTrue(backup and backup.is_file())
 
+    def test_multi_monitor_rotation_settings_are_validated_and_persisted(self):
+        core.set_setting("wallpaper", "monitor_mode", "independent", self.settings)
+        core.set_setting("wallpaper", "history_depth", 30, self.settings)
+        loaded = core.load_settings(self.settings)
+        self.assertEqual(loaded["wallpaper"]["monitor_mode"], "independent")
+        self.assertEqual(loaded["wallpaper"]["history_depth"], 30)
+        with self.assertRaises(ValueError):
+            core.set_setting("wallpaper", "monitor_mode", "span", self.settings)
+        with self.assertRaises(ValueError):
+            core.set_setting("wallpaper", "history_depth", 101, self.settings)
+
     def test_invalid_settings_are_rejected_without_mutating_file(self):
         before = self.settings.read_text(encoding="utf-8")
         with self.assertRaises(ValueError):

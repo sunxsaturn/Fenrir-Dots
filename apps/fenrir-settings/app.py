@@ -210,11 +210,19 @@ class FenrirSettings(Gtk.Application):
         interval = Gtk.SpinButton.new_with_range(1, 1440, 1)
         interval.set_value(int(self.settings["wallpaper"].get("interval_minutes", 15)))
         self.row(box, "Rotation interval (minutes)", interval, "15 minutes is the default; range 1–1440.")
+        monitor_mode = Gtk.ComboBoxText()
+        monitor_mode.append("shared", "Use one wallpaper on every monitor")
+        monitor_mode.append("independent", "Choose a different wallpaper per monitor")
+        monitor_mode.set_active_id(self.settings["wallpaper"].get("monitor_mode", "shared"))
+        self.row(box, "Multi-monitor behavior", monitor_mode, "Independent mode matches image aspect ratio to each display.")
+        history_depth = Gtk.SpinButton.new_with_range(0, 100, 1)
+        history_depth.set_value(int(self.settings["wallpaper"].get("history_depth", 20)))
+        self.row(box, "No-repeat history", history_depth, "Avoid the last N images on each monitor; 0 disables the cooldown.")
         def save_wallpaper(*_):
             folder = Path(directory.get_text()).expanduser()
             if not folder.exists() or not folder.is_dir():
                 self.set_status("Choose an existing readable folder before saving.", True); return
-            if not self.save("wallpaper", {"directory": directory.get_text(), "interval_minutes": interval.get_value_as_int()}): return
+            if not self.save("wallpaper", {"directory": directory.get_text(), "interval_minutes": interval.get_value_as_int(), "monitor_mode": monitor_mode.get_active_id(), "history_depth": history_depth.get_value_as_int()}): return
             self.run_command(["systemctl", "--user", "restart", "fenrir-wallpaper.service"], "Wallpaper folder and interval applied; rotation restarts with the new settings.")
         self.button(page, "Save wallpaper settings", save_wallpaper, True)
         studio_box = self.group(page, "Wallpaper Studio")

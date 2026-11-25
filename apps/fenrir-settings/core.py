@@ -21,7 +21,7 @@ STATE_HOME = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")
 FENRIR_CONFIG = CONFIG_HOME / "fenrir" / "settings.toml"
 
 ALLOWED_SETTINGS: dict[str, set[str]] = {
-    "wallpaper": {"directory", "interval_minutes"},
+    "wallpaper": {"directory", "interval_minutes", "monitor_mode", "history_depth"},
     "theme": {"surface_opacity", "blur_enabled", "dynamic_colors", "preset"},
     "display": {"preferred_width", "preferred_height", "preferred_refresh", "scale"},
     "hyprland": {"layout", "workspace_count", "animations"},
@@ -32,7 +32,7 @@ ALLOWED_SETTINGS: dict[str, set[str]] = {
 }
 
 DEFAULTS: dict[str, dict[str, Any]] = {
-    "wallpaper": {"directory": "~/Pictures/Wallpapers", "interval_minutes": 15},
+    "wallpaper": {"directory": "~/Pictures/Wallpapers", "interval_minutes": 15, "monitor_mode": "shared", "history_depth": 20},
     "theme": {"surface_opacity": 0.60, "blur_enabled": True, "dynamic_colors": True, "preset": "obsidian"},
     "display": {"preferred_width": 2560, "preferred_height": 1440, "preferred_refresh": 155, "scale": 1.0},
     "hyprland": {"layout": "dwindle", "workspace_count": 10, "animations": True},
@@ -136,6 +136,12 @@ def validate_setting(section: str, key: str, value: Any) -> None:
     elif section == "wallpaper" and key == "directory":
         if not isinstance(value, str) or not value.strip() or "\n" in value:
             raise ValueError("Wallpaper directory must be a non-empty path")
+    elif section == "wallpaper" and key == "monitor_mode":
+        if value not in {"shared", "independent"}:
+            raise ValueError("Wallpaper monitor mode must be shared or independent")
+    elif section == "wallpaper" and key == "history_depth":
+        if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 100:
+            raise ValueError("Wallpaper no-repeat history depth must be between 0 and 100")
     elif section == "theme" and key == "surface_opacity":
         if not isinstance(value, (int, float)) or isinstance(value, bool) or not 0.35 <= value <= 0.85:
             raise ValueError("Glass opacity must be between 0.35 and 0.85")
