@@ -37,6 +37,9 @@ LOCAL_RELEASES = {
     "Fenrir-Dots": "0.5.0",
     "Fenrir-Wallpaper-Catalog": "0.19.0",
 }
+RELEASE_CACHE: dict[str, Any] | None = None
+RELEASE_CACHE_AT = 0.0
+RELEASE_CACHE_TTL = 900.0
 WALLPAPER_SYNC: subprocess.Popen | None = None
 WALLPAPER_SYNC_LOG = STATE / "wallpaper-sync.log"
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
@@ -432,12 +435,18 @@ def _latest_release(repository: str) -> dict[str, Any]:
 
 
 def updates_snapshot() -> dict[str, Any]:
+    global RELEASE_CACHE, RELEASE_CACHE_AT
+    now = time.monotonic()
+    if RELEASE_CACHE is not None and now - RELEASE_CACHE_AT < RELEASE_CACHE_TTL:
+        return RELEASE_CACHE
     updates = [_latest_release(name) for name in LOCAL_RELEASES]
-    return {
+    RELEASE_CACHE = {
         "components": updates,
         "update_available": any(item["update_available"] for item in updates),
         "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
     }
+    RELEASE_CACHE_AT = now
+    return RELEASE_CACHE
 
 
 def backups_snapshot() -> dict[str, Any]:
