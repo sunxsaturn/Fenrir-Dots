@@ -398,7 +398,7 @@ def diagnostics_snapshot() -> dict[str, Any]:
 
 
 def _version_key(value: str) -> tuple[int, ...]:
-    parts = re.findall(r"\\d+", value)
+    parts = re.findall(r"\d+", value)
     return tuple(int(part) for part in parts[:4]) if parts else (0,)
 
 
