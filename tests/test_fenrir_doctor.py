@@ -88,17 +88,17 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.20.0\ndef456\trefs/tags/v0.21.0\n",
+                stdout="abc123\trefs/tags/v0.21.0\ndef456\trefs/tags/v0.22.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.21.0")
+            self.assertEqual(result["latest"], "0.22.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.21.0", result["url"])
+            self.assertIn("/releases/tag/v0.22.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
@@ -341,8 +341,10 @@ class WallpaperDiscoveryTests(unittest.TestCase):
             root = Path(temporary)
             catalog_db = root / "catalog.sqlite3"
             catalog_db.write_bytes(b"test database placeholder")
+            discovery_state = root / "wallpaper-discovery.json"
             with (
                 patch.object(server, "CATALOG_DB", catalog_db),
+                patch.object(server, "DISCOVERY_STATE", discovery_state),
                 patch.object(server, "DISCOVERY_PROCESS", None),
                 patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
             ):
