@@ -336,7 +336,9 @@ async function loadWallpapers(showError = false) {
     const metrics = $('wallpaper-metrics'); metrics.replaceChildren();
     [
       ['Accepted catalog records', data.accepted_asset_count === null ? 'Not connected' : Number(data.accepted_asset_count).toLocaleString(), 'Human acceptance is separate from rights approval.'],
-      ['Local image files', Number(data.local_image_count).toLocaleString(), 'Files already in your wallpaper folder.'],
+      ['Qualifying local wallpapers', Number(data.local_image_count).toLocaleString(), 'Landscape, at least 2560×1440, with an allowed dominant palette.'],
+      ['Excluded yellow / orange / brown', Number(data.palette_metrics?.excluded_palette_color || 0).toLocaleString(), 'Excluded by Fenrir’s wallpaper color policy.'],
+      ['Other unusable files', (Number(data.palette_metrics?.below_resolution_or_wrong_orientation || 0) + Number(data.palette_metrics?.invalid_files || 0)).toLocaleString(), 'Undersized, portrait, corrupt or unsupported files.'],
       ['Selected target', Number(data.target_count).toLocaleString(), data.target_reached ? 'Target reached' : Number(data.remaining).toLocaleString() + ' more images to reach target.']
     ].forEach(([title, value, detail]) => {
       const card = document.createElement('article'); card.className = 'metric-card';
