@@ -118,7 +118,7 @@
                 <label for="wallpaper-contact">Commons contact email or project URL</label>
                 <input id="wallpaper-contact" maxlength="300" placeholder="https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog">
               </div>
-              <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Searches run in small resumable slices and preserve progress.</p>
+              <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Each start/resume processes the full built-in profile (up to 100 queries, two pages per query). Provider pacing is respected; interrupted or still-paginated campaigns remain resumable.</p>
               <div class="settings-actions"><span id="wallpaper-discovery-status" role="status"></span><button class="primary-button" id="wallpaper-discover-button" type="button">Start / resume discovery</button></div>
               <div id="wallpaper-discovery-summary" class="doctor-list"><p class="loading-card">No discovery campaign started yet.</p></div>
               <pre id="wallpaper-discovery-log" class="doctor-log" aria-live="polite"></pre>
