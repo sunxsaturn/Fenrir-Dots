@@ -790,7 +790,7 @@ def start_wallpaper_discovery(
         "--source", source,
         "--profile", profile,
         "--campaign-id", campaign_id,
-        "--max-queries", "2",
+        "--max-queries", "100",
         "--max-pages-per-query", "2",
         "--limit", "20",
     ]
@@ -812,7 +812,7 @@ def start_wallpaper_discovery(
         "resumed": resumed,
         "pid": DISCOVERY_PROCESS.pid,
         "campaign_id": campaign_id,
-        "max_queries_per_slice": 2,
+        "max_queries_per_run": 100,
         "max_pages_per_query": 2,
         "downloads_started": False,
         "rights_decisions_created": 0,
