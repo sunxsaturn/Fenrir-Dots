@@ -7,6 +7,7 @@ Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the
 - Local Ollama chat, weather and private conversation history.
 - Diagnostics for Arch Linux, Hyprland, Vulkan, PipeWire, NetworkManager, wallpaper services, local catalog readiness and home-disk capacity.
 - GitHub latest-release checks for Fenrir-Arch, Fenrir-Dots and Fenrir-Wallpaper-Catalog.
+- Reads the local installed-versions.json manifest written by Fenrir-Arch, with safe fallback for older installations.
 - Interactive upgrade handoff to a terminal. The user reviews and confirms pacman -Syu; no silent privileged update occurs.
 - Recovery from Fenrir-managed configuration backups. Existing files are snapshotted before restore.
 - Local wallpaper synchronization through fenrir-catalog catalog library sync, with 5,000, 10,000 and 20,000 image targets.
