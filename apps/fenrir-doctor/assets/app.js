@@ -470,7 +470,9 @@ $('wallpaper-discover-button').addEventListener('click', async () => {
   }
   const confirmText = source === 'openverse'
     ? 'Run a bounded Openverse metadata search? No image files will be downloaded or accepted.'
-    : 'Run a bounded Wikimedia Commons metadata search using this contact identifier? No image files will be downloaded or accepted.';
+    : (source === 'wallhaven'
+      ? 'Run a bounded Wallhaven SFW API metadata search? Wallhaven does not permit scraper or mass-download workflows; no image files will be downloaded or accepted.'
+      : 'Run a bounded Wikimedia Commons metadata search using this contact identifier? No image files will be downloaded or accepted.');
   if (!window.confirm(confirmText)) return;
   $('wallpaper-discover-button').disabled = true;
   $('wallpaper-discovery-status').textContent = 'Creating resumable campaign…';
