@@ -1,0 +1,14 @@
+[Unit]
+Description=Fenrir Doctor local assistant and desktop diagnostics
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python %h/.local/share/fenrir-doctor/server.py --host 127.0.0.1 --port 8765
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%h/.local/state/fenrir-doctor %h/.config/fenrir-doctor %h/Pictures/Wallpapers %h/.local/share/fenrir/arch-source %h/.config/hypr %h/.config/waybar %h/.config/fuzzel %h/.config/kitty %h/.config/mako %h/.config/gtk-3.0 %h/.config/gtk-4.0 %h/.config/fenrir %h/.config/systemd/user %h/.local/share/icons/Fenrir-Obsidian %h/.local/share/fenrir/apps %h/.local/bin
