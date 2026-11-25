@@ -337,6 +337,55 @@ def report_status(as_json: bool = False) -> int:
     return 0
 
 
+def launch_wallpaper_studio() -> None:
+    """Launch the private Catalog Studio using Fenrir's configured paths."""
+    catalog_cli = shutil.which("fenrir-catalog")
+    if catalog_cli is None:
+        fallback = Path.home() / ".local/bin/fenrir-catalog"
+        catalog_cli = str(fallback) if fallback.is_file() else None
+    if (
+        not catalog_cli
+        or not Path(catalog_cli).is_file()
+        or not os.access(catalog_cli, os.X_OK)
+    ):
+        raise RuntimeError(
+            "fenrir-catalog is unavailable; install the Fenrir Wallpaper Catalog companion first"
+        )
+
+    catalog_home = Path.home() / ".local/share/fenrir/catalog"
+    database = catalog_home / "catalog.sqlite3"
+    quarantine = catalog_home / "quarantine"
+    cache_home = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
+    cache_root = cache_home / "fenrir" / "catalog" / "thumbnails"
+    if not database.is_file():
+        raise RuntimeError(f"Catalog database does not exist: {database}")
+    if not quarantine.is_dir() or quarantine.is_symlink():
+        raise RuntimeError(f"Catalog quarantine directory is unavailable or unsafe: {quarantine}")
+    if cache_root.is_symlink():
+        raise RuntimeError(f"Wallpaper Studio cache must not be a symbolic link: {cache_root}")
+    cache_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+
+    command = [
+        catalog_cli,
+        "catalog", "library", "picker",
+        "--database", str(database),
+        "--quarantine-root", str(quarantine),
+        "--cache-root", str(cache_root),
+        "--reviewer", os.environ.get("USER", ""),
+    ]
+    try:
+        subprocess.Popen(
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except OSError as exc:
+        raise RuntimeError(f"Wallpaper Studio could not be launched: {exc}") from exc
+
+
 def sync_catalog_collection(
     collection_id: str,
     *,
@@ -426,7 +475,7 @@ def sync_catalog_collection(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["next", "watch", "status", "sync-catalog"], nargs="?", default="next")
+    parser.add_argument("action", choices=["next", "watch", "status", "sync-catalog", "studio"], nargs="?", default="next")
     parser.add_argument("--interval", type=int, default=0, help="Rotation interval in minutes (default: 15 or config)")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status")
     parser.add_argument("--collection-id", help="Existing curated Fenrir Catalog collection to stage into the wallpaper rotation directory.")
@@ -435,6 +484,9 @@ def main() -> int:
     parser.add_argument("--quarantine-root", type=Path, help="Optional explicit Catalog quarantine path.")
     args = parser.parse_args()
     try:
+        if args.action == "studio":
+            launch_wallpaper_studio()
+            return 0
         if args.action == "sync-catalog":
             result = sync_catalog_collection(
                 args.collection_id,

@@ -362,6 +362,53 @@ class FenrirWallpaperTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "--collection-id"):
             wallpaper.sync_catalog_collection("")
 
+    def test_wallpaper_studio_launches_catalog_picker_with_private_cache_path(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            home = root / "home"
+            catalog = home / ".local" / "share" / "fenrir" / "catalog"
+            catalog.mkdir(parents=True)
+            database = catalog / "catalog.sqlite3"
+            database.write_bytes(b"catalog database")
+            quarantine = catalog / "quarantine"
+            quarantine.mkdir(mode=0o700)
+            quarantine.chmod(0o700)
+            executable = root / "bin" / "fenrir-catalog"
+            executable.parent.mkdir()
+            executable.write_text("#!/bin/sh\\nexit 0\\n", encoding="utf-8")
+            executable.chmod(0o700)
+            cache_home = root / "cache"
+
+            with patch.object(wallpaper.Path, "home", return_value=home), patch.dict(
+                os.environ,
+                {"XDG_CACHE_HOME": str(cache_home), "USER": "Studio curator"},
+                clear=False,
+            ), patch.object(wallpaper.shutil, "which", return_value=str(executable)), patch.object(
+                wallpaper.subprocess, "Popen"
+            ) as popen:
+                wallpaper.launch_wallpaper_studio()
+
+            command = popen.call_args.args[0]
+            self.assertEqual(command[:4], [
+                str(executable), "catalog", "library", "picker"
+            ])
+            self.assertEqual(command[command.index("--database") + 1], str(database))
+            self.assertEqual(command[command.index("--quarantine-root") + 1], str(quarantine))
+            cache_root = Path(command[command.index("--cache-root") + 1])
+            self.assertEqual(cache_root, cache_home / "fenrir" / "catalog" / "thumbnails")
+            self.assertEqual(cache_root.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(command[command.index("--reviewer") + 1], "Studio curator")
+            self.assertTrue(popen.call_args.kwargs["start_new_session"])
+            self.assertTrue(popen.call_args.kwargs["close_fds"])
+
+    def test_wallpaper_cli_studio_action_launches_the_visual_workbench(self):
+        import sys
+        with patch.object(sys, "argv", ["fenrir-wallpaper", "studio"]), patch.object(
+            wallpaper, "launch_wallpaper_studio"
+        ) as launch:
+            self.assertEqual(wallpaper.main(), 0)
+        launch.assert_called_once_with()
+
     def test_apply_records_wallpaper_state_atomically(self):
         with tempfile.TemporaryDirectory() as temp:
             image = Path(temp) / "wallpaper.jpg"

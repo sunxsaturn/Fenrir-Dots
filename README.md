@@ -74,3 +74,10 @@ The wallpaper index is refreshed after a successful sync. The normal Fenrir
 rotation service picks up new qualifying files on its next cycle; the sync
 command does not switch the active wallpaper immediately. The destination
 must be a safe local directory outside `/mnt/storage`.
+
+
+## Fenrir Wallpaper Studio
+
+Launch the loopback-only visual workbench from the terminal with `fenrir-wallpaper studio`, or use **Open Wallpaper Studio** in Fenrir Settings → Wallpapers. The Studio browses accepted Catalog assets, inspects rights/provenance, builds ordered collections, reviews possible duplicates and previews 16:9, 16:10, 21:9 and 32:9 scaling without modifying source images.
+
+Adding an accepted image or batch to a collection automatically stages the updated collection through the existing rights- and integrity-checked Catalog sync and refreshes the wallpaper rotation index. New qualifying images become eligible immediately for the next scheduled or manual wallpaper change; the active wallpaper is not forcibly replaced. Existing collections also have a manual sync control. Removal from a collection does not delete previously staged user-owned wallpaper files.
