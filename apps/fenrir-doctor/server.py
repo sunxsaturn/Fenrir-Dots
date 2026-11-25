@@ -10,12 +10,15 @@ import sqlite3
 import subprocess
 import time
 import tomllib
+import warnings
 import urllib.error
 import urllib.parse
 import urllib.request
 from contextlib import contextmanager
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+
+from PIL import Image, UnidentifiedImageError
 from typing import Any
 from urllib.parse import urlparse
 
@@ -642,6 +645,26 @@ def wallpaper_sync_destination_allowed(path: Path) -> bool:
     return resolved == pictures or pictures in resolved.parents
 
 
+def count_qualifying_wallpapers(directory: Path) -> int:
+    if not directory.is_dir() or directory.is_symlink():
+        return 0
+    count = 0
+    for path in directory.iterdir():
+        if path.is_symlink() or not path.is_file() or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            continue
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", Image.DecompressionBombWarning)
+                with Image.open(path) as image:
+                    width, height = image.size
+                    image.verify()
+            if width >= 2560 and height >= 1440 and width > height:
+                count += 1
+        except (OSError, ValueError, UnidentifiedImageError, Image.DecompressionBombError, Image.DecompressionBombWarning):
+            continue
+    return count
+
+
 def wallpaper_snapshot() -> dict[str, Any]:
     target_count = read_settings().get("wallpaper_target_count", 5000)
     accepted = None
@@ -665,10 +688,7 @@ def wallpaper_snapshot() -> dict[str, Any]:
     sync_destination_allowed = wallpaper_sync_destination_allowed(wallpaper_directory)
     if not sync_destination_allowed:
         detail = "The selected wallpaper folder is outside ~/Pictures; choose a folder under Pictures before catalog sync."
-    local_count = sum(
-        1 for path in wallpaper_directory.iterdir()
-        if path.is_file() and not path.is_symlink() and path.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
-    ) if wallpaper_directory.is_dir() else 0
+    local_count = count_qualifying_wallpapers(wallpaper_directory)
     sync = {"running": False, "log": ""}
     global WALLPAPER_SYNC
     if WALLPAPER_SYNC is not None:
