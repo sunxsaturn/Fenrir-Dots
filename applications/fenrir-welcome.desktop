@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Welcome
+Comment=First-login introduction to the Fenrir desktop
+Exec=fenrir-welcome
+Icon=applications-graphics
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

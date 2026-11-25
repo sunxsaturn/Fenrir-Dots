@@ -6,10 +6,44 @@ minimum_width = 2560
 minimum_height = 1440
 preferred_width = 3840
 preferred_height = 2160
-orientation = "landscape"
-extensions = [".jpg", ".jpeg", ".png", ".webp"]
 
 [theme]
-# Fimbulwinter Glass: keep frosted surfaces at 60% opacity (40% transparent).
 surface_opacity = 0.60
-# Accent colors are extracted from every wallpaper change; the obsidian base stays fixed.
+dynamic_colors = true
+blur_enabled = true
+blur_size = 6
+
+[monitor]
+target_width = 2560
+target_height = 1440
+target_refresh = 155.0
+scale = 1.0
+
+[hyprland]
+gaps_inner = 5
+gaps_outer = 12
+border_size = 2
+layout = "dwindle"
+
+[session]
+allow_screen_off = false
+auto_lock = false
+auto_suspend = false
+
+[keyboard]
+layout = "us"
+variant = "intl"
+
+[waybar]
+enabled = true
+layout = "default"
+
+[gaming]
+mangohud = true
+gamemode_hint = true
+
+[welcome]
+completed = false
+
+[startup]
+applications = []

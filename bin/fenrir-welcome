@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+if /usr/bin/python - <<'PY'
+import os, tomllib
+from pathlib import Path
+path = Path(os.environ.get("XDG_CONFIG_HOME", Path.home()/".config")) / "fenrir" / "settings.toml"
+try:
+    done = tomllib.loads(path.read_text(encoding="utf-8")).get("welcome", {}).get("completed", False)
+except (OSError, tomllib.TOMLDecodeError):
+    done = False
+raise SystemExit(0 if done else 1)
+PY
+then
+  exit 0
+fi
+exec fenrir-settings --welcome

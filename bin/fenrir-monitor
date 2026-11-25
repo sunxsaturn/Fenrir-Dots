@@ -1,0 +1,32 @@
+#!/usr/bin/env python3
+"""Select 2560x1440@155 Hz only when the monitor advertises it."""
+from __future__ import annotations
+import argparse
+import sys
+from pathlib import Path
+APP_DIR = Path.home() / ".local/share/fenrir/apps/fenrir_settings"
+sys.path.insert(0, str(APP_DIR))
+from settings_core import apply_monitor, mode_for_target, query_monitors
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("configure", "list"), nargs="?", default="configure")
+    args = parser.parse_args()
+    monitors = query_monitors()
+    if not monitors:
+        print("fenrir-monitor: no Hyprland monitor information available; retaining preferred mode", file=sys.stderr)
+        return 0 if args.action == "configure" else 1
+    failed = False
+    for item in monitors:
+        mode, exact = mode_for_target(item["modes"], current=item["current"])
+        print(f"{item['name']}: {mode} ({'requested mode supported' if exact else 'safe supported fallback'})")
+        if args.action == "configure":
+            try:
+                apply_monitor(item["name"], mode, 1.0)
+            except Exception as exc:
+                failed = True
+                print(f"fenrir-monitor: {item['name']}: {exc}", file=sys.stderr)
+    return 1 if failed else 0
+
+if __name__ == "__main__":
+    raise SystemExit(main())

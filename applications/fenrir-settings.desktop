@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Settings
+GenericName=Desktop Preferences
+Comment=Customize the Fenrir Hyprland desktop
+Exec=fenrir-settings
+Icon=preferences-system
+Terminal=false
+Categories=Settings;DesktopSettings;
+StartupNotify=true

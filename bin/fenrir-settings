@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+APP="${FENRIR_SETTINGS_APP:-$HOME/.local/share/fenrir/apps/fenrir_settings/main.py}"
+[[ -f "$APP" ]] || { printf 'Fenrir Settings application is missing: %s\n' "$APP" >&2; exit 1; }
+exec /usr/bin/python "$APP" "$@"
