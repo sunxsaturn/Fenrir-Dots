@@ -56,12 +56,7 @@ jobs:
             cd "$tmp/unpack"
             bash -n bin/fenrir-settings bin/fenrir-welcome bin/fenrir-monitor bin/fenrir-record bin/sun-ai
             python -m compileall -q bin apps scripts tests
-            python - <<'PY'
-import json, tomllib
-from pathlib import Path
-tomllib.loads(Path("config/fenrir-settings.toml").read_text(encoding="utf-8"))
-json.loads(Path("config/waybar/config.jsonc").read_text(encoding="utf-8"))
-PY
+            python -c 'import json,tomllib; from pathlib import Path; tomllib.loads(Path("config/fenrir-settings.toml").read_text(encoding="utf-8")); json.loads(Path("config/waybar/config.jsonc").read_text(encoding="utf-8"))'
             python -m unittest discover -s tests -v
           )
           # This runner token cannot push workflow files; publish the CI workflow separately.
