@@ -118,10 +118,23 @@
                 <label for="wallpaper-contact">Commons contact email or project URL</label>
                 <input id="wallpaper-contact" maxlength="300" placeholder="https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog">
               </div>
-              <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Each start/resume processes the full built-in profile (up to 100 queries, two pages per query). Provider pacing is respected; interrupted or still-paginated campaigns remain resumable.</p>
+              <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Each user-started run processes the full built-in profile (up to 100 queries, two pages per query). Provider pacing is respected; interrupted or still-paginated campaigns remain resumable.</p>
               <div class="settings-actions"><span id="wallpaper-discovery-status" role="status"></span><button class="primary-button" id="wallpaper-discover-button" type="button">Start / resume discovery</button></div>
               <div id="wallpaper-discovery-summary" class="doctor-list"><p class="loading-card">No discovery campaign started yet.</p></div>
               <pre id="wallpaper-discovery-log" class="doctor-log" aria-live="polite"></pre>
+            </section>
+            <section class="settings-section doctor-section">
+              <div class="eyebrow">AUTOMATIC DISCOVERY</div><h3>Scheduled metadata campaigns</h3>
+              <label for="wallpaper-schedule-interval">Run another bounded slice every</label>
+              <select id="wallpaper-schedule-interval">
+                <option value="60">1 hour</option>
+                <option value="180">3 hours</option>
+                <option value="360" selected>6 hours</option>
+                <option value="720">12 hours</option>
+                <option value="1440">24 hours</option>
+              </select>
+              <p class="field-help">Fenrir runs one sequential, resumable metadata-only slice per interval. Scheduling pauses automatically when discovery completes or a provider/catalog error occurs. Human rights review, acquisition approval and explicit acceptance remain manual. No wallpaper files are downloaded or synchronized by this scheduler.</p>
+              <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Enable automatic discovery</button></div>
             </section>
             <section class="settings-section doctor-section">
               <div class="eyebrow">LOCAL COLLECTION</div><h3>Collection target</h3>

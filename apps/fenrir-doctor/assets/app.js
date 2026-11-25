@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 5000 };
+const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 5000, wallpaperSchedule: null };
 const views = ['chat', 'weather', 'system', 'doctor', 'wallpapers', 'history', 'settings'];
 
 async function api(path, options = {}) {
@@ -393,6 +393,28 @@ async function loadWallpapers(showError = false) {
     $('wallpaper-discovery-status').textContent = discoveryRunning
       ? 'Searching provider metadata only…'
       : (campaign ? 'Last campaign: ' + campaign.status : 'Ready');
+
+    const schedule = discovery.scheduler || {};
+    state.wallpaperSchedule = schedule;
+    $('wallpaper-schedule-interval').value = String(schedule.interval_minutes || 360);
+    const scheduleButton = $('wallpaper-schedule-button');
+    scheduleButton.textContent = schedule.enabled ? 'Pause automatic discovery' : 'Enable automatic discovery';
+    scheduleButton.disabled = !schedule.enabled && !data.catalog_available;
+    if (schedule.enabled) {
+      const next = schedule.next_run_at
+        ? new Date(schedule.next_run_at * 1000).toLocaleString()
+        : 'when the current slice finishes';
+      $('wallpaper-schedule-status').textContent = 'Automatic discovery active · next slice ' + next;
+    } else if (schedule.last_status === 'needs_review') {
+      $('wallpaper-schedule-status').textContent = 'Paused for human rights review and acceptance.';
+    } else if (schedule.last_status === 'paused_error' || schedule.last_status === 'invalid') {
+      $('wallpaper-schedule-status').textContent = 'Stopped safely: ' + (schedule.last_error || schedule.pause_reason || 'inspect scheduler status');
+    } else if (schedule.last_status === 'paused') {
+      $('wallpaper-schedule-status').textContent = 'Automatic discovery paused. A running slice is allowed to finish.';
+    } else {
+      $('wallpaper-schedule-status').textContent = 'Automatic discovery is off.';
+    }
+    if (schedule.enabled) $('wallpaper-discover-button').disabled = true;
     updateCommonsContactVisibility();
   } catch (error) { if (showError) toast(error.message); }
 }
@@ -488,6 +510,60 @@ $('wallpaper-discover-button').addEventListener('click', async () => {
   } catch (error) {
     $('wallpaper-discovery-status').textContent = error.message;
     $('wallpaper-discover-button').disabled = false;
+    toast(error.message);
+  }
+});
+
+$('wallpaper-schedule-button').addEventListener('click', async () => {
+  const schedule = state.wallpaperSchedule || {};
+  if (schedule.enabled) {
+    if (!window.confirm('Pause future automatic discovery slices? Any metadata slice already running will finish safely.')) return;
+    try {
+      await api('/api/doctor/wallpapers/schedule', {
+        method: 'POST',
+        body: JSON.stringify({ enabled: false })
+      });
+      toast('Automatic wallpaper discovery paused');
+      loadWallpapers();
+    } catch (error) {
+      $('wallpaper-schedule-status').textContent = error.message;
+      toast(error.message);
+    }
+    return;
+  }
+
+  const source = $('wallpaper-source').value;
+  const profile = $('wallpaper-profile').value;
+  const contact = $('wallpaper-contact').value.trim();
+  if (source === 'wikimedia_commons' && !contact) {
+    toast('Enter a contact email or project URL for Wikimedia Commons.');
+    $('wallpaper-contact').focus();
+    return;
+  }
+  const interval = Number($('wallpaper-schedule-interval').value);
+  if (!window.confirm('Enable automatic ' + source + ' metadata discovery every '
+      + (interval / 60) + ' hour(s)? Each run is sequential and bounded. No image files will be downloaded, licensed, accepted or synchronized. The scheduler stops for human review when discovery is complete.')) return;
+
+  const button = $('wallpaper-schedule-button');
+  button.disabled = true;
+  $('wallpaper-schedule-status').textContent = 'Starting the first bounded metadata slice…';
+  try {
+    const result = await api('/api/doctor/wallpapers/schedule', {
+      method: 'POST',
+      body: JSON.stringify({
+        enabled: true,
+        source,
+        profile,
+        contact: source === 'wikimedia_commons' ? contact : null,
+        interval_minutes: interval
+      })
+    });
+    state.wallpaperSchedule = result;
+    toast('Automatic wallpaper discovery enabled');
+    loadWallpapers();
+  } catch (error) {
+    $('wallpaper-schedule-status').textContent = error.message;
+    button.disabled = false;
     toast(error.message);
   }
 });

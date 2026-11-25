@@ -325,8 +325,8 @@ class WallpaperDiscoveryTests(unittest.TestCase):
             command = popen.call_args.args[0]
             self.assertTrue(result["started"])
             self.assertEqual(result["campaign_id"], "wallhaven-campaign-test")
-            self.assertEqual(result["downloads_started"], False)
             self.assertEqual(result["max_queries_per_run"], 100)
+            self.assertEqual(result["downloads_started"], False)
             self.assertEqual(result["rights_decisions_created"], 0)
             self.assertEqual(result["acceptances_created"], 0)
             self.assertEqual(command[command.index("--source") + 1], "wallhaven")
@@ -355,6 +355,240 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                         "fenrir-nordic-fantasy-v1",
                         contact="unexpected@example.org",
                     )
+
+
+
+class WallpaperDiscoverySchedulerTests(unittest.TestCase):
+    def test_schedule_defaults_to_disabled(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ):
+                result = server.wallpaper_discovery_schedule_snapshot()
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["interval_minutes"], 360)
+        self.assertEqual(result["last_status"], "disabled")
+
+    def test_enable_starts_only_one_bounded_slice_and_persists_schedule(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
+                "campaign_id": "campaign-1", "started": True,
+            }) as start:
+                result = server.configure_wallpaper_discovery_schedule({
+                    "enabled": True,
+                    "source": "openverse",
+                    "profile": "fenrir-nordic-fantasy-v1",
+                    "interval_minutes": 360,
+                })
+                saved = server.strict_json((state / "schedule.json").read_bytes())
+
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["campaign_id"], "campaign-1")
+        self.assertEqual(saved["interval_minutes"], 360)
+        self.assertEqual(saved["last_status"], "running")
+        start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, max_queries=2)
+
+    def test_enable_rejects_unsupported_interval_without_starting(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                with self.assertRaisesRegex(ValueError, "interval"):
+                    server.configure_wallpaper_discovery_schedule({
+                        "enabled": True, "source": "openverse",
+                        "profile": "fenrir-nordic-fantasy-v1",
+                        "interval_minutes": 5,
+                    })
+        start.assert_not_called()
+
+    def test_commons_schedule_requires_contact_identifier(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                with self.assertRaisesRegex(ValueError, "contact"):
+                    server.configure_wallpaper_discovery_schedule({
+                        "enabled": True, "source": "wikimedia_commons",
+                        "profile": "fenrir-nordic-fantasy-v1",
+                        "interval_minutes": 360,
+                    })
+        start.assert_not_called()
+
+    def test_pause_leaves_an_active_slice_alone(self):
+        import tempfile
+        from unittest.mock import patch
+
+        class ActiveProcess:
+            def poll(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule_file = state / "schedule.json"
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": True, "campaign_id": "campaign-1",
+                "last_status": "running", "next_run_at": 999999999,
+            })
+            server.atomic_json(schedule_file, schedule)
+            active = ActiveProcess()
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", schedule_file
+            ), patch.object(server, "DISCOVERY_PROCESS", active):
+                result = server.configure_wallpaper_discovery_schedule({"enabled": False})
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["last_status"], "paused")
+        self.assertEqual(result["campaign_id"], "campaign-1")
+
+    def test_tick_waits_until_due(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": True, "next_run_at": 2000,
+                "campaign_id": "campaign-1", "last_status": "scheduled",
+            })
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "paused"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                result = server.wallpaper_discovery_scheduler_tick(now=1999)
+        self.assertTrue(result["enabled"])
+        start.assert_not_called()
+
+    def test_tick_runs_one_slice_and_schedules_next_interval(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": True, "interval_minutes": 360,
+                "next_run_at": 1000, "campaign_id": "campaign-1",
+                "last_status": "scheduled",
+            })
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "paused"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
+                "campaign_id": "campaign-1", "started": True,
+            }) as start:
+                result = server.wallpaper_discovery_scheduler_tick(now=1000)
+                saved = server.strict_json((state / "schedule.json").read_bytes())
+        self.assertTrue(result["enabled"])
+        self.assertEqual(saved["last_run_at"], 1000)
+        self.assertEqual(saved["next_run_at"], 1000 + 360 * 60)
+        start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, max_queries=2)
+
+    def test_completed_campaign_stops_for_human_review(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({"enabled": True, "campaign_id": "campaign-1"})
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "completed"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                result = server.wallpaper_discovery_scheduler_tick(now=999999999)
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["last_status"], "needs_review")
+        self.assertIn("Human rights review", result["pause_reason"])
+        start.assert_not_called()
+
+    def test_failed_campaign_disables_scheduler(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({"enabled": True, "campaign_id": "campaign-1"})
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "failed", "error_summary": "provider unavailable"},
+            }):
+                result = server.wallpaper_discovery_scheduler_tick(now=999999999)
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["last_status"], "paused_error")
+        self.assertIn("provider unavailable", result["last_error"])
+
+    def test_running_process_is_never_started_in_parallel(self):
+        import tempfile
+        from unittest.mock import patch
+
+        class ActiveProcess:
+            def poll(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({"enabled": True, "campaign_id": "campaign-1"})
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "DISCOVERY_PROCESS", ActiveProcess()), patch.object(
+                server, "wallpaper_campaign_snapshot", return_value={
+                    "process_running": True,
+                    "campaign": {"status": "running"},
+                }
+            ), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                result = server.wallpaper_discovery_scheduler_tick(now=999999999)
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["last_status"], "running")
+        start.assert_not_called()
+
+    def test_corrupt_scheduler_state_fails_closed(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule_file = state / "schedule.json"
+            schedule_file.write_text('{"schema_version":1,"enabled":"yes"}', encoding="utf-8")
+            with patch.object(server, "DISCOVERY_SCHEDULE_FILE", schedule_file):
+                result = server.wallpaper_discovery_schedule_snapshot()
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["last_status"], "invalid")
+        self.assertIn("invalid", result["pause_reason"].lower())
+
 
 
 if __name__ == "__main__":
