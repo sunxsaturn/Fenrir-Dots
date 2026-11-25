@@ -646,6 +646,131 @@ def wallpaper_sync_destination_allowed(path: Path) -> bool:
     return resolved == pictures or pictures in resolved.parents
 
 
+def wallpaper_campaign_snapshot() -> dict[str, Any]:
+    global DISCOVERY_PROCESS
+    process_running = DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None
+    if DISCOVERY_PROCESS is not None and not process_running:
+        DISCOVERY_PROCESS = None
+    log_tail = ""
+    try:
+        if DISCOVERY_LOG.is_file() and not DISCOVERY_LOG.is_symlink():
+            log_tail = DISCOVERY_LOG.read_text(encoding="utf-8", errors="replace")[-5000:]
+    except OSError:
+        pass
+
+    if not DISCOVERY_STATE.is_file() or DISCOVERY_STATE.is_symlink():
+        return {"campaign": None, "process_running": process_running, "log": log_tail}
+    try:
+        state = strict_json(DISCOVERY_STATE.read_bytes())
+        if not isinstance(state, dict) or not isinstance(state.get("campaign_id"), str):
+            raise ValueError("Saved campaign state is invalid.")
+        executable = shutil.which("fenrir-catalog")
+        if not executable or not CATALOG_DB.is_file():
+            return {"campaign": None, "process_running": process_running, "log": log_tail, "error": "Catalog CLI or database is unavailable."}
+        result = subprocess.run(
+            [executable, "campaign", "status", "--database", str(CATALOG_DB), state["campaign_id"]],
+            capture_output=True, text=True, timeout=12, check=False,
+        )
+        if result.returncode != 0:
+            return {"campaign": None, "process_running": process_running, "log": log_tail, "error": (result.stderr or result.stdout or "Campaign status unavailable.")[:220]}
+        payload = strict_json(result.stdout.encode("utf-8"))
+        return {
+            "campaign": payload,
+            "process_running": process_running,
+            "source": state.get("source"),
+            "profile": state.get("profile"),
+            "log": log_tail,
+        }
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError, BadJSON) as exc:
+        return {"campaign": None, "process_running": process_running, "log": log_tail, "error": str(exc)[:220]}
+
+
+def start_wallpaper_discovery(
+    source: Any,
+    profile: Any,
+    contact: Any = None,
+) -> dict[str, Any]:
+    global DISCOVERY_PROCESS
+    allowed_sources = {"openverse", "wikimedia_commons"}
+    allowed_profiles = {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}
+    if source not in allowed_sources:
+        raise ValueError("Choose Openverse or Wikimedia Commons.")
+    if profile not in allowed_profiles:
+        raise ValueError("Choose a supported Fenrir wallpaper discovery profile.")
+    if DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None:
+        raise ValueError("A wallpaper discovery campaign is already running.")
+    executable = shutil.which("fenrir-catalog")
+    if not executable or not CATALOG_DB.is_file():
+        raise ValueError("The local Fenrir Wallpaper Catalog is not ready.")
+    if source == "wikimedia_commons":
+        if not isinstance(contact, str) or not contact.strip() or len(contact) > 300:
+            raise ValueError("Commons discovery requires a contact email or HTTPS project URL.")
+    elif contact not in (None, ""):
+        raise ValueError("A contact field is accepted only for Wikimedia Commons.")
+
+    create_args = [
+        executable, "campaign", "create",
+        "--database", str(CATALOG_DB),
+        "--source", source,
+        "--profile", profile,
+        "--limit", "20",
+        "--max-pages-per-query", "2",
+    ]
+    if source == "wikimedia_commons":
+        create_args.extend(["--contact", contact.strip()])
+    created = subprocess.run(
+        create_args, capture_output=True, text=True, timeout=20, check=False,
+    )
+    if created.returncode != 0:
+        raise ValueError((created.stderr or created.stdout or "Could not create discovery campaign.")[:300])
+    payload = strict_json(created.stdout.encode("utf-8"))
+    campaign_id = payload.get("campaign_id")
+    if not isinstance(campaign_id, str) or not campaign_id:
+        raise ValueError("Catalog did not return a campaign identifier.")
+
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    atomic_json(DISCOVERY_STATE, {
+        "campaign_id": campaign_id,
+        "source": source,
+        "profile": profile,
+        "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    })
+    log = DISCOVERY_LOG.open("w", encoding="utf-8")
+    run_args = [
+        executable, "campaign", "run",
+        "--database", str(CATALOG_DB),
+        "--source", source,
+        "--profile", profile,
+        "--campaign-id", campaign_id,
+        "--max-queries", "2",
+        "--max-pages-per-query", "2",
+        "--limit", "20",
+    ]
+    if source == "wikimedia_commons":
+        run_args.extend(["--contact", contact.strip()])
+    try:
+        DISCOVERY_PROCESS = subprocess.Popen(
+            run_args,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    except OSError:
+        log.close()
+        raise
+    log.close()
+    return {
+        "started": True,
+        "pid": DISCOVERY_PROCESS.pid,
+        "campaign_id": campaign_id,
+        "max_queries_per_slice": 2,
+        "max_pages_per_query": 2,
+        "downloads_started": False,
+        "rights_decisions_created": 0,
+        "acceptances_created": 0,
+    }
+
+
 def wallpaper_snapshot() -> dict[str, Any]:
     target_count = read_settings().get("wallpaper_target_count", 5000)
     accepted = None
