@@ -478,41 +478,66 @@ def _assert_no_symlink_path(path: Path, boundary: Path) -> None:
         current = current.parent
 
 
+def _assert_tree_no_symlinks(root: Path) -> None:
+    if root.is_symlink():
+        raise ValueError(f"Refusing symbolic link in recovery tree: {root}")
+    if not root.exists():
+        return
+    if not root.is_dir():
+        return
+    for directory, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+        base = Path(directory)
+        for name in dirnames + filenames:
+            candidate = base / name
+            if candidate.is_symlink():
+                raise ValueError(f"Refusing symbolic link in recovery tree: {candidate}")
+
+
 def restore_backup(backup_id: str) -> dict[str, Any]:
     if not isinstance(backup_id, str) or not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", backup_id):
         raise ValueError("Invalid backup identifier.")
-    home = Path.home().resolve()
-    root = (home / ".local/state/fenrir/backups").resolve()
+    home = Path.home()
+    backup_parent = home / ".local/state/fenrir/backups"
+    _assert_no_symlink_path(backup_parent, home)
+    root = backup_parent.resolve()
     source_root = root / backup_id
     if root not in source_root.parents or source_root.is_symlink() or not source_root.is_dir():
         raise ValueError("Backup does not exist or is not a safe directory.")
-    rollback_root = root / f"doctor-restore-{time.strftime('%Y%m%d-%H%M%S')}"
-    restored: list[str] = []
+    _assert_tree_no_symlinks(source_root)
+
+    prepared: list[tuple[str, Path, Path]] = []
     for relative in RESTORE_ALLOWLIST:
         source = source_root / relative
         if not source.exists() and not source.is_symlink():
             continue
-        if source.is_symlink():
-            raise ValueError(f"Backup contains a symbolic link: {relative}")
+        _assert_tree_no_symlinks(source)
         target = home / relative
         _assert_no_symlink_path(target, home)
         if target.exists() or target.is_symlink():
-            if target.is_symlink():
-                raise ValueError(f"Current path is a symbolic link: {relative}")
+            _assert_tree_no_symlinks(target)
+        prepared.append((relative, source, target))
+
+    if not prepared:
+        raise ValueError("The selected backup contains no supported Fenrir configuration paths.")
+
+    rollback_root = root / f"doctor-restore-{time.time_ns()}"
+    restored: list[str] = []
+    for relative, source, target in prepared:
+        if target.exists():
             snapshot = rollback_root / relative
             snapshot.parent.mkdir(parents=True, exist_ok=True)
             if target.is_dir():
-                shutil.copytree(target, snapshot, symlinks=True, dirs_exist_ok=True)
+                shutil.copytree(target, snapshot, symlinks=False, dirs_exist_ok=True)
             else:
                 shutil.copy2(target, snapshot)
         target.parent.mkdir(parents=True, exist_ok=True)
         if source.is_dir():
-            shutil.copytree(source, target, symlinks=True, dirs_exist_ok=True)
+            target.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(source, target, symlinks=False, dirs_exist_ok=True)
         else:
             shutil.copy2(source, target)
         restored.append(relative)
-    if not restored:
-        raise ValueError("The selected backup contains no supported Fenrir configuration paths.")
+
     return {"restored": restored, "rollback_backup": rollback_root.name if rollback_root.exists() else None}
 
 
