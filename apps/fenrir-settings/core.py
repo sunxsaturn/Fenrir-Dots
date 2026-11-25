@@ -406,7 +406,7 @@ def configure_gaming(gamemode: bool, mangohud: bool, fps_limit: int, gamescope: 
 
 
 def service_state(unit: str, user: bool = True) -> str:
-    allowed = {"fenrir-wallpaper.service", "fenrir-stay-awake.service", "pipewire.service", "pipewire.socket", "wireplumber.service", "sun-ai.service", "NetworkManager.service", "bluetooth.service"}
+    allowed = {"fenrir-wallpaper.service", "fenrir-doctor.service", "fenrir-stay-awake.service", "pipewire.service", "pipewire.socket", "wireplumber.service", "sun-ai.service", "NetworkManager.service", "bluetooth.service"}
     if unit not in allowed:
         raise ValueError("Unsupported Fenrir service")
     args = ["systemctl"] + (["--user"] if user else []) + ["is-active", unit]

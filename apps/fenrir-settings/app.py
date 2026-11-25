@@ -47,15 +47,18 @@ class FenrirSettings(Gtk.Application):
         stack.set_hexpand(True)
         stack.set_vexpand(True)
         nav = [
-            ("appearance", "Appearance"), ("wallpaper", "Wallpapers"),
+            ("overview", "Overview"), ("appearance", "Appearance"), ("wallpaper", "Wallpapers"),
             ("display", "Display"), ("hyprland", "Hyprland & Workspaces"),
             ("keybinds", "Keybinds"), ("waybar", "Waybar"),
             ("audio", "Audio"), ("startup", "Startup applications"),
             ("gaming", "Gaming & Performance"), ("keyboard", "Keyboard"),
             ("services", "System services"), ("power", "Screen & Power"),
         ]
+        self.sidebar = sidebar
+        self._navigation = {}
         for name, label in nav:
             row = Gtk.ListBoxRow()
+            self._navigation[name] = row
             text = Gtk.Label(label=label, xalign=0)
             text.set_margin_top(12); text.set_margin_bottom(12)
             text.set_margin_start(14); text.set_margin_end(12)
@@ -84,7 +87,8 @@ class FenrirSettings(Gtk.Application):
         page.set_margin_top(24); page.set_margin_bottom(24); page.set_margin_start(28); page.set_margin_end(28)
         scroller = Gtk.ScrolledWindow(hexpand=True, vexpand=True)
         scroller.set_child(page)
-        if name == "appearance": self.page_appearance(page)
+        if name == "overview": self.page_overview(page)
+        elif name == "appearance": self.page_appearance(page)
         elif name == "wallpaper": self.page_wallpaper(page)
         elif name == "display": self.page_display(page)
         elif name == "hyprland": self.page_hyprland(page)
@@ -163,6 +167,89 @@ class FenrirSettings(Gtk.Application):
             self.set_status(success)
         except (OSError, subprocess.SubprocessError) as exc:
             self.set_status(str(exc), True)
+
+    def page_overview(self, page):
+        self.heading(
+            page,
+            "Fenrir Control Center",
+            "A single starting point for your desktop: wallpaper library, display, Fimbulwinter Glass, audio, gaming, services and diagnostics.",
+        )
+        quick = self.group(page, "Quick actions")
+        self.button(quick, "Open Wallpaper Studio", self.open_wallpaper_studio, True)
+        self.button(quick, "Open Fenrir Doctor", self.open_doctor)
+        self.button(quick, "Choose next wallpaper", lambda *_: self.run_command(
+            ["fenrir-wallpaper", "next"],
+            "Wallpaper rotation updated.",
+        ))
+
+        status = self.group(page, "Desktop health")
+        self._overview_status = Gtk.Label(
+            label="Refresh to inspect the current wallpaper library and service state.",
+            xalign=0,
+            wrap=True,
+        )
+        status.append(self._overview_status)
+        self.button(status, "Refresh overview", self.refresh_overview)
+
+        shortcuts = self.group(page, "Configuration")
+        for label, target in (
+            ("Wallpaper library and rotation", "wallpaper"),
+            ("Displays and monitors", "display"),
+            ("Fimbulwinter Glass", "appearance"),
+            ("Audio devices", "audio"),
+            ("Gaming and performance", "gaming"),
+            ("System services", "services"),
+        ):
+            self.button(shortcuts, label, lambda _button, name=target: self.select_page(name))
+
+    def select_page(self, name: str):
+        row = self._navigation.get(name)
+        if row is not None:
+            self.sidebar.select_row(row)
+
+    def open_doctor(self, *_):
+        try:
+            subprocess.run(
+                ["systemctl", "--user", "start", "fenrir-doctor.service"],
+                check=True,
+                timeout=15,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.Popen(
+                ["xdg-open", "http://127.0.0.1:8765"],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+            self.set_status("Fenrir Doctor dashboard opened without starting the optional Ollama runtime.")
+        except (OSError, subprocess.SubprocessError) as exc:
+            self.set_status(str(exc), True)
+
+    def refresh_overview(self, *_):
+        lines = []
+        try:
+            data = core.wallpaper_status()
+            lines.append(
+                f"Wallpaper library: {data['valid_count']:,} qualifying / {data['file_count']:,} files; "
+                f"{data['rejected_count']:,} rejected; target {data['minimum_count']:,}."
+            )
+            lines.append(
+                f"Rotation: {data.get('interval_minutes', 15)} min; "
+                f"{data.get('monitor_mode', 'shared')} monitor mode; "
+                f"no-repeat history {data.get('history_depth', 20)}."
+            )
+        except Exception as exc:
+            lines.append(f"Wallpaper library: unavailable ({exc})")
+        for unit in ("fenrir-wallpaper.service", "fenrir-doctor.service", "pipewire.service"):
+            try:
+                lines.append(f"{unit}: {core.service_state(unit, user=True)}")
+            except Exception as exc:
+                lines.append(f"{unit}: unavailable ({exc})")
+        self._overview_status.set_text("\n".join(lines))
+        self.set_status("Fenrir overview refreshed.")
 
     def page_appearance(self, page):
         self.heading(page, "Appearance & Fimbulwinter Glass", "Obsidian surfaces, moderate blur and wallpaper-derived accents. Frosted surfaces default to 60% opacity (40% transparency).")

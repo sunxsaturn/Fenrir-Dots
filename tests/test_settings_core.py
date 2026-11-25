@@ -124,6 +124,11 @@ class SettingsCoreTests(unittest.TestCase):
         self.assertEqual(sinks, [("52", "USB Audio Output"), ("53", "HDMI Audio")])
         self.assertEqual(sources, [("63", "USB Microphone")])
 
+    def test_doctor_user_service_is_allowlisted(self):
+        with mock.patch.object(core, "_run") as command:
+            core.service_state("fenrir-doctor.service", user=True)
+        self.assertEqual(command.call_args.args[0], ["systemctl", "--user", "is-active", "fenrir-doctor.service"])
+
     def test_service_control_is_allowlisted(self):
         with mock.patch.object(core, "_run") as command:
             core.control_service("pipewire.socket", "restart", user=True)
