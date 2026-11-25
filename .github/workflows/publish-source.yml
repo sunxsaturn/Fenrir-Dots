@@ -26,6 +26,16 @@ jobs:
           tmp="$(mktemp -d)"
           trap 'rm -rf "$tmp"' EXIT
           shopt -s nullglob
+          fragments=(.fenrir-transfer/part-05/[0-9][0-9])
+          test "${#fragments[@]}" -eq 20
+          for i in "${!fragments[@]}"; do
+            expected=".fenrir-transfer/part-05/$(printf '%02d' "$i")"
+            test "${fragments[$i]}" = "$expected"
+          done
+          cat "${fragments[@]}" > "$tmp/part-05"
+          test "$(git hash-object "$tmp/part-05")" = "261f7f617d9a56468455a48feedfc01112275d3c"
+          cp "$tmp/part-05" fenrir-dots-source-0.3.0.part-05
+          rm -rf .fenrir-transfer
           parts=(fenrir-dots-source-0.3.0.part-*)
           test "${#parts[@]}" -eq 7
           for i in "${!parts[@]}"; do
@@ -59,7 +69,6 @@ jobs:
             python -c 'import json,tomllib; from pathlib import Path; tomllib.loads(Path("config/fenrir-settings.toml").read_text(encoding="utf-8")); json.loads(Path("config/waybar/config.jsonc").read_text(encoding="utf-8"))'
             python -m unittest discover -s tests -v
           )
-          # This runner token cannot push workflow files; publish the CI workflow separately.
           rm -f "$tmp/unpack/.github/workflows/ci.yml"
           find "$tmp/unpack" -type d -name __pycache__ -prune -exec rm -rf {} +
           find "$tmp/unpack" -type f -name '*.py[co]' -delete
