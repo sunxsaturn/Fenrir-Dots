@@ -10,6 +10,9 @@ Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the
 - Interactive upgrade handoff to a terminal. The user reviews and confirms pacman -Syu; no silent privileged update occurs.
 - Recovery from Fenrir-managed configuration backups. Existing files are snapshotted before restore.
 - Local wallpaper synchronization through fenrir-catalog catalog library sync, with 5,000, 10,000 and 20,000 image targets.
+- Resumable Openverse and Wikimedia Commons metadata campaigns with saved per-query cursors; discovery never downloads or accepts images.
+- Dominant-pixel palette policy: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed.
+- A cached local wallpaper index reports qualifying files, excluded palettes and invalid images using the same quality/color rules as desktop sync.
 - A shared cached palette index: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed.
 
 ## Privacy and safety
