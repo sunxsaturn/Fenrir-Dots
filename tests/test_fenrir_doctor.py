@@ -88,17 +88,17 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.21.0\ndef456\trefs/tags/v0.22.0\n",
+                stdout="abc123\trefs/tags/v0.24.0\ndef456\trefs/tags/v0.25.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.22.0")
+            self.assertEqual(result["latest"], "0.25.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.22.0", result["url"])
+            self.assertIn("/releases/tag/v0.25.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
@@ -287,6 +287,66 @@ class DoctorUtilityTests(unittest.TestCase):
 
 
 class WallpaperDiscoveryTests(unittest.TestCase):
+    def test_all_catalog_discovery_profiles_are_available_to_doctor(self):
+        self.assertEqual(
+            server.DISCOVERY_PROFILES,
+            {
+                "fenrir-nordic-fantasy-v1",
+                "fenrir-cinematic-nature-v1",
+                "fenrir-cosmic-sci-fi-v1",
+                "fenrir-arctic-blue-v1",
+                "fenrir-architecture-monochrome-v1",
+                "fenrir-red-violet-dark-fantasy-v1",
+            },
+        )
+
+    def test_schedule_accepts_all_profiles_and_rejects_unknown_profile(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            schedule_file = Path(temporary) / "schedule.json"
+            with patch.object(server, "DISCOVERY_SCHEDULE_FILE", schedule_file):
+                for profile in sorted(server.DISCOVERY_PROFILES):
+                    schedule = server._default_wallpaper_discovery_schedule()
+                    schedule["profile"] = profile
+                    server.atomic_json(schedule_file, schedule)
+                    self.assertEqual(server.read_wallpaper_discovery_schedule()["profile"], profile)
+                invalid = server._default_wallpaper_discovery_schedule()
+                invalid["profile"] = "not-a-real-profile"
+                server.atomic_json(schedule_file, invalid)
+                loaded = server.read_wallpaper_discovery_schedule()
+        self.assertEqual(loaded["last_status"], "invalid")
+
+    def test_catalog_integrity_snapshot_uses_read_only_quick_check(self):
+        import sqlite3
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "catalog.sqlite3"
+            connection = sqlite3.connect(database)
+            connection.execute("CREATE TABLE sample (id INTEGER PRIMARY KEY)")
+            connection.commit()
+            connection.close()
+            with patch.object(server, "CATALOG_DB", database):
+                result = server.catalog_integrity_snapshot()
+        self.assertTrue(result["available"])
+        self.assertEqual(result["integrity"], "ok")
+        self.assertIn("quick_check passed", result["detail"])
+
+    def test_catalog_integrity_snapshot_rejects_symlink(self):
+        import tempfile
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "target.sqlite3"
+            target.write_bytes(b"not a database")
+            link = root / "catalog.sqlite3"
+            link.symlink_to(target)
+            with patch.object(server, "CATALOG_DB", link):
+                result = server.catalog_integrity_snapshot()
+        self.assertFalse(result["available"])
+        self.assertIn("symbolic link", result["detail"])
+
     def test_wallhaven_starts_full_profile_metadata_only_campaign_without_contact(self):
         import tempfile
         from types import SimpleNamespace

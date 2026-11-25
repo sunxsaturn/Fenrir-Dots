@@ -35,11 +35,11 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.9.0"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.7.2",
-    "Fenrir-Dots": "0.8.0",
-    "Fenrir-Wallpaper-Catalog": "0.21.0",
+    "Fenrir-Arch": "0.7.6",
+    "Fenrir-Dots": "0.9.0",
+    "Fenrir-Wallpaper-Catalog": "0.24.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -82,6 +82,15 @@ DISCOVERY_LOCK = threading.RLock()
 DISCOVERY_SCHEDULER_STOP = threading.Event()
 DISCOVERY_SCHEDULER_THREAD: threading.Thread | None = None
 DISCOVERY_SCHEDULE_INTERVALS = {60, 180, 360, 720, 1440}
+DISCOVERY_PROFILES = frozenset({
+    "fenrir-nordic-fantasy-v1",
+    "fenrir-cinematic-nature-v1",
+    "fenrir-cosmic-sci-fi-v1",
+    "fenrir-arctic-blue-v1",
+    "fenrir-architecture-monochrome-v1",
+    "fenrir-red-violet-dark-fantasy-v1",
+})
+FENRIR_USER_STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "fenrir"
 DISCOVERY_SLICE_MAX_QUERIES = 2
 DISCOVERY_SLICE_MAX_PAGES = 2
 OLLAMA = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").rstrip("/")
@@ -403,6 +412,119 @@ def _check(name: str, status: str, detail: str, group: str) -> dict[str, str]:
     return {"name": name, "status": status, "detail": detail, "group": group}
 
 
+def catalog_integrity_snapshot() -> dict[str, Any]:
+    """Run a read-only SQLite quick_check against the configured local catalog."""
+    path = CATALOG_DB
+    if path.is_symlink() or not path.is_file():
+        return {
+            "available": False,
+            "integrity": None,
+            "schema_version": None,
+            "detail": "Catalog database is missing or is a symbolic link.",
+        }
+    try:
+        quoted = urllib.parse.quote(str(path.resolve()), safe="/")
+        connection = sqlite3.connect(f"file:{quoted}?mode=ro", uri=True, timeout=3)
+        try:
+            connection.execute("PRAGMA query_only=ON")
+            integrity_row = connection.execute("PRAGMA quick_check(1)").fetchone()
+            version_row = connection.execute("PRAGMA user_version").fetchone()
+        finally:
+            connection.close()
+        integrity = str(integrity_row[0]) if integrity_row else "unknown"
+        schema_version = int(version_row[0]) if version_row else 0
+        return {
+            "available": True,
+            "integrity": integrity,
+            "schema_version": schema_version,
+            "detail": "SQLite quick_check passed." if integrity == "ok" else f"SQLite quick_check reported: {integrity[:180]}",
+        }
+    except (OSError, sqlite3.Error, ValueError, TypeError) as exc:
+        return {
+            "available": True,
+            "integrity": "error",
+            "schema_version": None,
+            "detail": f"Catalog database check failed: {str(exc)[:180]}",
+        }
+
+
+def wallpaper_runtime_snapshot() -> dict[str, Any]:
+    """Inspect wallpaper qualification, monitor state and the no-repeat history."""
+    result: dict[str, Any] = {
+        "available": False,
+        "directory": str(current_wallpaper_directory()),
+        "valid_count": None,
+        "file_count": None,
+        "rejected_count": None,
+        "minimum_count": 5000,
+        "monitor_mode": "shared",
+        "history_depth": 20,
+        "monitor_count": None,
+        "history_records": 0,
+        "detail": "Wallpaper companion is unavailable.",
+    }
+    directory = current_wallpaper_directory()
+    if directory.is_symlink() or not directory.is_dir():
+        result["detail"] = "Configured wallpaper directory is missing or is a symbolic link."
+        return result
+    executable = shutil.which("fenrir-wallpaper")
+    if not executable:
+        return result
+    try:
+        completed = subprocess.run(
+            [executable, "status", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=18,
+            check=False,
+        )
+        if completed.returncode != 0:
+            result["detail"] = (completed.stderr or completed.stdout or "Wallpaper status command failed.")[:220]
+            return result
+        payload = strict_json(completed.stdout.encode("utf-8"))
+        if not isinstance(payload, dict):
+            raise ValueError("Wallpaper status must be a JSON object.")
+        result.update({
+            "available": True,
+            "valid_count": int(payload.get("valid_count", 0)),
+            "file_count": int(payload.get("file_count", 0)),
+            "rejected_count": int(payload.get("rejected_count", 0)),
+            "minimum_count": int(payload.get("minimum_count", 5000)),
+            "monitor_mode": payload.get("monitor_mode", "shared"),
+            "history_depth": int(payload.get("history_depth", 20)),
+            "detail": "Wallpaper qualification report loaded from the local companion.",
+        })
+        state_file = FENRIR_USER_STATE / "wallpaper-history.json"
+        if state_file.is_file() and not state_file.is_symlink() and state_file.stat().st_size <= 65536:
+            history = strict_json(state_file.read_bytes())
+            monitors = history.get("monitors", {}) if isinstance(history, dict) else {}
+            if isinstance(monitors, dict):
+                result["history_records"] = sum(
+                    len(items) for items in monitors.values() if isinstance(items, list)
+                )
+        try:
+            outputs = subprocess.run(
+                ["hyprctl", "-j", "monitors"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+                check=False,
+            )
+            if outputs.returncode == 0:
+                decoded = strict_json(outputs.stdout.encode("utf-8"))
+                if isinstance(decoded, list):
+                    result["monitor_count"] = sum(
+                        1 for item in decoded
+                        if isinstance(item, dict) and isinstance(item.get("name"), str)
+                    )
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, BadJSON):
+            pass
+        return result
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError, BadJSON) as exc:
+        result["detail"] = f"Wallpaper status unavailable: {str(exc)[:180]}"
+        return result
+
+
 def diagnostics_snapshot() -> dict[str, Any]:
     checks: list[dict[str, str]] = []
     checks.append(_check(
@@ -421,12 +543,53 @@ def diagnostics_snapshot() -> dict[str, Any]:
     checks.append(_check("NetworkManager", "ok" if network_ok else "attention", network_detail, "system"))
     wallpaper_ok, wallpaper_detail = _command_result(["systemctl", "--user", "is-active", "fenrir-wallpaper.service"])
     checks.append(_check("Wallpaper service", "ok" if wallpaper_ok else "warning", wallpaper_detail, "wallpaper"))
-    catalog_ready = shutil.which("fenrir-catalog") is not None and CATALOG_DB.is_file() and QUARANTINE_ROOT.is_dir()
+    catalog_ready = (
+        shutil.which("fenrir-catalog") is not None
+        and CATALOG_DB.is_file() and not CATALOG_DB.is_symlink()
+        and QUARANTINE_ROOT.is_dir() and not QUARANTINE_ROOT.is_symlink()
+    )
     checks.append(_check(
         "Wallpaper Catalog",
         "ok" if catalog_ready else "warning",
         "Local catalog and quarantine are ready." if catalog_ready else "Install or initialize the local Fenrir Wallpaper Catalog to enable wallpaper intelligence.",
         "wallpaper",
+    ))
+    catalog_integrity = catalog_integrity_snapshot()
+    integrity_status = (
+        "attention" if catalog_integrity["integrity"] == "error"
+        else ("ok" if catalog_integrity["integrity"] == "ok" else "warning")
+    )
+    checks.append(_check(
+        "Catalog database integrity",
+        integrity_status,
+        catalog_integrity["detail"],
+        "catalog",
+    ))
+    wallpaper_runtime = wallpaper_runtime_snapshot()
+    if wallpaper_runtime["available"]:
+        valid_count = wallpaper_runtime["valid_count"]
+        target = wallpaper_runtime["minimum_count"]
+        quality_status = "ok" if valid_count > 0 else ("attention" if wallpaper_runtime["file_count"] else "warning")
+        quality_detail = (
+            f"{valid_count:,} qualifying of {wallpaper_runtime['file_count']:,} files; "
+            f"{wallpaper_runtime['rejected_count']:,} rejected; target {target:,}."
+        )
+    else:
+        quality_status = "warning"
+        quality_detail = wallpaper_runtime["detail"]
+    checks.append(_check("Wallpaper library quality", quality_status, quality_detail, "wallpaper"))
+    monitor_count = wallpaper_runtime.get("monitor_count")
+    monitor_detail = (
+        f"{monitor_count} connected output(s); {wallpaper_runtime['monitor_mode']} wallpaper mode; "
+        f"{wallpaper_runtime['history_records']} recent rotation records."
+        if monitor_count is not None else
+        f"{wallpaper_runtime['monitor_mode']} wallpaper mode; monitor geometry unavailable outside Hyprland."
+    )
+    checks.append(_check(
+        "Monitor-aware rotation",
+        "ok" if wallpaper_runtime["available"] else "warning",
+        monitor_detail,
+        "display",
     ))
     usage = shutil.disk_usage(Path.home())
     used_percent = round(100 * usage.used / usage.total, 1) if usage.total else 0
@@ -746,7 +909,7 @@ def _start_wallpaper_discovery_unlocked(
 ) -> dict[str, Any]:
     global DISCOVERY_PROCESS
     allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
-    allowed_profiles = {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}
+    allowed_profiles = DISCOVERY_PROFILES
     if isinstance(max_queries, bool) or not isinstance(max_queries, int) or not 1 <= max_queries <= 100:
         raise ValueError("Discovery max_queries must be between 1 and 100.")
     if source not in allowed_sources:
@@ -884,7 +1047,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             raise ValueError("Scheduler enabled state is invalid.")
         if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven"}:
             raise ValueError("Scheduler source is invalid.")
-        if raw.get("profile") not in {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}:
+        if raw.get("profile") not in DISCOVERY_PROFILES:
             raise ValueError("Scheduler profile is invalid.")
         interval = raw.get("interval_minutes")
         if isinstance(interval, bool) or not isinstance(interval, int) or interval not in DISCOVERY_SCHEDULE_INTERVALS:
@@ -997,7 +1160,7 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
         interval = payload.get("interval_minutes", schedule["interval_minutes"])
         if source not in {"openverse", "wikimedia_commons", "wallhaven"}:
             raise ValueError("Choose Openverse, Wikimedia Commons or Wallhaven.")
-        if profile not in {"fenrir-nordic-fantasy-v1", "fenrir-cinematic-nature-v1"}:
+        if profile not in DISCOVERY_PROFILES:
             raise ValueError("Choose a supported Fenrir wallpaper discovery profile.")
         if isinstance(interval, bool) or not isinstance(interval, int) or interval not in DISCOVERY_SCHEDULE_INTERVALS:
             raise ValueError("Choose an automatic discovery interval of 1, 3, 6, 12 or 24 hours.")
