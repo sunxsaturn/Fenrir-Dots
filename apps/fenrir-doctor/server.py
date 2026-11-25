@@ -601,9 +601,13 @@ def launch_upgrade_terminal() -> dict[str, Any]:
     updater = shutil.which("fenrir-upgrade")
     if not terminal or not updater:
         raise RuntimeError("The Fenrir upgrade command or Kitty terminal is not installed.")
+    unit = f"fenrir-upgrade-{os.getpid()}"
     try:
         process = subprocess.Popen(
-            [terminal, "--title", "Fenrir Upgrade", updater, "apply"],
+            [
+                "systemd-run", "--user", f"--unit={unit}", "--collect",
+                terminal, "--title", "Fenrir Upgrade", updater, "apply",
+            ],
             start_new_session=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
