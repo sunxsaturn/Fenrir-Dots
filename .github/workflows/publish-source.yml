@@ -33,28 +33,38 @@ jobs:
             test "${parts[$i]}" = "$expected"
           done
           cat "${parts[@]}" > "$tmp/archive.b64"
-          base64 --decode "$tmp/archive.b64" > "$tmp/source.tar.gz"
+          base64 --decode "$tmp/archive.b64" > "$tmp/source.tar.xz"
           expected_sha="$(awk '{print $1}' .source-archive.sha256)"
-          actual_sha="$(sha256sum "$tmp/source.tar.gz" | awk '{print $1}')"
+          actual_sha="$(sha256sum "$tmp/source.tar.xz" | awk '{print $1}')"
           test "$actual_sha" = "$expected_sha"
-          gzip --test "$tmp/source.tar.gz"
-          if tar -tzf "$tmp/source.tar.gz" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
+          xz --test "$tmp/source.tar.xz"
+          if tar -tJf "$tmp/source.tar.xz" | grep -Eq '(^/|(^|/)\.\.(/|$))'; then
             echo "Unsafe path detected in source archive" >&2
             exit 1
           fi
           mkdir "$tmp/unpack"
-          tar -xzf "$tmp/source.tar.gz" -C "$tmp/unpack" --no-same-owner
+          tar -xJf "$tmp/source.tar.xz" -C "$tmp/unpack" --no-same-owner
           test -f "$tmp/unpack/config/hypr/hyprland.lua"
           test -x "$tmp/unpack/bin/fenrir-wallpaper"
           test -x "$tmp/unpack/bin/fenrir-theme"
+          test -x "$tmp/unpack/bin/fenrir-record"
+          test -f "$tmp/unpack/apps/fenrir-settings/app.py"
+          test -f "$tmp/unpack/apps/fenrir-welcome/app.py"
           test -f "$tmp/unpack/apps/sun-ai/server.py"
           test -f "$tmp/unpack/tests/test_sun_ai.py"
           (
             cd "$tmp/unpack"
-            python -m compileall -q bin apps/sun-ai scripts tests
+            bash -n bin/fenrir-settings bin/fenrir-welcome bin/fenrir-monitor bin/fenrir-record bin/sun-ai
+            python -m compileall -q bin apps scripts tests
+            python - <<'PY'
+import json, tomllib
+from pathlib import Path
+tomllib.loads(Path("config/fenrir-settings.toml").read_text(encoding="utf-8"))
+json.loads(Path("config/waybar/config.jsonc").read_text(encoding="utf-8"))
+PY
             python -m unittest discover -s tests -v
           )
-          # This runner token cannot push workflow files; publish CI separately via the repository API.
+          # This runner token cannot push workflow files; publish the CI workflow separately.
           rm -f "$tmp/unpack/.github/workflows/ci.yml"
           find "$tmp/unpack" -type d -name __pycache__ -prune -exec rm -rf {} +
           find "$tmp/unpack" -type f -name '*.py[co]' -delete
@@ -67,5 +77,5 @@ jobs:
             echo "Source tree already matches the validated archive"
             exit 0
           fi
-          git commit -m "feat: publish verified Fenrir Dots source tree"
+          git commit -m "feat: publish Fenrir Settings and Welcome applications"
           git push
