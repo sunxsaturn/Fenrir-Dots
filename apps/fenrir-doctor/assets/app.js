@@ -637,6 +637,8 @@ async function loadPalette() {
     const root = document.documentElement;
     root.style.setProperty('--accent', palette.accent || '#9b87f5');
     root.style.setProperty('--accent-soft', palette.accent_soft || '#51447f');
+    root.style.setProperty('--accent-foreground', palette.accent_foreground || '#ffffff');
+    root.style.setProperty('--selection-foreground', palette.selection_foreground || '#ffffff');
     root.style.setProperty('--foreground', palette.foreground || '#e8e9f2');
     root.style.setProperty('--muted', palette.muted || '#9699ab');
     root.style.setProperty('--surface-opacity', String(Math.max(.35, Math.min(.85, Number(palette.surface_opacity ?? .60)))));
