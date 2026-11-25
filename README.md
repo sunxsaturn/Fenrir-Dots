@@ -22,6 +22,7 @@ Do not install this repository as a complete system installer. It expects Arch p
 - Validated random wallpaper engine and palette synchronization
 - Manual screen recording toggle (`Super+Shift+F9`), screenshots and clipboard workflow
 - Sun AI local dashboard with on-demand inference integration; no model is downloaded automatically
+  - Complete source map: [apps/sun-ai/README.md](apps/sun-ai/README.md) (server, web assets, CLI, user service, desktop entry, icon and tests are all versioned in this repository)
 - Keep-awake session inhibitor; no automatic lock, display-off or idle-suspend timers. Manual lock remains `Super+L`.
 
 ## Wallpaper policy
