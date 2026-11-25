@@ -12,7 +12,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: true
-      - name: Assemble and expand source archive
+      - name: Assemble, verify and expand source archive
         shell: bash
         run: |
           set -euo pipefail
@@ -21,19 +21,26 @@ jobs:
           : > "$tmp/archive.b64"
           shopt -s nullglob
           parts=(fenrir-dots-source-0.3.0.part-*)
-          test "${#parts[@]}" -ge 2
+          test "${#parts[@]}" -eq 4
           for part in "${parts[@]}"; do cat "$part" >> "$tmp/archive.b64"; done
           base64 -d "$tmp/archive.b64" > "$tmp/source.tar.xz"
           xz -t "$tmp/source.tar.xz"
+          printf '%s  %s\n' "b20d97d84c770513e0e403d5be92e0291887a0622093762b5dc4e089c897dbc7" "$tmp/source.tar.xz" | sha256sum -c -
+          tar -tJf "$tmp/source.tar.xz" >/dev/null
           tar -xJf "$tmp/source.tar.xz" -C "$tmp" --no-same-owner
           test -f "$tmp/config/hypr/hyprland.lua"
-          test -f "$tmp/bin/fenrir-control-center"
-          test -d "$tmp/apps/sun-ai"
+          test -x "$tmp/bin/fenrir-wallpaper"
+          test -x "$tmp/bin/fenrir-theme"
+          test -f "$tmp/apps/sun-ai/server.py"
+          test -f "$tmp/systemd/user/fenrir-stay-awake.service"
+          source_files="$(find "$tmp" -type f ! -path "$tmp/archive.b64" ! -path "$tmp/source.tar.xz" | wc -l)"
+          test "$source_files" -eq 43
+          rm -f "$tmp/archive.b64" "$tmp/source.tar.xz"
           cp -a "$tmp/." .
-          rm -f fenrir-dots-source-0.3.0.part-* fenrir-dots-source-0.3.0.tar.gz fenrir-dots-source-0.3.0.tar.xz
+          rm -f fenrir-dots-source-0.3.0.part-*
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           if git diff --cached --quiet; then exit 0; fi
-          git commit -m "feat: publish Fenrir desktop dotfiles"
+          git commit -m "feat: publish complete Fenrir Dots source tree"
           git push
