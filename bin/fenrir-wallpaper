@@ -2,17 +2,25 @@
 """Validated random wallpaper rotation for Hyprland + hyprpaper."""
 from __future__ import annotations
 import argparse
+import colorsys
 import json
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
 import time
+import warnings
 from pathlib import Path
 
 EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
-INDEX_VERSION = 1
+INDEX_VERSION = 2
+PALETTE_POLICY_ID = "fenrir-wallpaper-palette-v1"
+EXCLUDED_FAMILIES = {"yellow", "orange", "brown"}
+PREFERRED_FAMILIES = {"red", "purple", "blue", "white", "black"}
+ALLOWED_ACCENTS = {"green", "neutral"}
+MAX_IMAGE_BYTES = 100 * 1024 * 1024
 DEFAULT_MIN_WIDTH = 2560
 DEFAULT_MIN_HEIGHT = 1440
 DEFAULT_MIN_COUNT = 5000
@@ -51,17 +59,81 @@ def resolution_policy() -> tuple[int, int, int]:
     return width, height, count
 
 
-def inspect_image(path: Path) -> tuple[int, int] | None:
+def classify_hex_color(value: str) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+        raise ValueError("Color must use #RRGGBB.")
+    red, green, blue = (int(value[index:index + 2], 16) / 255 for index in (1, 3, 5))
+    hue, saturation, brightness = colorsys.rgb_to_hsv(red, green, blue)
+    degrees = hue * 360.0
+    if brightness >= 0.88 and saturation <= 0.20:
+        return "white"
+    if saturation <= 0.18:
+        return "black" if brightness <= 0.14 else "neutral"
+    if degrees < 15 or degrees >= 345:
+        return "red"
+    if 15 <= degrees < 43:
+        return "brown" if brightness <= 0.78 else "orange"
+    if 43 <= degrees < 70:
+        return "yellow"
+    if 70 <= degrees < 165:
+        return "green"
+    if 165 <= degrees < 260:
+        return "blue"
+    if 260 <= degrees < 330:
+        return "purple"
+    return "red"
+
+
+def evaluate_palette(colors: list[str]) -> dict:
+    if not isinstance(colors, list) or not 1 <= len(colors) <= 5:
+        raise ValueError("Invalid wallpaper palette.")
+    families = [classify_hex_color(color) for color in colors]
+    excluded = sorted(set(families).intersection(EXCLUDED_FAMILIES))
+    score = sum(2 if family in PREFERRED_FAMILIES else 1 if family == "green" else 0 for family in families)
+    return {
+        "eligible": not excluded,
+        "families": families,
+        "excluded_families": excluded,
+        "preference_score": score,
+    }
+
+
+def inspect_image(path: Path) -> dict | None:
     try:
-        from PIL import Image
-        with Image.open(path) as image:
-            image.verify()
-        with Image.open(path) as image:
-            width, height = image.size
-            orientation = image.getexif().get(274, 1)
-            if orientation in {5, 6, 7, 8}:
-                width, height = height, width
-        return width, height
+        stat = path.stat()
+        if not path.is_file() or path.is_symlink() or stat.st_size > MAX_IMAGE_BYTES:
+            return None
+        from PIL import Image, ImageOps
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(path) as image:
+                image.load()
+                oriented = ImageOps.exif_transpose(image)
+                width, height = oriented.size
+                if "A" in oriented.getbands() or "transparency" in oriented.info:
+                    rgba = oriented.convert("RGBA")
+                    background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+                    oriented = Image.alpha_composite(background, rgba)
+                sample = oriented.convert("RGB")
+                sample.thumbnail((128, 128), Image.Resampling.BOX)
+                counts = sample.getcolors(maxcolors=128 * 128)
+                if counts is None:
+                    return None
+                ranked = sorted(counts, key=lambda item: (-item[0], item[1]))[:5]
+                colors = [
+                    "#" + "".join(f"{channel:02x}" for channel in rgb)
+                    for _, rgb in ranked
+                ]
+        palette = evaluate_palette(colors)
+        return {
+            "width": width,
+            "height": height,
+            "dominant_colors": colors,
+            "palette_families": palette["families"],
+            "palette_eligible": palette["eligible"],
+            "excluded_families": palette["excluded_families"],
+            "preference_score": palette["preference_score"],
+        }
     except Exception:
         return None
 
@@ -71,12 +143,16 @@ def _write_index(records: dict[str, dict]) -> None:
     root.mkdir(parents=True, exist_ok=True)
     destination = root / "wallpaper-index.json"
     temporary = destination.with_name(destination.name + f".tmp-{os.getpid()}")
-    temporary.write_text(json.dumps({"version": INDEX_VERSION, "items": records}, separators=(",", ":")) + "\n", encoding="utf-8")
+    temporary.write_text(json.dumps({
+        "version": INDEX_VERSION,
+        "palette_policy": PALETTE_POLICY_ID,
+        "items": records,
+    }, separators=(",", ":")) + "\n", encoding="utf-8")
     os.chmod(temporary, 0o600)
     temporary.replace(destination)
 
 
-def validated_wallpapers() -> tuple[list[Path], int, int]:
+def validated_wallpapers() -> tuple[list[Path], int, int, int, dict[str, int]]:
     root = wallpaper_dir()
     if not root.is_dir():
         raise RuntimeError(f"Wallpaper directory does not exist: {root}")
@@ -84,39 +160,85 @@ def validated_wallpapers() -> tuple[list[Path], int, int]:
     index_path = state_dir() / "wallpaper-index.json"
     try:
         cached = json.loads(index_path.read_text(encoding="utf-8"))
-        if cached.get("version") != INDEX_VERSION or not isinstance(cached.get("items"), dict):
+        if (
+            cached.get("version") != INDEX_VERSION
+            or cached.get("palette_policy") != PALETTE_POLICY_ID
+            or not isinstance(cached.get("items"), dict)
+        ):
             cached = {"items": {}}
     except (OSError, ValueError, TypeError):
         cached = {"items": {}}
     old = cached.get("items", {})
     records: dict[str, dict] = {}
     valid: list[Path] = []
+    scores: dict[str, int] = {}
     invalid = 0
-    files = sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in EXTENSIONS and not p.is_symlink())
+    palette_excluded = 0
+    files = sorted(
+        p for p in root.rglob("*")
+        if p.is_file() and p.suffix.lower() in EXTENSIONS and not p.is_symlink()
+    )
     for path in files:
         try:
-            stat = path.stat()
+            metadata = path.stat()
+            if path.is_symlink() or metadata.st_size > MAX_IMAGE_BYTES:
+                invalid += 1
+                continue
         except OSError:
             invalid += 1
             continue
         key = str(path.resolve())
+        signature = {
+            "device": metadata.st_dev,
+            "inode": metadata.st_ino,
+            "size": metadata.st_size,
+            "mtime_ns": metadata.st_mtime_ns,
+            "ctime_ns": metadata.st_ctime_ns,
+        }
         entry = old.get(key)
-        if entry and entry.get("size") == stat.st_size and entry.get("mtime_ns") == stat.st_mtime_ns:
-            width, height, is_valid = int(entry.get("width", 0)), int(entry.get("height", 0)), bool(entry.get("valid"))
+        if (
+            isinstance(entry, dict)
+            and entry.get("signature") == signature
+            and entry.get("palette_policy") == PALETTE_POLICY_ID
+        ):
+            details = entry.get("details")
         else:
-            dimensions = inspect_image(path)
-            width, height = dimensions if dimensions else (0, 0)
-            is_valid = bool(dimensions and width >= min_width and height >= min_height and width > height)
+            details = inspect_image(path)
+        if not isinstance(details, dict):
+            invalid += 1
+            records[key] = {
+                "signature": signature,
+                "palette_policy": PALETTE_POLICY_ID,
+                "details": None,
+                "reason": "invalid_image",
+            }
+            continue
+
+        width = int(details.get("width", 0))
+        height = int(details.get("height", 0))
+        dimensions_ok = width >= min_width and height >= min_height and width > height
+        palette_ok = details.get("palette_eligible") is True
+        is_valid = dimensions_ok and palette_ok
+        reason = "valid" if is_valid else (
+            "excluded_palette_color" if dimensions_ok and not palette_ok
+            else "resolution_or_orientation"
+        )
         records[key] = {
-            "size": stat.st_size, "mtime_ns": stat.st_mtime_ns,
-            "width": width, "height": height, "valid": is_valid,
+            "signature": signature,
+            "palette_policy": PALETTE_POLICY_ID,
+            "details": details,
+            "reason": reason,
+            "valid": is_valid,
         }
         if is_valid:
             valid.append(path)
+            scores[key] = max(0, int(details.get("preference_score", 0)))
         else:
             invalid += 1
+            if reason == "excluded_palette_color":
+                palette_excluded += 1
     _write_index(records)
-    return valid, invalid, len(files)
+    return valid, invalid, len(files), palette_excluded, scores
 
 
 def get_monitors() -> list[str]:
@@ -167,7 +289,7 @@ def apply(path: Path) -> None:
 
 
 def next_wallpaper() -> Path:
-    files, invalid, total = validated_wallpapers()
+    files, invalid, total, palette_excluded, scores = validated_wallpapers()
     min_width, min_height, minimum_count = resolution_policy()
     if not files:
         raise RuntimeError(
@@ -182,24 +304,31 @@ def next_wallpaper() -> Path:
     except (OSError, ValueError, TypeError):
         pass
     candidates = [path for path in files if str(path.resolve()) != current]
-    return random.choice(candidates or files)
+    choices = candidates or files
+    weights = [max(1, scores.get(str(path.resolve()), 0)) for path in choices]
+    return random.choices(choices, weights=weights, k=1)[0]
 
 
 def report_status(as_json: bool = False) -> int:
-    valid, invalid, total = validated_wallpapers()
+    valid, invalid, total, palette_excluded, _scores = validated_wallpapers()
     _, _, minimum_count = resolution_policy()
     result = {
         "directory": str(wallpaper_dir()), "valid_count": len(valid),
-        "rejected_count": invalid, "file_count": total,
+        "rejected_count": invalid, "excluded_palette_count": palette_excluded, "file_count": total,
         "minimum_count": minimum_count, "minimum_resolution": "2560x1440",
-        "preferred_resolution": "3840x2160+", "interval_minutes": int(settings().get("wallpaper", {}).get("interval_minutes", 15)),
+        "preferred_resolution": "3840x2160+", "palette_policy": PALETTE_POLICY_ID,
+        "excluded_colors": sorted(EXCLUDED_FAMILIES),
+        "preferred_colors": sorted(PREFERRED_FAMILIES),
+        "allowed_accents": sorted(ALLOWED_ACCENTS),
+        "interval_minutes": int(settings().get("wallpaper", {}).get("interval_minutes", 15)),
         "requirement_met": len(valid) >= minimum_count,
     }
     if as_json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"Fenrir wallpapers: {len(valid):,} valid / {total:,} image files; {invalid:,} rejected")
+        print(f"Fenrir wallpapers: {len(valid):,} valid / {total:,} image files; {invalid:,} rejected ({palette_excluded:,} excluded by color palette)")
         print(f"Target: at least {minimum_count:,}; minimum 2560x1440 landscape; preferred 3840x2160+")
+        print("Palette: exclude yellow/orange/brown; prefer red/purple/blue/white/black; green allowed")
         print(f"Directory: {result['directory']}")
         dynamic = bool(settings().get("theme", {}).get("dynamic_colors", True))
         print(f"Rotation: every {result['interval_minutes']} minutes; dynamic accent extraction {'enabled' if dynamic else 'disabled'}")

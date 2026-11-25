@@ -90,6 +90,30 @@ class FenrirThemeTests(unittest.TestCase):
             self.assertIn("rgba(336699ff)", eval_command[2])
             self.assertIn("rgba(1a334cff)", eval_command[2])
 
+    def test_dynamic_accent_excludes_yellow_orange_and_brown(self):
+        from PIL import Image
+        for color in ("#ffff00", "#ff8000", "#8b4513"):
+            with tempfile.TemporaryDirectory() as temp:
+                image = Path(temp) / "warm.png"
+                Image.new("RGB", (160, 160), color).save(image, format="PNG")
+                colors = theme.extract(image)
+                self.assertEqual(colors["accent"], theme.DEFAULTS["accent"])
+
+    def test_dynamic_accent_selects_allowed_color_when_warm_hue_dominates(self):
+        from PIL import Image, ImageDraw
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "mixed.png"
+            canvas = Image.new("RGB", (160, 160), "#ffff00")
+            draw = ImageDraw.Draw(canvas)
+            draw.rectangle((0, 0, 63, 159), fill="#c02020")
+            canvas.save(image, format="PNG")
+            colors = theme.extract(image)
+            self.assertEqual(colors["accent"], "#c02020")
+            self.assertNotIn(
+                theme.classify_rgb(*tuple(int(colors["accent"][i:i+2], 16) for i in (1, 3, 5))),
+                theme.EXCLUDED_FAMILIES,
+            )
+
     def test_surface_opacity_is_clamped_to_readable_range(self):
         with tempfile.TemporaryDirectory() as temp:
             config = Path(temp) / "config"
@@ -148,7 +172,7 @@ class FenrirWallpaperTests(unittest.TestCase):
                 encoding="utf-8",
             )
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
-                valid, rejected, total = wallpaper.validated_wallpapers()
+                valid, rejected, total, _palette_excluded, _scores = wallpaper.validated_wallpapers()
             self.assertEqual(total, 3)
             self.assertEqual(rejected, 2)
             self.assertEqual([p.name for p in valid], ["valid.webp"])
@@ -168,9 +192,82 @@ class FenrirWallpaperTests(unittest.TestCase):
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
                 selected = wallpaper.next_wallpaper()
                 self.assertEqual(selected.resolve(), image.resolve())
-                valid, _, _ = wallpaper.validated_wallpapers()
+                valid, _, _, _, _ = wallpaper.validated_wallpapers()
                 self.assertEqual(len(valid), 1)
                 self.assertGreater(wallpaper.resolution_policy()[2], len(valid))
+
+    def test_rotation_excludes_yellow_orange_and_brown_dominant_palettes(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "wallpapers"
+            root.mkdir()
+            Image.new("RGB", (2560, 1440), "#c02020").save(root / "red.png", format="PNG")
+            Image.new("RGB", (2560, 1440), "#ffff00").save(root / "yellow.png", format="PNG")
+            Image.new("RGB", (2560, 1440), "#ff8000").save(root / "orange.png", format="PNG")
+            Image.new("RGB", (2560, 1440), "#8b4513").save(root / "brown.png", format="PNG")
+            config = Path(temp) / "config"
+            (config / "fenrir").mkdir(parents=True)
+            (config / "fenrir" / "settings.toml").write_text(
+                f'[wallpaper]\ndirectory = "{root}"\nminimum_width = 2560\nminimum_height = 1440\n',
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
+                valid, rejected, total, palette_excluded, _scores = wallpaper.validated_wallpapers()
+            self.assertEqual(total, 4)
+            self.assertEqual([path.name for path in valid], ["red.png"])
+            self.assertEqual(rejected, 3)
+            self.assertEqual(palette_excluded, 3)
+
+    def test_random_rotation_weights_preferred_colors_above_green(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "wallpapers"
+            root.mkdir()
+            Image.new("RGB", (2560, 1440), "#c02020").save(root / "red.png", format="PNG")
+            Image.new("RGB", (2560, 1440), "#208040").save(root / "green.png", format="PNG")
+            config = Path(temp) / "config"
+            (config / "fenrir").mkdir(parents=True)
+            (config / "fenrir" / "settings.toml").write_text(
+                f'[wallpaper]\ndirectory = "{root}"\nminimum_width = 2560\nminimum_height = 1440\n',
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False), patch.object(
+                wallpaper.random, "choices", side_effect=lambda options, weights, k: [options[weights.index(max(weights))]]
+            ) as choose:
+                selected = wallpaper.next_wallpaper()
+            self.assertEqual(selected.name, "red.png")
+            self.assertEqual(choose.call_args.kwargs["k"], 1)
+            self.assertEqual(max(choose.call_args.kwargs["weights"]), 2)
+            self.assertEqual(min(choose.call_args.kwargs["weights"]), 1)
+
+    def test_wallpaper_index_invalidates_old_dimension_only_cache(self):
+        from PIL import Image
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / "wallpapers"
+            root.mkdir()
+            image = root / "yellow.png"
+            Image.new("RGB", (2560, 1440), "#ffff00").save(image, format="PNG")
+            config = Path(temp) / "config"
+            (config / "fenrir").mkdir(parents=True)
+            (config / "fenrir" / "settings.toml").write_text(
+                f'[wallpaper]\ndirectory = "{root}"\nminimum_width = 2560\nminimum_height = 1440\n',
+                encoding="utf-8",
+            )
+            state = Path(temp) / "state" / "fenrir"
+            state.mkdir(parents=True)
+            (state / "wallpaper-index.json").write_text(
+                json.dumps({"version": 1, "items": {str(image.resolve()): {"size": image.stat().st_size, "mtime_ns": image.stat().st_mtime_ns, "width": 2560, "height": 1440, "valid": True}}}),
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
+                valid, rejected, total, palette_excluded, _scores = wallpaper.validated_wallpapers()
+            self.assertEqual(valid, [])
+            self.assertEqual(total, 1)
+            self.assertEqual(rejected, 1)
+            self.assertEqual(palette_excluded, 1)
+            index = json.loads((state / "wallpaper-index.json").read_text(encoding="utf-8"))
+            self.assertEqual(index["version"], wallpaper.INDEX_VERSION)
+            self.assertEqual(index["palette_policy"], wallpaper.PALETTE_POLICY_ID)
 
     def test_rotation_refuses_empty_qualifying_library(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -197,7 +294,7 @@ class FenrirWallpaperTests(unittest.TestCase):
                 f'[wallpaper]\ndirectory = "{root}"\nminimum_count = 5000\ninterval_minutes = 15\n', encoding="utf-8"
             )
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
-                valid, _, _ = wallpaper.validated_wallpapers()
+                valid, _, _, _, _ = wallpaper.validated_wallpapers()
                 self.assertEqual(len(valid), 1)
                 self.assertEqual(wallpaper.resolution_policy()[2], 5000)
 
