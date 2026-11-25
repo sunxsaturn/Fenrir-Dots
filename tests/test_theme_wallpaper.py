@@ -90,6 +90,30 @@ class FenrirThemeTests(unittest.TestCase):
             self.assertIn("rgba(336699ff)", eval_command[2])
             self.assertIn("rgba(1a334cff)", eval_command[2])
 
+    def test_dynamic_accent_excludes_yellow_orange_and_brown(self):
+        from PIL import Image
+        for color in ("#ffff00", "#ff8000", "#8b4513"):
+            with tempfile.TemporaryDirectory() as temp:
+                image = Path(temp) / "warm.png"
+                Image.new("RGB", (160, 160), color).save(image, format="PNG")
+                colors = theme.extract(image)
+                self.assertEqual(colors["accent"], theme.DEFAULTS["accent"])
+
+    def test_dynamic_accent_selects_allowed_color_when_warm_hue_dominates(self):
+        from PIL import Image, ImageDraw
+        with tempfile.TemporaryDirectory() as temp:
+            image = Path(temp) / "mixed.png"
+            canvas = Image.new("RGB", (160, 160), "#ffff00")
+            draw = ImageDraw.Draw(canvas)
+            draw.rectangle((0, 0, 63, 159), fill="#c02020")
+            canvas.save(image, format="PNG")
+            colors = theme.extract(image)
+            self.assertEqual(colors["accent"], "#c02020")
+            self.assertNotIn(
+                theme.classify_rgb(*tuple(int(colors["accent"][i:i+2], 16) for i in (1, 3, 5))),
+                theme.EXCLUDED_FAMILIES,
+            )
+
     def test_surface_opacity_is_clamped_to_readable_range(self):
         with tempfile.TemporaryDirectory() as temp:
             config = Path(temp) / "config"
