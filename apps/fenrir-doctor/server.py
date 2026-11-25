@@ -34,10 +34,10 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.7.3"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.7.0",
-    "Fenrir-Dots": "0.7.2",
+    "Fenrir-Arch": "0.7.1",
+    "Fenrir-Dots": "0.7.3",
     "Fenrir-Wallpaper-Catalog": "0.21.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
