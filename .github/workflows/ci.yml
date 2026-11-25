@@ -12,6 +12,8 @@ jobs:
           python-version: "3.13"
       - name: Install Python test dependencies
         run: python -m pip install --disable-pip-version-check Pillow
+      - name: Validate shell entry points
+        run: bash -n bin/sun-ai
       - name: Compile Python sources
         run: python -m compileall -q bin apps/sun-ai scripts tests
       - name: Run test suite
