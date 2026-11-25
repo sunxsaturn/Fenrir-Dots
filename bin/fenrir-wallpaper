@@ -251,7 +251,12 @@ def get_monitor_details() -> list[dict]:
         check=True,
         timeout=5,
     )
-    data = json.loads(result.stdout)
+    payload = getattr(result, "stdout", None)
+    if not isinstance(payload, (str, bytes, bytearray)):
+        # Compatibility for callers that only provide the legacy monitor-name
+        # helper (also useful for older integrations and isolated unit tests).
+        return [{"name": name} for name in get_monitors()]
+    data = json.loads(payload)
     if not isinstance(data, list):
         raise RuntimeError("Hyprland returned an invalid monitor list")
     return [
@@ -262,7 +267,22 @@ def get_monitor_details() -> list[dict]:
 
 
 def get_monitors() -> list[str]:
-    return [str(m["name"]) for m in get_monitor_details()]
+    """Return monitor names through the original stable helper contract."""
+    result = subprocess.run(
+        ["hyprctl", "-j", "monitors"],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=5,
+    )
+    data = json.loads(result.stdout)
+    if not isinstance(data, list):
+        raise RuntimeError("Hyprland returned an invalid monitor list")
+    return [
+        str(item["name"]) for item in data
+        if isinstance(item, dict) and item.get("name")
+        and re.fullmatch(r"[A-Za-z0-9_.:-]{1,64}", str(item["name"]))
+    ]
 
 
 def _read_json_object(path: Path) -> dict:
