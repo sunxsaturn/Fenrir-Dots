@@ -1,0 +1,53 @@
+name: Release Fenrir Dots
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify tag matches project version
+        run: |
+          version="$(tr -d '\n' < VERSION)"
+          test "v$version" = "$GITHUB_REF_NAME"
+
+      - name: Install test dependency
+        run: python -m pip install --disable-pip-version-check Pillow
+
+      - name: Validate tagged source
+        run: |
+          bash -n bin/fenrir-doctor bin/fenrir-upgrade
+          python -m compileall -q bin apps/fenrir-doctor scripts tests
+          python -m unittest discover -s tests -v
+          node --check apps/fenrir-doctor/assets/app.js
+
+      - name: Build release archive and checksum
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p release
+          git archive --format=tar.gz --prefix="fenrir-dots-${version}/" "$GITHUB_REF_NAME" > "release/fenrir-dots-${version}.tar.gz"
+          sha256sum release/* > release/SHA256SUMS
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
