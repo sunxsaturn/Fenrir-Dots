@@ -1112,6 +1112,22 @@ def stop_wallpaper_rights_review_studio() -> None:
         _stop_rights_review_studio_unlocked()
 
 
+
+def _drain_rights_review_studio_output(stream: Any) -> None:
+    """Consume child service logs without retaining or blocking on a full pipe."""
+    try:
+        for _line in stream:
+            pass
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            stream.close()
+        except (OSError, ValueError):
+            pass
+
+
+
 def start_wallpaper_rights_review_studio() -> dict[str, Any]:
     """Launch or reuse the Catalog's loopback-only, token-protected rights board."""
     global RIGHTS_STUDIO_PROCESS, RIGHTS_STUDIO_URL
@@ -1176,6 +1192,12 @@ def start_wallpaper_rights_review_studio() -> dict[str, Any]:
                 raise RuntimeError("Catalog returned a non-loopback or invalid Rights Review Studio URL.")
             if process.poll() is not None:
                 raise RuntimeError("The Rights Review Studio exited during startup.")
+            threading.Thread(
+                target=_drain_rights_review_studio_output,
+                args=(process.stdout,),
+                name="fenrir-rights-studio-output",
+                daemon=True,
+            ).start()
         except Exception:
             try:
                 if process.poll() is None:
