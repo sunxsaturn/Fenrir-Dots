@@ -1074,7 +1074,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             with patch.object(server, "STATE", state), patch.object(
                 server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
             ), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
-                with self.assertRaisesRegex(ValueError, "run mode"):
+                with self.assertRaisesRegex(ValueError, "mode"):
                     server.configure_wallpaper_discovery_schedule({
                         "enabled": True,
                         "run_mode": "unbounded",
@@ -1151,7 +1151,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             state = Path(temporary)
             schedule = server._default_wallpaper_discovery_schedule()
             schedule.update({
-                "enabled": True, "next_run_at": 2000,
+                "enabled": True, "run_mode": "scheduled", "next_run_at": 2000,
                 "campaign_id": "campaign-1", "last_status": "scheduled",
             })
             server.atomic_json(state / "schedule.json", schedule)
