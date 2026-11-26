@@ -118,7 +118,7 @@
             <section class="settings-section doctor-section">
               <div class="eyebrow">DISCOVER CANDIDATES</div><h3>Search wallpaper sources</h3>
               <label for="wallpaper-source">Metadata source</label>
-              <select id="wallpaper-source"><option value="openverse">Openverse</option><option value="wikimedia_commons">Wikimedia Commons</option><option value="wallhaven">Wallhaven (SFW metadata only)</option></select>
+              <select id="wallpaper-source"><option value="openverse">Openverse</option><option value="wikimedia_commons">Wikimedia Commons</option><option value="wallhaven">Wallhaven (SFW metadata only)</option><option value="cleveland_museum">Cleveland Museum of Art (CC0)</option></select>
               <label for="wallpaper-profile">Search profile</label>
               <select id="wallpaper-profile">
                 <option value="fenrir-nordic-fantasy-v1">Nordic mythology and dark fantasy</option>
@@ -169,6 +169,7 @@
                   <label><input class="wallpaper-queue-source" type="checkbox" value="openverse" checked> Openverse</label>
                   <label><input class="wallpaper-queue-source" type="checkbox" value="wikimedia_commons"> Wikimedia Commons</label>
                   <label><input class="wallpaper-queue-source" type="checkbox" value="wallhaven"> Wallhaven (SFW metadata)</label>
+                  <label><input class="wallpaper-queue-source" type="checkbox" value="cleveland_museum"> Cleveland Museum of Art (CC0)</label>
                 </fieldset>
                 <fieldset class="campaign-queue-options">
                   <legend>Wallpaper profiles</legend>
@@ -188,7 +189,7 @@
                 <option value="720">12 hours</option>
                 <option value="1440">24 hours</option>
               </select>
-              <p class="field-help">Up to 18 unique source/profile campaigns can be queued. Each provider/profile receives one bounded metadata-only slice per turn; unfinished campaigns resume from their own saved cursor on the next round. The finite queue stops for human review when exhausted, or stops safely on provider/catalog errors. Paused queues can be resumed without repeating completed campaigns. No wallpaper files are downloaded, licensed, accepted or synchronized by this scheduler.</p>
+              <p class="field-help">Up to 24 unique source/profile campaigns can be queued. Each provider/profile receives one bounded metadata-only slice per turn; unfinished campaigns resume from their own saved cursor on the next round. The finite queue stops for human review when exhausted, or stops safely on provider/catalog errors. Paused queues can be resumed without repeating completed campaigns. No wallpaper files are downloaded, licensed, accepted or synchronized by this scheduler.</p>
               <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Enable automatic discovery</button></div>
             </section>
             <section class="settings-section doctor-section">
