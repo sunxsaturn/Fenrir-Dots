@@ -92,6 +92,8 @@ class DoctorUtilityTests(unittest.TestCase):
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
+                server, "installed_release_versions", return_value=dict(server.LOCAL_RELEASES),
+            ), patch.object(
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
