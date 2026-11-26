@@ -40,7 +40,7 @@
         <span class="privacy-dot"></span>
         <div><strong>Local · Private</strong><small>Runs on this computer</small></div>
       </div>
-      <div class="sidebar-version">FENRIR DESKTOP · FENRIR DOCTOR 0.9.0</div>
+      <div class="sidebar-version">FENRIR DESKTOP · FENRIR DOCTOR 0.11.0</div>
     </aside>
 
     <main class="main-column">
@@ -128,7 +128,25 @@
               <pre id="wallpaper-discovery-log" class="doctor-log" aria-live="polite"></pre>
             </section>
             <section class="settings-section doctor-section">
-              <div class="eyebrow">AUTOMATIC DISCOVERY</div><h3>Scheduled metadata campaigns</h3>
+              <div class="eyebrow">AUTOMATIC DISCOVERY</div><h3>Scheduled campaign queue</h3>
+              <p class="field-help">Select one or more sources and visual themes. Fenrir creates a finite queue of unique combinations and rotates through them sequentially.</p>
+              <div class="campaign-queue-grid">
+                <fieldset class="campaign-queue-options">
+                  <legend>Sources</legend>
+                  <label><input class="wallpaper-queue-source" type="checkbox" value="openverse" checked> Openverse</label>
+                  <label><input class="wallpaper-queue-source" type="checkbox" value="wikimedia_commons"> Wikimedia Commons</label>
+                  <label><input class="wallpaper-queue-source" type="checkbox" value="wallhaven"> Wallhaven (SFW metadata)</label>
+                </fieldset>
+                <fieldset class="campaign-queue-options">
+                  <legend>Wallpaper profiles</legend>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-nordic-fantasy-v1" checked> Nordic mythology and dark fantasy</label>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-cinematic-nature-v1"> Cinematic nature and landscapes</label>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-cosmic-sci-fi-v1"> Cosmic science fiction</label>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-arctic-blue-v1"> Arctic blue and violet</label>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-architecture-monochrome-v1"> Monochrome and futuristic architecture</label>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-red-violet-dark-fantasy-v1"> Red/violet dark fantasy</label>
+                </fieldset>
+              </div>
               <label for="wallpaper-schedule-interval">Run another bounded slice every</label>
               <select id="wallpaper-schedule-interval">
                 <option value="60">1 hour</option>
@@ -137,7 +155,7 @@
                 <option value="720">12 hours</option>
                 <option value="1440">24 hours</option>
               </select>
-              <p class="field-help">Fenrir runs one sequential, resumable metadata-only slice per interval. Scheduling pauses automatically when discovery completes or a provider/catalog error occurs. Human rights review, acquisition approval and explicit acceptance remain manual. No wallpaper files are downloaded or synchronized by this scheduler.</p>
+              <p class="field-help">Up to 18 unique source/profile campaigns can be queued. Each campaign advances in bounded, resumable metadata-only slices; a completed campaign advances to the next queued combination. The finite queue stops for human review when exhausted, or stops safely on provider/catalog errors. Paused queues can be resumed without repeating completed campaigns. No wallpaper files are downloaded, licensed, accepted or synchronized by this scheduler.</p>
               <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Enable automatic discovery</button></div>
             </section>
             <section class="settings-section doctor-section">

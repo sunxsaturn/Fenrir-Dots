@@ -15,3 +15,11 @@
 #wallpaper-target,#wallpaper-schedule-interval{width:100%;max-width:260px;padding:10px;background:var(--panel-strong);color:var(--foreground);border:1px solid var(--line);border-radius:10px}
 #wallpaper-target{width:100%;max-width:260px;padding:10px;background:var(--panel-strong);color:var(--foreground);border:1px solid var(--line);border-radius:10px}
 @media(max-width:760px){.doctor-row{align-items:flex-start;flex-wrap:wrap}.doctor-row button{margin-left:auto}}
+
+.campaign-queue-grid{display:grid;grid-template-columns:minmax(180px,.8fr) minmax(260px,1.4fr);gap:12px;margin-top:13px}
+.campaign-queue-options{min-width:0;margin:0;padding:12px;border:1px solid var(--line);border-radius:11px;background:rgba(8,11,18,.22)}
+.campaign-queue-options legend{padding:0 6px;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.campaign-queue-options label{display:flex;align-items:flex-start;gap:8px;margin:8px 0;color:var(--foreground);font-size:10px;line-height:1.5;cursor:pointer}
+.campaign-queue-options input[type=checkbox]{flex:0 0 auto;width:14px;height:14px;margin:0;accent-color:var(--accent)}
+.campaign-queue-options input[type=checkbox]:disabled{opacity:.45}
+@media(max-width:760px){.campaign-queue-grid{grid-template-columns:1fr}}
