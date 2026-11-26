@@ -161,8 +161,8 @@
               <div id="wallpaper-acquisition-items" class="doctor-list"><p class="loading-card">No campaign assets loaded.</p></div>
             </section>
             <section class="settings-section doctor-section">
-              <div class="eyebrow">AUTOMATIC DISCOVERY</div><h3>Scheduled campaign queue</h3>
-              <p class="field-help">Select one or more sources and visual themes. Fenrir creates a finite queue of unique combinations and gives each provider/profile one bounded slice per turn.</p>
+              <div class="eyebrow">AUTOMATIC COLLECTION</div><h3>One-click collection run</h3>
+              <p class="field-help">Select providers and themes, then start one persistent job. Continuous mode cycles through every queued combination immediately, saving each campaign cursor so an interrupted run can resume without repeating completed work.</p>
               <div class="campaign-queue-grid">
                 <fieldset class="campaign-queue-options">
                   <legend>Sources</legend>
@@ -179,9 +179,16 @@
                   <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-arctic-blue-v1"> Arctic blue and violet</label>
                   <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-architecture-monochrome-v1"> Monochrome and futuristic architecture</label>
                   <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-red-violet-dark-fantasy-v1"> Red/violet dark fantasy</label>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-deep-ocean-bioluminescence-v1"> Deep-ocean bioluminescence</label>
+                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-obsidian-abstract-v1"> Obsidian minimalism and abstract geometry</label>
                 </fieldset>
               </div>
-              <label for="wallpaper-schedule-interval">Run another bounded slice every</label>
+              <label for="wallpaper-schedule-mode">Collection mode</label>
+              <select id="wallpaper-schedule-mode">
+                <option value="continuous" selected>Continuous · keep going until complete</option>
+                <option value="scheduled">Scheduled · run at intervals</option>
+              </select>
+              <label for="wallpaper-schedule-interval">Scheduled mode interval</label>
               <select id="wallpaper-schedule-interval">
                 <option value="60">1 hour</option>
                 <option value="180">3 hours</option>
@@ -189,7 +196,7 @@
                 <option value="720">12 hours</option>
                 <option value="1440">24 hours</option>
               </select>
-              <p class="field-help">Up to 24 unique source/profile campaigns can be queued. Each provider/profile receives one bounded metadata-only slice per turn; unfinished campaigns resume from their own saved cursor on the next round. The finite queue stops for human review when exhausted, or stops safely on provider/catalog errors. Paused queues can be resumed without repeating completed campaigns. No wallpaper files are downloaded, licensed, accepted or synchronized by this scheduler.</p>
+              <p class="field-help">Up to 32 provider/profile campaigns can be queued. Each turn is limited to four provider API requests and campaigns rotate fairly; continuous mode starts the next turn as soon as the previous slice finishes, while scheduled mode waits for the selected interval. Discovery records metadata only. It never grants rights, authorizes downloads or accepts images. When discovery is exhausted, Fenrir pauses for the separate rights, duplicate-review, acquisition and acceptance steps.</p>
               <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Enable automatic discovery</button></div>
             </section>
             <section class="settings-section doctor-section">
