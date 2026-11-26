@@ -41,7 +41,7 @@ APP_VERSION = "0.13.3"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.8.9",
     "Fenrir-Dots": "0.13.3",
-    "Fenrir-Wallpaper-Catalog": "0.34.0",
+    "Fenrir-Wallpaper-Catalog": "0.35.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -1813,7 +1813,7 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
         if isinstance(interval, bool) or not isinstance(interval, int) or interval not in DISCOVERY_SCHEDULE_INTERVALS:
             raise ValueError("Choose an automatic discovery interval of 1, 3, 6, 12 or 24 hours.")
         run_mode = payload.get("run_mode", schedule["run_mode"])
-        if run_mode not in {"continuous", "scheduled"}:
+        if not isinstance(run_mode, str) or run_mode not in {"continuous", "scheduled"}:
             raise ValueError("Choose continuous collection or scheduled discovery mode.")
         resume_existing = payload.get("resume_existing_queue", False)
         if not isinstance(resume_existing, bool):
@@ -2117,7 +2117,7 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
 def _wallpaper_discovery_scheduler_loop() -> None:
     while True:
         schedule = read_wallpaper_discovery_schedule()
-        poll_interval = 1 if schedule["enabled"] and schedule["run_mode"] == "continuous" else 30
+        poll_interval = 1 if schedule["enabled"] and schedule["run_mode"] == "continuous" else 5
         if DISCOVERY_SCHEDULER_STOP.wait(poll_interval):
             break
         try:
