@@ -698,6 +698,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             schedule = server._default_wallpaper_discovery_schedule()
             schedule.update({
                 "enabled": True, "queue": queue, "queue_index": 0,
+                "interval_minutes": 180,
                 "campaign_id": "campaign-1", "last_status": "scheduled",
                 "next_run_at": 1000,
             })
