@@ -35,7 +35,7 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.11.0"
+APP_VERSION = "0.11.1"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.7.6",
     "Fenrir-Dots": "0.10.0",
@@ -1166,6 +1166,16 @@ def wallpaper_discovery_schedule_snapshot() -> dict[str, Any]:
     schedule = read_wallpaper_discovery_schedule()
     queue = schedule["queue"]
     queue_index = schedule["queue_index"]
+    # The local scheduler only needs source/profile labels in the UI. Keep
+    # Commons contact identifiers private to the mode-0600 scheduler state.
+    queue_summary = [
+        {
+            "source": item["source"],
+            "profile": item["profile"],
+            "contact_configured": bool(item["contact"]),
+        }
+        for item in queue
+    ]
     return {
         "enabled": schedule["enabled"],
         "source": schedule["source"],
@@ -1178,12 +1188,14 @@ def wallpaper_discovery_schedule_snapshot() -> dict[str, Any]:
         "last_error": schedule["last_error"],
         "campaign_id": schedule["campaign_id"],
         "contact_configured": bool(schedule["contact"]),
-        "queue": queue,
+        "queue": queue_summary,
         "queue_index": queue_index,
         "queue_total": len(queue),
         "queue_position": min(queue_index + 1, len(queue)) if queue else 0,
         "queue_completed": bool(queue) and queue_index >= len(queue),
-        "queue_current": queue[queue_index] if queue and queue_index < len(queue) else None,
+        "queue_current": (
+            queue_summary[queue_index] if queue_summary and queue_index < len(queue_summary) else None
+        ),
     }
 
 
@@ -1627,7 +1639,7 @@ def launch_upgrade_terminal() -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FenrirDoctor/0.11.0"
+    server_version = "FenrirDoctor/0.11.1"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Never log prompt, response, or request-body content.

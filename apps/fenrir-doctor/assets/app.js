@@ -410,9 +410,13 @@ async function loadWallpapers(showError = false) {
       ? 'Pause automatic discovery'
       : (resumableQueue ? 'Resume saved campaign queue' : 'Enable automatic discovery');
     scheduleButton.disabled = !schedule.enabled && !data.catalog_available;
+    const currentQueueItem = schedule.queue_current || null;
+    const currentQueueLabel = currentQueueItem
+      ? ' · ' + currentQueueItem.source + ' / ' + currentQueueItem.profile
+      : '';
     const queueProgress = Number(schedule.queue_total || 0) > 0
       ? ' · campaign ' + Math.min(Number(schedule.queue_position || 0), Number(schedule.queue_total))
-        + '/' + Number(schedule.queue_total)
+        + '/' + Number(schedule.queue_total) + currentQueueLabel
       : '';
     if (schedule.enabled) {
       const next = schedule.next_run_at
@@ -580,7 +584,9 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
       return;
     }
     const queue = [];
-    sources.forEach((source) => profiles.forEach((profile) => {
+    // Profile-major ordering rotates across the selected providers before
+    // moving to the next profile, keeping discovery balanced by source.
+    profiles.forEach((profile) => sources.forEach((source) => {
       queue.push({
         source,
         profile,
