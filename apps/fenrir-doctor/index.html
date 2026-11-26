@@ -130,7 +130,7 @@
               </select>
               <div id="commons-contact-group" class="hidden">
                 <label for="wallpaper-contact">Commons contact email or project URL</label>
-                <input id="wallpaper-contact" maxlength="300" placeholder="https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog">
+                <input id="wallpaper-contact" maxlength="300" value="https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog" placeholder="Contact email or project URL">
               </div>
               <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Manual runs process the full selected profile. Automatic scheduling uses Catalog-defined source-specific budgets capped at four API requests per slice, with a separate saved cursor for each queued combination.</p>
               <div class="settings-actions"><span id="wallpaper-discovery-status" role="status"></span><button class="primary-button" id="wallpaper-discover-button" type="button">Start / resume discovery</button></div>
@@ -167,7 +167,7 @@
                 <fieldset class="campaign-queue-options">
                   <legend>Sources</legend>
                   <label><input class="wallpaper-queue-source" type="checkbox" value="openverse" checked> Openverse</label>
-                  <label><input class="wallpaper-queue-source" type="checkbox" value="wikimedia_commons"> Wikimedia Commons</label>
+                  <label><input class="wallpaper-queue-source" type="checkbox" value="wikimedia_commons" checked> Wikimedia Commons</label>
                   <label><input class="wallpaper-queue-source" type="checkbox" value="wallhaven" checked> Wallhaven (SFW metadata)</label>
                   <label><input class="wallpaper-queue-source" type="checkbox" value="cleveland_museum" checked> Cleveland Museum of Art (CC0)</label>
                 </fieldset>
@@ -197,7 +197,7 @@
                 <option value="1440">24 hours</option>
               </select>
               <p class="field-help">Up to 32 provider/profile campaigns can be queued. Each turn is limited to four provider API requests and campaigns rotate fairly; continuous mode starts the next turn as soon as the previous slice finishes, while scheduled mode waits for the selected interval. Discovery records metadata only. It never grants rights, authorizes downloads or accepts images. When discovery is exhausted, Fenrir pauses for the separate rights, duplicate-review, acquisition and acceptance steps.</p>
-              <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Enable automatic discovery</button></div>
+              <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Start 20,000-image collection run</button></div>
             </section>
             <section class="settings-section doctor-section">
               <div class="eyebrow">LOCAL COLLECTION</div><h3>Collection target</h3>
