@@ -2241,6 +2241,34 @@ def wallpaper_portfolio_snapshot(
             raise ValueError("Catalog returned an invalid forecast ETA.")
         if forecast.get("forecast_status") not in {"historical_trend", "insufficient_history"}:
             raise ValueError("Catalog returned an unsupported forecast confidence status.")
+        if not (attribution_source == "verified_sidecar"):
+            # Without an attribution sidecar, accepted Catalog assets may
+            # already be present locally. Do not add them to the projected
+            # total; show a conservative local-only floor instead.
+            local_only = int(forecast["local_qualifying_count"])
+            target = int(forecast["target_count"])
+            remaining = max(0, target - local_only)
+            rate = float(forecast["recent_acceptance_rate_per_day"])
+            status = forecast["forecast_status"]
+            forecast["estimated_accepted_not_yet_local"] = 0
+            forecast["projected_total_if_current_accepted_assets_are_synced"] = local_only
+            forecast["remaining_after_current_accepted_assets"] = remaining
+            forecast["projected_progress_percent"] = round(
+                min(100.0, local_only / target * 100), 1
+            )
+            forecast["estimated_days_at_recent_acceptance_rate"] = (
+                ceil(remaining / rate)
+                if status == "historical_trend" and rate > 0 and remaining > 0
+                else (0 if status == "historical_trend" and remaining == 0 else None)
+            )
+            forecast["forecast_basis"] = "local_only_conservative_attribution_unknown"
+            forecast["forecast_notice"] = (
+                "Attribution sidecar is unavailable. Projection counts only the "
+                "verified local qualifying-image count and excludes accepted Catalog "
+                "assets that may already be local. Reconcile with a fresh sync preflight."
+            )
+        else:
+            forecast["forecast_basis"] = "local_plus_unattributed_accepted_assets"
     except (ValueError, TypeError, BadJSON) as exc:
         return {**unavailable, "detail": str(exc)[:240]}
 
