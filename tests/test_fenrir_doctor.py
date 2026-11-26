@@ -24,7 +24,7 @@ class SettingsTests(unittest.TestCase):
         self.assertIsNone(settings["weather"]["latitude"])
         self.assertIsNone(settings["weather"]["longitude"])
         self.assertEqual(settings["weather"]["location"], "")
-        self.assertEqual(settings["wallpaper_target_count"], 5000)
+        self.assertEqual(settings["wallpaper_target_count"], 20000)
 
     def test_unconfigured_weather_does_not_make_network_request(self):
         from unittest.mock import patch
