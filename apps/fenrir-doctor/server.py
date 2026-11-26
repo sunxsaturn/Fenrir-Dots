@@ -2038,7 +2038,7 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
             return wallpaper_discovery_schedule_snapshot()
 
         next_run_at = schedule["next_run_at"]
-        if next_run_at is not None and current_time < next_run_at:
+        if schedule["run_mode"] != "continuous" and next_run_at is not None and current_time < next_run_at:
             if schedule["last_status"] != "scheduled":
                 schedule.update({
                     "last_status": "scheduled",
