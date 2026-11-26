@@ -1425,7 +1425,7 @@ def _start_wallpaper_discovery_unlocked(
         ):
             raise ValueError("Saved campaign does not match this queue item or is not resumable.")
         resumed = True
-    if DISCOVERY_STATE.is_file() and not DISCOVERY_STATE.is_symlink():
+    if campaign_id is None and DISCOVERY_STATE.is_file() and not DISCOVERY_STATE.is_symlink():
         try:
             previous = strict_json(DISCOVERY_STATE.read_bytes())
             if previous.get("source") == source and previous.get("profile") == profile:
