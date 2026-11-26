@@ -206,6 +206,20 @@ class DoctorUtilityTests(unittest.TestCase):
             self.assertEqual(result["palette_metrics"]["excluded_palette_color"], 3)
             self.assertEqual(result["palette_metrics"]["cached_files"], 9)
 
+    def test_wallpaper_sync_rejects_symlinked_destination_components(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            home = Path(temporary)
+            pictures = home / "Pictures"
+            pictures.mkdir()
+            linked = home / "Pictures-link"
+            linked.symlink_to(pictures, target_is_directory=True)
+            with patch.object(Path, "home", return_value=home):
+                self.assertFalse(server.wallpaper_sync_destination_allowed(linked / "Wallpapers"))
+                self.assertTrue(server.wallpaper_sync_destination_allowed(pictures / "Wallpapers"))
+
     def test_wallpaper_sync_is_confined_to_pictures_directory(self):
         import tempfile
         from unittest.mock import patch
