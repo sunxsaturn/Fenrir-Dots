@@ -24,7 +24,7 @@ ALLOWED_ACCENTS = {"green", "neutral"}
 MAX_IMAGE_BYTES = 100 * 1024 * 1024
 DEFAULT_MIN_WIDTH = 2560
 DEFAULT_MIN_HEIGHT = 1440
-DEFAULT_MIN_COUNT = 5000
+DEFAULT_MIN_COUNT = 20000
 
 
 def config_dir() -> Path:
@@ -56,7 +56,12 @@ def resolution_policy() -> tuple[int, int, int]:
     block = settings().get("wallpaper", {})
     width = max(DEFAULT_MIN_WIDTH, int(block.get("minimum_width", DEFAULT_MIN_WIDTH)))
     height = max(DEFAULT_MIN_HEIGHT, int(block.get("minimum_height", DEFAULT_MIN_HEIGHT)))
-    count = max(DEFAULT_MIN_COUNT, int(block.get("minimum_count", DEFAULT_MIN_COUNT)))
+    configured_count = block.get("minimum_count", DEFAULT_MIN_COUNT)
+    count = (
+        configured_count
+        if type(configured_count) is int and configured_count in {5000, 10000, 20000}
+        else DEFAULT_MIN_COUNT
+    )
     return width, height, count
 
 
@@ -548,8 +553,8 @@ def report_status(as_json: bool = False) -> int:
         dynamic = bool(settings().get("theme", {}).get("dynamic_colors", True))
         print(f"Rotation: every {result['interval_minutes']} minutes; monitor mode: {result['monitor_mode']}; no-repeat depth: {result['history_depth']}")
         print(f"Dynamic accent extraction {'enabled' if dynamic else 'disabled'}")
-        print("5000-image collection target: " + ("MET" if result["requirement_met"] else "NOT MET"))
-        print("Rotation uses all currently qualifying images; the 5000-image target is not a prerequisite.")
+        print(f"{minimum_count:,}-image collection target: " + ("MET" if result["requirement_met"] else "NOT MET"))
+        print("Rotation uses all currently qualifying images; the collection target is not a prerequisite.")
     return 0
 
 
@@ -605,7 +610,7 @@ def launch_wallpaper_studio() -> None:
 def sync_catalog_collection(
     collection_id: str,
     *,
-    target_count: int = 5000,
+    target_count: int = 20000,
     database: Path | None = None,
     quarantine_root: Path | None = None,
 ) -> dict:
@@ -695,7 +700,7 @@ def main() -> int:
     parser.add_argument("--interval", type=int, default=0, help="Rotation interval in minutes (default: 15 or config)")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status")
     parser.add_argument("--collection-id", help="Existing curated Fenrir Catalog collection to stage into the wallpaper rotation directory.")
-    parser.add_argument("--target-count", type=int, choices=(5000, 10000, 20000), default=5000)
+    parser.add_argument("--target-count", type=int, choices=(5000, 10000, 20000), default=20000)
     parser.add_argument("--database", type=Path, help="Optional explicit Catalog database path.")
     parser.add_argument("--quarantine-root", type=Path, help="Optional explicit Catalog quarantine path.")
     args = parser.parse_args()

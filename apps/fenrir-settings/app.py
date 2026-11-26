@@ -515,7 +515,7 @@ class FenrirSettings(Gtk.Application):
     def page_startup(self, page):
         self.heading(page, "Startup applications", "Toggle selected desktop applications in your user autostart folder. Existing application launchers are copied; disabling an item removes only its Fenrir-created autostart entry.")
         box = self.group(page, "Autostart")
-        apps = [("Discord","discord.desktop"),("Spotify","com.spotify.Client.desktop"),("Sun AI","sun-ai.desktop"),("EasyEffects","com.github.wwmm.easyeffects.desktop")]
+        apps = [("Discord","discord.desktop"),("Spotify","com.spotify.Client.desktop"),("Fenrir Doctor","fenrir-doctor.desktop"),("EasyEffects","com.github.wwmm.easyeffects.desktop")]
         for name, desktop_id in apps:
             target = core.CONFIG_HOME / "autostart" / desktop_id
             check = Gtk.CheckButton(label=name, active=target.exists())

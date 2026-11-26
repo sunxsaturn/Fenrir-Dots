@@ -37,10 +37,10 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.13.0"
+APP_VERSION = "0.13.1"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.8.7",
-    "Fenrir-Dots": "0.13.0",
+    "Fenrir-Arch": "0.8.8",
+    "Fenrir-Dots": "0.13.1",
     "Fenrir-Wallpaper-Catalog": "0.34.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
@@ -333,7 +333,7 @@ def weather_snapshot() -> dict[str, Any]:
     lat = location.get("latitude")
     lon = location.get("longitude")
     if lat is None or lon is None:
-        return {"configured": False, "location": location.get("location", ""), "message": "Set a location in Sun AI settings to enable weather."}
+        return {"configured": False, "location": location.get("location", ""), "message": "Set a location in Fenrir Doctor settings to enable weather."}
     query = urllib.parse.urlencode({
         "latitude": lat,
         "longitude": lon,
@@ -461,7 +461,7 @@ def wallpaper_runtime_snapshot() -> dict[str, Any]:
         "valid_count": None,
         "file_count": None,
         "rejected_count": None,
-        "minimum_count": 5000,
+        "minimum_count": 20000,
         "monitor_mode": "shared",
         "history_depth": 20,
         "monitor_count": None,
@@ -494,7 +494,7 @@ def wallpaper_runtime_snapshot() -> dict[str, Any]:
             "valid_count": int(payload.get("valid_count", 0)),
             "file_count": int(payload.get("file_count", 0)),
             "rejected_count": int(payload.get("rejected_count", 0)),
-            "minimum_count": int(payload.get("minimum_count", 5000)),
+            "minimum_count": int(payload.get("minimum_count", 20000)),
             "monitor_mode": payload.get("monitor_mode", "shared"),
             "history_depth": int(payload.get("history_depth", 20)),
             "detail": "Wallpaper qualification report loaded from the local companion.",

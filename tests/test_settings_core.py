@@ -124,6 +124,19 @@ class SettingsCoreTests(unittest.TestCase):
         self.assertEqual(sinks, [("52", "USB Audio Output"), ("53", "HDMI Audio")])
         self.assertEqual(sources, [("63", "USB Microphone")])
 
+    def test_fenrir_doctor_can_be_added_to_and_removed_from_user_autostart(self):
+        launcher = self.root / ".local" / "share" / "applications" / "fenrir-doctor.desktop"
+        launcher.parent.mkdir(parents=True)
+        launcher.write_text("[Desktop Entry]\\nName=Fenrir Doctor\\nExec=fenrir-doctor open\\n", encoding="utf-8")
+        with mock.patch.object(core.Path, "home", return_value=self.root):
+            core.set_startup_app("Fenrir Doctor", "fenrir-doctor.desktop", True)
+            target = self.config / "autostart" / "fenrir-doctor.desktop"
+            self.assertEqual(target.read_text(encoding="utf-8"), launcher.read_text(encoding="utf-8"))
+            core.set_startup_app("Fenrir Doctor", "fenrir-doctor.desktop", False)
+        self.assertFalse(target.exists())
+        backups = list((self.state / "fenrir" / "settings-backups").glob("*/fenrir-doctor.desktop"))
+        self.assertEqual(len(backups), 1)
+
     def test_doctor_user_service_is_allowlisted(self):
         with mock.patch.object(core, "_run") as command:
             core.service_state("fenrir-doctor.service", user=True)
