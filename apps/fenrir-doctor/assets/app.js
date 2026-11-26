@@ -434,7 +434,106 @@ async function loadWallpapers(showError = false) {
     }
     if (schedule.enabled) $('wallpaper-discover-button').disabled = true;
     updateCommonsContactVisibility();
+    loadWallpaperAcquisitionQueue();
   } catch (error) { if (showError) toast(error.message); }
+}
+
+async function loadWallpaperAcquisitionQueue(showError = false) {
+  const summary = $('wallpaper-acquisition-summary');
+  const metrics = $('wallpaper-acquisition-metrics');
+  const items = $('wallpaper-acquisition-items');
+  const status = $('wallpaper-acquisition-status');
+  try {
+    const data = await api('/api/doctor/wallpapers/acquisition-queue');
+    summary.textContent = data.detail || 'Campaign acquisition report loaded.';
+    metrics.replaceChildren();
+    items.replaceChildren();
+    const queue = data.queue;
+    if (!queue) {
+      const empty = document.createElement('p');
+      empty.className = 'loading-card';
+      empty.textContent = data.detail || 'No acquisition queue is available.';
+      items.append(empty);
+      status.textContent = 'Read-only · no transfers started';
+      return;
+    }
+
+    const stages = queue.stage_counts || {};
+    [
+      ['Campaign assets', Number(queue.total_campaign_assets || 0).toLocaleString(), 'Unique assets observed by this discovery campaign.'],
+      ['Ready for authorization', Number(queue.ready_for_authorization_count || 0).toLocaleString(), 'Evidence checks pass; explicit per-asset authorization is still required.'],
+      ['Batch-ready', Number(queue.authorized_batch_ready_count || 0).toLocaleString(), 'Current authorization and evidence still pass revalidation.'],
+      ['Blocked', Number(queue.blocked_count || 0).toLocaleString(), 'Rights, license, provider or recovery evidence needs attention.'],
+      ['Quarantined for review', Number(stages.quarantined_pending_review || 0).toLocaleString(), 'Downloaded files still require duplicate review and explicit human acceptance.']
+    ].forEach(([title, value, detail]) => {
+      const card = document.createElement('article');
+      card.className = 'metric-card';
+      const label = document.createElement('span');
+      label.className = 'eyebrow';
+      label.textContent = title;
+      const number = document.createElement('strong');
+      number.textContent = value;
+      const help = document.createElement('small');
+      help.textContent = detail;
+      card.append(label, number, help);
+      metrics.append(card);
+    });
+
+    (queue.items || []).forEach((item) => {
+      const row = document.createElement('article');
+      row.className = 'doctor-row';
+      const info = document.createElement('div');
+      const heading = document.createElement('strong');
+      heading.textContent = item.title || item.asset_id;
+      const details = document.createElement('small');
+      details.textContent = item.source_key + ' · ' + (item.license_identifier || 'license unknown')
+        + ' · ' + (item.width || '?') + '×' + (item.height || '?');
+      const stage = document.createElement('small');
+      const stageLabels = {
+        ready_for_authorization: 'Ready for explicit acquisition authorization',
+        blocked_for_authorization: 'Blocked: rights / license / provider checks',
+        authorized_pending_acquisition: 'Authorized · ready for provider batch',
+        authorization_stale: 'Authorization stale · refresh evidence',
+        blocked_unresolved_attempt: 'Blocked · reconcile previous transfer',
+        quarantined_pending_review: 'Quarantined · duplicate review and acceptance required',
+        accepted: 'Accepted · eligible for curation and sync',
+        rejected: 'Rejected',
+        other: item.stage || 'Other'
+      };
+      stage.textContent = stageLabels[item.stage] || item.stage || 'Unknown status';
+      info.append(heading, details, stage);
+      row.append(info);
+
+      if (Array.isArray(item.blockers) && item.blockers.length) {
+        const blocker = document.createElement('small');
+        blocker.textContent = item.blockers.map((entry) => entry.code).join(', ');
+        row.append(blocker);
+      }
+      items.append(row);
+    });
+
+    if (!queue.count) {
+      const empty = document.createElement('p');
+      empty.className = 'loading-card';
+      empty.textContent = 'No assets have been observed by this campaign yet.';
+      items.append(empty);
+    }
+    const shown = Number(queue.count || 0);
+    const total = Number(queue.total_campaign_assets || 0);
+    status.textContent = 'Read-only · ' + shown.toLocaleString() + ' shown'
+      + (total > shown ? ' of ' + total.toLocaleString() + ' · CLI supports further pages' : '')
+      + ' · 0 downloads';
+  } catch (error) {
+    summary.textContent = 'Acquisition readiness is unavailable.';
+    metrics.replaceChildren();
+    items.replaceChildren();
+    const empty = document.createElement('p');
+    empty.className = 'loading-card';
+    empty.textContent = error.message;
+    items.append(empty);
+    status.textContent = 'No changes made';
+    if (showError) toast(error.message);
+  }
 }
 
 async function loadSettings() {
@@ -504,6 +603,8 @@ $('wallpaper-source').addEventListener('change', updateCommonsContactVisibility)
 document.querySelectorAll('.wallpaper-queue-source').forEach((input) => {
   input.addEventListener('change', updateCommonsContactVisibility);
 });
+
+$('wallpaper-acquisition-refresh').addEventListener('click', () => loadWallpaperAcquisitionQueue(true));
 
 $('wallpaper-discover-button').addEventListener('click', async () => {
   const source = $('wallpaper-source').value;
