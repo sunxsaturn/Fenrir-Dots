@@ -1047,9 +1047,9 @@ def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
         source = item.get("source")
         profile = item.get("profile")
         contact = item.get("contact")
-        if source not in allowed_sources:
+        if not isinstance(source, str) or source not in allowed_sources:
             raise ValueError(f"Queue item {index + 1} has an unsupported source.")
-        if profile not in DISCOVERY_PROFILES:
+        if not isinstance(profile, str) or profile not in DISCOVERY_PROFILES:
             raise ValueError(f"Queue item {index + 1} has an unsupported profile.")
         if (source, profile) in seen:
             raise ValueError("A source/profile combination may appear only once in a queue.")
@@ -1122,7 +1122,10 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
         queue = []
         queue_index = 0
         if raw.get("schema_version") == 2:
-            queue = _validate_wallpaper_campaign_queue(raw["queue"]) if raw.get("queue") else []
+            raw_queue = raw.get("queue", [])
+            if not isinstance(raw_queue, list):
+                raise ValueError("Scheduler queue must be a list.")
+            queue = _validate_wallpaper_campaign_queue(raw_queue) if raw_queue else []
             queue_index = raw.get("queue_index", 0)
             if (
                 isinstance(queue_index, bool) or not isinstance(queue_index, int)
@@ -1260,8 +1263,12 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
             source, profile, contact = active["source"], active["profile"], active["contact"]
             process_running = DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None
             if process_running:
+                if DISCOVERY_STATE.is_symlink() or not DISCOVERY_STATE.is_file():
+                    raise ValueError("The active campaign state cannot be verified; inspect it before resuming.")
                 state = strict_json(DISCOVERY_STATE.read_bytes())
                 campaign_id = state.get("campaign_id")
+                if not isinstance(campaign_id, str) or not campaign_id:
+                    raise ValueError("The active campaign identifier is invalid.")
             else:
                 started = _start_wallpaper_discovery_unlocked(
                     source, profile, contact, max_queries=DISCOVERY_SLICE_MAX_QUERIES,
