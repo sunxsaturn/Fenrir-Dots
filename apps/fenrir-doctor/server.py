@@ -900,6 +900,88 @@ def wallpaper_campaign_snapshot() -> dict[str, Any]:
         }
 
 
+def wallpaper_acquisition_queue_snapshot() -> dict[str, Any]:
+    """Show the read-only Catalog acquisition runway for the active campaign."""
+    snapshot = wallpaper_campaign_snapshot()
+    campaign = snapshot.get("campaign")
+    if not isinstance(campaign, dict) or not isinstance(campaign.get("campaign_id"), str):
+        return {
+            "campaign": None,
+            "queue": None,
+            "detail": snapshot.get("error") or "No persisted discovery campaign is available yet.",
+            "read_only": True,
+            "downloads_started": 0,
+        }
+
+    executable = shutil.which("fenrir-catalog")
+    if not executable or not CATALOG_DB.is_file():
+        return {
+            "campaign": {
+                "campaign_id": campaign["campaign_id"],
+                "source_key": campaign.get("source_key"),
+                "profile_key": campaign.get("profile_key"),
+                "status": campaign.get("status"),
+            },
+            "queue": None,
+            "detail": "The Fenrir Wallpaper Catalog CLI or local database is unavailable.",
+            "read_only": True,
+            "downloads_started": 0,
+        }
+
+    try:
+        result = subprocess.run(
+            [
+                executable, "catalog", "acquisition", "campaign-queue",
+                "--database", str(CATALOG_DB), campaign["campaign_id"],
+                "--limit", "100", "--offset", "0",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "Acquisition runway unavailable.")[:260]
+            return {
+                "campaign": {
+                    "campaign_id": campaign["campaign_id"],
+                    "source_key": campaign.get("source_key"),
+                    "profile_key": campaign.get("profile_key"),
+                    "status": campaign.get("status"),
+                },
+                "queue": None,
+                "detail": detail,
+                "read_only": True,
+                "downloads_started": 0,
+            }
+
+        payload = strict_json(result.stdout.encode("utf-8"))
+        if not isinstance(payload, dict) or payload.get("report") != "org.fenrir.acquisition-campaign-queue":
+            raise ValueError("Catalog returned an unsupported acquisition queue report.")
+        if payload.get("downloads_started") != 0 or payload.get("read_only") is not True:
+            raise ValueError("Catalog acquisition queue did not confirm its read-only contract.")
+        return {
+            "campaign": payload.get("campaign"),
+            "queue": payload,
+            "detail": "Campaign acquisition runway loaded from the local, read-only Catalog report.",
+            "read_only": True,
+            "downloads_started": 0,
+        }
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError, BadJSON) as exc:
+        return {
+            "campaign": {
+                "campaign_id": campaign["campaign_id"],
+                "source_key": campaign.get("source_key"),
+                "profile_key": campaign.get("profile_key"),
+                "status": campaign.get("status"),
+            },
+            "queue": None,
+            "detail": str(exc)[:260],
+            "read_only": True,
+            "downloads_started": 0,
+        }
+
+
 def _start_wallpaper_discovery_unlocked(
     source: Any,
     profile: Any,
@@ -1729,6 +1811,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, wallpaper_snapshot())
         if path == "/api/doctor/wallpapers/campaign":
             return self.send_bytes(200, wallpaper_campaign_snapshot())
+        if path == "/api/doctor/wallpapers/acquisition-queue":
+            return self.send_bytes(200, wallpaper_acquisition_queue_snapshot())
         if path == "/api/weather":
             try:
                 return self.send_bytes(200, weather_snapshot())
