@@ -283,7 +283,7 @@ class FenrirSettings(Gtk.Application):
         self.button(page, "Apply appearance", apply, True)
 
     def page_wallpaper(self, page):
-        self.heading(page, "Wallpapers", "Rotation runs every 15 minutes by default. Only readable landscape images at least 2560×1440 count toward the library target. Rotation uses every currently qualifying image; 5,000 is the collection target, not a prerequisite.")
+        self.heading(page, "Wallpapers", "Rotation runs every 15 minutes by default. The default collection goal is 20,000 qualifying landscape images (5,000 or 10,000 are also selectable). Only readable images at least 2560×1440 count; rotation uses qualifying images already present and never waits for the goal.")
         box = self.group(page, "Library")
         directory = Gtk.Entry(text=str(self.settings["wallpaper"].get("directory", "~/Pictures/Wallpapers")))
         directory.set_hexpand(True)
@@ -422,7 +422,7 @@ class FenrirSettings(Gtk.Application):
         shortcuts = [
             ("Super + Enter", "Kitty terminal"), ("Super + Space", "Fuzzel launcher"),
             ("Super + E", "Thunar file manager"), ("Super + B", "Firefox Nightly"),
-            ("Super + A", "Sun AI"), ("Super + W", "Next wallpaper"),
+            ("Super + A", "Fenrir Doctor"), ("Super + W", "Next wallpaper"),
             ("Super + L", "Manual lock (hyprlock)"), ("Super + Q", "Close window"),
             ("Super + F", "Fullscreen"), ("Super + Arrow", "Move focus"),
             ("Super + 1…0", "Switch workspaces"), ("Super + Shift + 1…0", "Move window to workspace"),

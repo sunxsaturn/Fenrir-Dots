@@ -31,6 +31,14 @@ class SettingsCoreTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+    def test_settings_copy_matches_wallpaper_goal_and_fenrir_doctor_keybind(self):
+        settings_source = (ROOT / "apps/fenrir-settings/app.py").read_text(encoding="utf-8")
+        self.assertIn("default collection goal is 20,000", settings_source)
+        self.assertIn("5,000 or 10,000 are also selectable", settings_source)
+        self.assertIn('("Super + A", "Fenrir Doctor")', settings_source)
+        self.assertNotIn("5,000 is the collection target", settings_source)
+        self.assertNotIn('("Super + A", "Sun AI")', settings_source)
+
     def test_setting_update_is_validated_backed_up_and_preserves_unmanaged_keys(self):
         backup = core.set_setting("wallpaper", "interval_minutes", 30, self.settings)
         content = self.settings.read_text(encoding="utf-8")
