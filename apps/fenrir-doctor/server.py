@@ -37,11 +37,11 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.12.5"
+APP_VERSION = "0.13.0"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.8.5",
-    "Fenrir-Dots": "0.12.5",
-    "Fenrir-Wallpaper-Catalog": "0.31.0",
+    "Fenrir-Arch": "0.8.7",
+    "Fenrir-Dots": "0.13.0",
+    "Fenrir-Wallpaper-Catalog": "0.34.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -1330,7 +1330,7 @@ def _start_wallpaper_discovery_unlocked(
     max_queries: int | None = 100,
 ) -> dict[str, Any]:
     global DISCOVERY_PROCESS
-    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
+    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
     allowed_profiles = DISCOVERY_PROFILES
     if max_queries is not None and (
         isinstance(max_queries, bool) or not isinstance(max_queries, int)
@@ -1338,7 +1338,7 @@ def _start_wallpaper_discovery_unlocked(
     ):
         raise ValueError("Discovery max_queries must be between 1 and 100.")
     if source not in allowed_sources:
-        raise ValueError("Choose Openverse, Wikimedia Commons or Wallhaven.")
+        raise ValueError("Choose Openverse, Wikimedia Commons, Wallhaven or Cleveland Museum of Art.")
     if profile not in allowed_profiles:
         raise ValueError("Choose a supported Fenrir wallpaper discovery profile.")
     if DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None:
@@ -1541,11 +1541,11 @@ def _default_wallpaper_discovery_schedule() -> dict[str, Any]:
 
 def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
     """Validate a finite, unique source/profile queue before persisting it."""
-    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
+    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
     if not isinstance(raw_queue, list) or not raw_queue:
         raise ValueError("Choose at least one wallpaper campaign for the queue.")
-    if len(raw_queue) > 18:
-        raise ValueError("A discovery queue may contain at most 18 unique source/profile campaigns.")
+    if len(raw_queue) > 24:
+        raise ValueError("A discovery queue may contain at most 24 unique source/profile campaigns.")
     queue: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(raw_queue):
@@ -1618,7 +1618,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             raise ValueError("Unsupported scheduler state format.")
         if not isinstance(raw.get("enabled"), bool):
             raise ValueError("Scheduler enabled state is invalid.")
-        if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven"}:
+        if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}:
             raise ValueError("Scheduler source is invalid.")
         if raw.get("profile") not in DISCOVERY_PROFILES:
             raise ValueError("Scheduler profile is invalid.")
@@ -2219,7 +2219,7 @@ def wallpaper_portfolio_snapshot(
         for provider in payload["providers"]:
             if (
                 not isinstance(provider, dict)
-                or provider.get("source_key") not in {"openverse", "wikimedia_commons", "wallhaven"}
+                or provider.get("source_key") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
             ):
                 raise ValueError("Catalog returned an invalid provider portfolio row.")
         for profile in payload["profiles"]:

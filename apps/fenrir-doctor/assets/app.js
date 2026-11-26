@@ -403,7 +403,8 @@ async function loadWallpapers(showError = false) {
         title.textContent = ({
           openverse: 'Openverse',
           wikimedia_commons: 'Wikimedia Commons',
-          wallhaven: 'Wallhaven'
+          wallhaven: 'Wallhaven',
+          cleveland_museum: 'Cleveland Museum of Art (CC0)'
         })[provider.source_key] || provider.source_key;
         const budget = provider.provider_budget || {};
         const stats = document.createElement('small');
@@ -845,7 +846,9 @@ $('wallpaper-discover-button').addEventListener('click', async () => {
     ? 'Run the full bounded Openverse metadata profile? It may take several minutes. No image files will be downloaded or accepted.'
     : (source === 'wallhaven'
       ? 'Run the full bounded SFW Wallhaven metadata profile? It may take several minutes. No image files will be downloaded or accepted.'
-      : 'Run the full bounded Wikimedia Commons metadata profile using this contact identifier? It may take several minutes. No image files will be downloaded or accepted.');
+      : (source === 'cleveland_museum'
+        ? 'Run the Cleveland Museum of Art CC0 metadata profile? Only artworks individually marked CC0 with qualifying landscape images are retained. No image files will be downloaded or accepted.'
+        : 'Run the full bounded Wikimedia Commons metadata profile using this contact identifier? It may take several minutes. No image files will be downloaded or accepted.'));
   if (!window.confirm(confirmText)) return;
   $('wallpaper-discover-button').disabled = true;
   $('wallpaper-discovery-status').textContent = 'Creating resumable campaign…';
