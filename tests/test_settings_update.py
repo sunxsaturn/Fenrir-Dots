@@ -17,7 +17,7 @@ class SettingsUpdateTests(unittest.TestCase):
             contents = target.read_text(encoding="utf-8")
             self.assertIn('directory = "/custom/wallpapers"', contents)
             self.assertIn("interval_minutes = 15", contents)
-            self.assertIn("minimum_count = 5000", contents)
+            self.assertIn("minimum_count = 20000", contents)
             self.assertIn("surface_opacity = 0.60", contents)
 
 
