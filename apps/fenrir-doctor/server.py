@@ -840,13 +840,106 @@ def current_wallpaper_directory() -> Path:
         except (OSError, tomllib.TOMLDecodeError, AttributeError):
             configured = None
     path = Path(configured).expanduser() if isinstance(configured, str) and configured.strip() else Path.home() / "Pictures/Wallpapers"
-    return path.resolve()
+    # Normalize relative components without resolving symlinks. The sync
+    # boundary checks each path component before any directory is created.
+    return Path(os.path.abspath(os.fspath(path)))
 
 
 def wallpaper_sync_destination_allowed(path: Path) -> bool:
-    pictures = (Path.home() / "Pictures").resolve()
-    resolved = path.resolve()
-    return resolved == pictures or pictures in resolved.parents
+    absolute = Path(os.path.abspath(os.fspath(path.expanduser())))
+    pictures = Path(os.path.abspath(os.fspath(Path.home() / "Pictures")))
+    current = Path(absolute.anchor)
+    for component in absolute.parts[1:]:
+        current = current / component
+        if current.is_symlink():
+            return False
+    return absolute == pictures or pictures in absolute.parents
+
+
+def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
+    """Run the Catalog's bounded, read-only sync planner and sanitize its result."""
+    if target_count not in {5000, 10000, 20000}:
+        raise ValueError("Choose a wallpaper target of 5,000, 10,000 or 20,000.")
+    executable = shutil.which("fenrir-catalog")
+    if not executable or not CATALOG_DB.is_file() or not QUARANTINE_ROOT.is_dir():
+        raise ValueError("The local Fenrir Wallpaper Catalog is not ready.")
+    wallpaper_directory = current_wallpaper_directory()
+    if not wallpaper_sync_destination_allowed(wallpaper_directory):
+        raise ValueError("Catalog sync is sandboxed to folders under ~/Pictures.")
+
+    result = subprocess.run(
+        [
+            executable, "catalog", "library", "sync-plan",
+            "--database", str(CATALOG_DB),
+            "--quarantine-root", str(QUARANTINE_ROOT),
+            "--destination", str(wallpaper_directory),
+            "--target-count", str(target_count),
+            "--max-plan-assets", "20000",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "Catalog sync preflight failed.").strip()
+        raise ValueError(detail[:300])
+
+    payload = strict_json(result.stdout.encode("utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("report") != "org.fenrir.wallpaper-sync-preflight"
+        or payload.get("target_count") != target_count
+        or payload.get("read_only") is not True
+        or payload.get("sync_started") is not False
+        or not isinstance(payload.get("sync_allowed"), bool)
+        or not isinstance(payload.get("plan_complete"), bool)
+        or not isinstance(payload.get("destination_parent_writable"), bool)
+    ):
+        raise ValueError("Catalog returned an invalid or incomplete wallpaper sync preflight.")
+
+    zero_fields = (
+        "database_writes", "files_written", "directories_created",
+        "quarantine_files_read", "downloads_started", "acceptance_decisions_created",
+    )
+    false_fields = ("attribution_written", "palette_cache_written", "sync_started")
+    if any(payload.get(field) != 0 for field in zero_fields) or any(
+        payload.get(field) is not False for field in false_fields
+    ):
+        raise ValueError("Catalog violated the read-only wallpaper sync preflight contract.")
+
+    count_fields = (
+        "before_count", "remaining_slots", "accepted_assets_examined",
+        "metadata_eligible_count", "already_present_count",
+        "planned_new_copies", "projected_total_count",
+    )
+    counts = {}
+    for field in count_fields:
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Catalog returned an invalid preflight count: {field}.")
+        counts[field] = value
+
+    skipped = payload.get("skipped", {})
+    if not isinstance(skipped, dict) or any(
+        not isinstance(key, str) or isinstance(value, bool)
+        or not isinstance(value, int) or value < 0
+        for key, value in skipped.items()
+    ):
+        raise ValueError("Catalog returned invalid preflight blocker counts.")
+
+    return {
+        "target_count": target_count,
+        **counts,
+        "projected_target_reached": payload.get("projected_target_reached") is True,
+        "plan_complete": payload["plan_complete"],
+        "selection_satisfied": payload.get("selection_satisfied") is True,
+        "has_more": payload.get("has_more") is True,
+        "destination_parent_writable": payload["destination_parent_writable"],
+        "sync_allowed": payload["sync_allowed"] is True,
+        "skipped": skipped,
+        "read_only": True,
+    }
 
 
 def wallpaper_campaign_snapshot() -> dict[str, Any]:
@@ -1921,6 +2014,11 @@ def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
     wallpaper_directory = current_wallpaper_directory()
     if not wallpaper_sync_destination_allowed(wallpaper_directory):
         raise ValueError("Catalog sync is sandboxed to folders under ~/Pictures. Change the wallpaper directory in Fenrir Settings first.")
+    preflight = wallpaper_sync_preflight(target_count)
+    if not preflight["sync_allowed"]:
+        raise ValueError(
+            "Read-only sync preflight blocked synchronization; review the collection plan and blockers."
+        )
     wallpaper_directory.mkdir(parents=True, exist_ok=True)
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     log = WALLPAPER_SYNC_LOG.open("w", encoding="utf-8")
@@ -1941,7 +2039,12 @@ def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
         log.close()
         raise
     log.close()
-    return {"started": True, "pid": WALLPAPER_SYNC.pid, "target_count": target_count}
+    return {
+        "started": True,
+        "pid": WALLPAPER_SYNC.pid,
+        "target_count": target_count,
+        "preflight": preflight,
+    }
 
 
 def launch_upgrade_terminal() -> dict[str, Any]:
@@ -2140,6 +2243,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_bytes(200, start_wallpaper_rights_review_studio())
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                 return self.send_bytes(503, {"error": str(exc)[:300]})
+
+        if path == "/api/doctor/wallpapers/sync-plan":
+            try:
+                return self.send_bytes(200, wallpaper_sync_preflight(
+                    obj.get("target_count", 5000)
+                ))
+            except (OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
 
         if path == "/api/doctor/wallpapers/sync":
             try:

@@ -185,8 +185,9 @@
               <div class="eyebrow">LOCAL COLLECTION</div><h3>Collection target</h3>
               <label for="wallpaper-target">Choose a target size</label>
               <select id="wallpaper-target"><option value="5000">5,000 images</option><option value="10000">10,000 images</option><option value="20000">20,000 images</option></select>
-              <p class="field-help">Only locally quarantined images with approved license policy, human rights approval and explicit catalog acceptance are copied. Images are hash-verified and attribution is retained. This step does not fetch provider URLs.</p>
-              <div class="settings-actions"><span id="wallpaper-sync-status" role="status"></span><button class="primary-button" id="wallpaper-sync-button" type="button">Sync accepted wallpapers</button></div>
+              <p class="field-help">Only locally quarantined images with approved license policy, human rights approval and explicit catalog acceptance are copied. Images are hash-verified and attribution is retained. A bounded read-only preflight is required before every sync; it does not fetch provider URLs or read quarantine image bytes.</p>
+              <div class="settings-actions"><span id="wallpaper-sync-plan-status" role="status">Run a read-only preflight before synchronization.</span><button class="secondary-button" id="wallpaper-sync-plan-button" type="button">Preview sync plan</button></div>
+              <div class="settings-actions"><span id="wallpaper-sync-status" role="status"></span><button class="primary-button" id="wallpaper-sync-button" type="button" disabled>Sync accepted wallpapers</button></div>
               <pre id="wallpaper-sync-log" class="doctor-log" aria-live="polite"></pre>
             </section>
           </section>
