@@ -434,8 +434,81 @@ async function loadWallpapers(showError = false) {
     }
     if (schedule.enabled) $('wallpaper-discover-button').disabled = true;
     updateCommonsContactVisibility();
+    loadWallpaperRightsReview();
     loadWallpaperAcquisitionQueue();
   } catch (error) { if (showError) toast(error.message); }
+}
+
+
+async function loadWallpaperRightsReview(showError = false) {
+  const summary = $('wallpaper-rights-review-summary');
+  const metrics = $('wallpaper-rights-review-metrics');
+  const items = $('wallpaper-rights-review-items');
+  const status = $('wallpaper-rights-review-status');
+  try {
+    const data = await api('/api/doctor/wallpapers/rights-review');
+    summary.textContent = data.detail || 'Rights-review snapshot loaded.';
+    metrics.replaceChildren();
+    items.replaceChildren();
+    const queue = data.queue;
+    if (!data.available || !queue) {
+      items.append(Object.assign(document.createElement('p'), {
+        className: 'loading-card',
+        textContent: data.detail || 'Rights-review queue is unavailable.'
+      }));
+      status.textContent = 'Read-only snapshot unavailable';
+      return;
+    }
+
+    const counts = queue.status_counts || {};
+    [
+      ['Open rights cases', Number(queue.total_count || 0).toLocaleString(), 'Recorded statuses still requiring human review.'],
+      ['Unknown', Number(counts.unknown || 0).toLocaleString(), 'No recorded rights conclusion yet.'],
+      ['Review required', Number(counts.review_required || 0).toLocaleString(), 'Additional evidence or human judgment is needed.'],
+      ['Policy-eligible', Number(counts.eligible || 0).toLocaleString(), 'Policy assessment is not human approval.']
+    ].forEach(([title, value, detail]) => {
+      const card = document.createElement('article');
+      card.className = 'metric-card';
+      const label = document.createElement('span');
+      label.className = 'eyebrow';
+      label.textContent = title;
+      const number = document.createElement('strong');
+      number.textContent = value;
+      const help = document.createElement('small');
+      help.textContent = detail;
+      card.append(label, number, help);
+      metrics.append(card);
+    });
+
+    (queue.items || []).forEach((item) => {
+      const row = document.createElement('article');
+      row.className = 'doctor-row';
+      const info = document.createElement('div');
+      const name = document.createElement('strong');
+      name.textContent = item.title || 'Untitled asset';
+      const detail = document.createElement('small');
+      detail.textContent = (item.source_key || 'Unknown source') + ' · ' + item.rights_status
+        + ' · ' + (item.license_identifier || 'No license recorded');
+      const gaps = document.createElement('small');
+      gaps.textContent = item.metadata_gaps && item.metadata_gaps.length
+        ? 'Evidence gaps: ' + item.metadata_gaps.join(', ')
+        : 'No basic metadata gaps reported';
+      info.append(name, detail, gaps);
+      row.append(info);
+      items.append(row);
+    });
+    if (!(queue.items || []).length) {
+      const empty = document.createElement('p');
+      empty.className = 'loading-card';
+      empty.textContent = 'No unresolved rights cases were returned.';
+      items.append(empty);
+    }
+    status.textContent = 'Read-only · no rights decisions or acquisition authorizations created'
+      + (queue.has_more ? ' · more cases available in the Studio' : '');
+  } catch (error) {
+    summary.textContent = error.message;
+    if (showError) toast(error.message);
+  }
 }
 
 async function loadWallpaperAcquisitionQueue(showError = false) {
@@ -605,6 +678,54 @@ document.querySelectorAll('.wallpaper-queue-source').forEach((input) => {
 });
 
 $('wallpaper-acquisition-refresh').addEventListener('click', () => loadWallpaperAcquisitionQueue(true));
+
+$('wallpaper-rights-review-refresh').addEventListener('click', () => loadWallpaperRightsReview(true));
+
+$('wallpaper-rights-review-open').addEventListener('click', async () => {
+  const button = $('wallpaper-rights-review-open');
+  const status = $('wallpaper-rights-review-status');
+  const waitingTab = window.open('about:blank', '_blank');
+  button.disabled = true;
+  status.textContent = 'Starting the private Catalog review board…';
+  try {
+    const result = await api('/api/doctor/wallpapers/rights-studio', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    const target = new URL(result.url);
+    if (
+      target.protocol !== 'http:'
+      || target.hostname !== '127.0.0.1'
+      || target.port === ''
+      || !/^\/s\/[A-Za-z0-9_-]{32,64}\/$/.test(target.pathname)
+      || target.search
+      || target.hash
+    ) {
+      throw new Error('Fenrir returned an invalid local Rights Review Studio address.');
+    }
+    if (waitingTab && !waitingTab.closed) {
+      waitingTab.opener = null;
+      waitingTab.location.replace(target.href);
+    } else {
+      const link = document.createElement('a');
+      link.href = target.href;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+      link.textContent = 'Open Fenrir Rights Review Studio';
+      status.replaceChildren(link);
+    }
+    status.textContent = result.already_running
+      ? 'Existing private Rights Review Studio session opened.'
+      : 'Private Rights Review Studio started.';
+    toast('Rights Review Studio ready');
+  } catch (error) {
+    if (waitingTab && !waitingTab.closed) waitingTab.close();
+    status.textContent = error.message;
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 $('wallpaper-discover-button').addEventListener('click', async () => {
   const source = $('wallpaper-source').value;

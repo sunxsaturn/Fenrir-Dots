@@ -524,6 +524,158 @@ class WallpaperDiscoveryTests(unittest.TestCase):
 
 
 
+class WallpaperRightsReviewTests(unittest.TestCase):
+    def test_rights_snapshot_uses_read_only_command_and_redacts_source_urls(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        report = {
+            "queue": "human-rights-review",
+            "read_only": True,
+            "automatic_rights_decision": False,
+            "automatic_acquisition_authorization": False,
+            "status_counts": {"unknown": 2, "review_required": 1, "eligible": 3},
+            "count": 1,
+            "next_cursor": "opaque",
+            "results": [{
+                "id": "asset-1",
+                "title": "Northern lights",
+                "source_key": "openverse",
+                "source_url": "https://example.invalid/source",
+                "download_url": "https://example.invalid/download",
+                "rights_status": "unknown",
+                "license_identifier": "CC-BY-4.0",
+                "metadata_gaps": ["missing_creator"],
+                "evidence_count": 2,
+                "policy_assessment": {"decision": "eligible"},
+                "latest_human_review": {
+                    "decision": "review_required",
+                    "reviewer": "Reviewer A",
+                    "recorded_at": "2026-11-26T10:00:00Z",
+                    "evidence_url": "https://example.invalid/private-evidence",
+                },
+            }],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "catalog.sqlite3"
+            database.write_bytes(b"catalog")
+            completed = SimpleNamespace(returncode=0, stdout=json.dumps(report), stderr="")
+            with (
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "run", return_value=completed) as run,
+            ):
+                result = server.wallpaper_rights_review_snapshot()
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[1:4], ["catalog", "rights", "queue"])
+        self.assertEqual(command[command.index("--limit") + 1], "100")
+        self.assertEqual(run.call_args.kwargs["timeout"], 20)
+        self.assertEqual(result["queue"]["total_count"], 6)
+        self.assertTrue(result["queue"]["has_more"])
+        item = result["queue"]["items"][0]
+        self.assertEqual(item["asset_id"], "asset-1")
+        self.assertNotIn("source_url", item)
+        self.assertNotIn("download_url", item)
+        self.assertNotIn("evidence_url", json.dumps(item))
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["rights_decisions_created"], 0)
+        self.assertEqual(result["acquisition_authorizations_created"], 0)
+
+    def test_rights_snapshot_fails_closed_on_non_read_only_report(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        unsafe = {
+            "queue": "human-rights-review",
+            "read_only": False,
+            "automatic_rights_decision": False,
+            "automatic_acquisition_authorization": False,
+            "status_counts": {},
+            "results": [],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "catalog.sqlite3"
+            database.write_bytes(b"catalog")
+            completed = SimpleNamespace(returncode=0, stdout=json.dumps(unsafe), stderr="")
+            with (
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "run", return_value=completed),
+            ):
+                result = server.wallpaper_rights_review_snapshot()
+        self.assertFalse(result["available"])
+        self.assertIn("read-only contract", result["detail"])
+        self.assertEqual(result["rights_decisions_created"], 0)
+
+    def test_rights_studio_starts_loopback_board_and_reuses_live_session(self):
+        import io
+        import tempfile
+        from unittest.mock import Mock, patch
+
+        token = "A" * 43
+        stdout = io.StringIO("Fenrir Rights Review Board: http://127.0.0.1:32123/s/" + token + "/\\n")
+        process = Mock()
+        process.stdout = stdout
+        process.poll.return_value = None
+
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "catalog.sqlite3"
+            database.write_bytes(b"catalog")
+            with (
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server, "RIGHTS_STUDIO_PROCESS", None),
+                patch.object(server, "RIGHTS_STUDIO_URL", None),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "Popen", return_value=process) as popen,
+                patch.object(server.select, "select", return_value=([stdout], [], [])),
+            ):
+                first = server.start_wallpaper_rights_review_studio()
+                second = server.start_wallpaper_rights_review_studio()
+                command = popen.call_args.args[0]
+                self.assertTrue(first["started"])
+                self.assertFalse(second["started"])
+                self.assertTrue(second["already_running"])
+                self.assertEqual(first["url"], second["url"])
+                self.assertIn("rights", command)
+                self.assertIn("board", command)
+                self.assertIn("--no-browser", command)
+                self.assertEqual(command[command.index("--port") + 1], "0")
+                self.assertEqual(popen.call_count, 1)
+                server.stop_wallpaper_rights_review_studio()
+
+        process.terminate.assert_called_once()
+
+    def test_rights_studio_rejects_non_loopback_board_url(self):
+        import io
+        import tempfile
+        from unittest.mock import Mock, patch
+
+        stdout = io.StringIO("Fenrir Rights Review Board: http://example.com/s/" + "B" * 43 + "/\\n")
+        process = Mock()
+        process.stdout = stdout
+        process.poll.return_value = None
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "catalog.sqlite3"
+            database.write_bytes(b"catalog")
+            with (
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server, "RIGHTS_STUDIO_PROCESS", None),
+                patch.object(server, "RIGHTS_STUDIO_URL", None),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "Popen", return_value=process),
+                patch.object(server.select, "select", return_value=([stdout], [], [])),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "non-loopback"):
+                    server.start_wallpaper_rights_review_studio()
+        process.terminate.assert_called_once()
+
+
+
 class WallpaperDiscoverySchedulerTests(unittest.TestCase):
     def test_schedule_defaults_to_disabled(self):
         import tempfile
