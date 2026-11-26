@@ -2127,6 +2127,134 @@ def start_wallpaper_discovery_scheduler() -> None:
 
 
 
+def wallpaper_portfolio_snapshot(
+    target_count: int,
+    local_image_count: int,
+    wallpaper_directory: Path,
+    *,
+    catalog_available: bool,
+) -> dict[str, Any]:
+    """Return a sanitized, read-only provider/profile portfolio forecast."""
+    unavailable = {
+        "available": False,
+        "detail": "The read-only Catalog portfolio report is unavailable.",
+        "read_only": True,
+    }
+    executable = shutil.which("fenrir-catalog")
+    if not catalog_available or not executable:
+        return unavailable
+
+    attribution_count = 0
+    attribution_path = wallpaper_directory / "fenrir-catalog-attribution.json"
+    attribution_source = "sidecar_missing"
+    try:
+        if attribution_path.is_symlink():
+            raise ValueError("Wallpaper attribution sidecar must not be a symbolic link.")
+        if attribution_path.exists():
+            info = attribution_path.stat()
+            if not attribution_path.is_file() or info.st_size > 16 * 1024 * 1024:
+                raise ValueError("Wallpaper attribution sidecar is not a regular file or exceeds 16 MiB.")
+            attribution = strict_json(attribution_path.read_bytes())
+            if (
+                not isinstance(attribution, dict)
+                or attribution.get("schema") != "org.fenrir.wallpaper-catalog-local-install"
+                or attribution.get("version") != 1
+                or not isinstance(attribution.get("items"), list)
+            ):
+                raise ValueError("Wallpaper attribution sidecar has an unsupported format.")
+            asset_ids = {
+                item.get("asset_id")
+                for item in attribution["items"]
+                if isinstance(item, dict)
+                and isinstance(item.get("asset_id"), str)
+                and item["asset_id"]
+            }
+            attribution_count = len(asset_ids)
+            attribution_source = "verified_sidecar"
+    except (OSError, ValueError, TypeError, BadJSON) as exc:
+        return {
+            **unavailable,
+            "detail": str(exc)[:240],
+            "attribution_status": "invalid",
+        }
+
+    result = subprocess.run(
+        [
+            executable, "campaign", "portfolio",
+            "--database", str(CATALOG_DB),
+            "--target-count", str(target_count),
+            "--local-image-count", str(local_image_count),
+            "--attributed-asset-count", str(attribution_count),
+            "--history-days", "30",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "Catalog portfolio report failed.").strip()
+        return {**unavailable, "detail": detail[:240]}
+
+    try:
+        payload = strict_json(result.stdout.encode("utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("report") != "org.fenrir.discovery-portfolio"
+            or payload.get("report_version") != 1
+            or payload.get("read_only") is not True
+            or payload.get("images_downloaded") != 0
+            or payload.get("rights_decisions_created") != 0
+            or payload.get("acquisition_authorizations_created") != 0
+            or payload.get("human_acceptances_created") != 0
+            or payload.get("files_modified") is not False
+            or not isinstance(payload.get("providers"), list)
+            or not isinstance(payload.get("profiles"), list)
+            or not isinstance(payload.get("forecast"), dict)
+        ):
+            raise ValueError("Catalog portfolio report did not satisfy its read-only contract.")
+        for provider in payload["providers"]:
+            if (
+                not isinstance(provider, dict)
+                or provider.get("source_key") not in {"openverse", "wikimedia_commons", "wallhaven"}
+            ):
+                raise ValueError("Catalog returned an invalid provider portfolio row.")
+        for profile in payload["profiles"]:
+            if not isinstance(profile, dict) or profile.get("profile_key") not in DISCOVERY_PROFILES:
+                raise ValueError("Catalog returned an invalid profile portfolio row.")
+        forecast = payload["forecast"]
+        numeric_forecast_fields = (
+            "target_count", "local_qualifying_count",
+            "accepted_quality_eligible_count", "estimated_accepted_not_yet_local",
+            "projected_total_if_current_accepted_assets_are_synced",
+            "remaining_after_current_accepted_assets", "projected_progress_percent",
+            "recent_accepted_count", "history_days", "recent_acceptance_rate_per_day",
+        )
+        for field in numeric_forecast_fields:
+            value = forecast.get(field)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                raise ValueError(f"Catalog returned an invalid collection forecast value: {field}.")
+        eta = forecast.get("estimated_days_at_recent_acceptance_rate")
+        if eta is not None and (
+            isinstance(eta, bool) or not isinstance(eta, int) or eta < 0
+        ):
+            raise ValueError("Catalog returned an invalid forecast ETA.")
+        if forecast.get("forecast_status") not in {"historical_trend", "insufficient_history"}:
+            raise ValueError("Catalog returned an unsupported forecast confidence status.")
+    except (ValueError, TypeError, BadJSON) as exc:
+        return {**unavailable, "detail": str(exc)[:240]}
+
+    return {
+        "available": True,
+        "detail": "Provider balance and collection forecast loaded from the local, read-only Catalog report.",
+        "attribution_status": attribution_source,
+        "attributed_asset_count": attribution_count,
+        "attribution_count_is_exact": attribution_source == "verified_sidecar",
+        "report": payload,
+        "read_only": True,
+    }
+
+
 def wallpaper_snapshot() -> dict[str, Any]:
     target_count = read_settings().get("wallpaper_target_count", 20000)
     accepted = None
@@ -2184,6 +2312,12 @@ def wallpaper_snapshot() -> dict[str, Any]:
                 detail = (count_result.stderr or count_result.stdout or "Wallpaper palette index failed.")[:220]
         except (OSError, subprocess.SubprocessError, ValueError, TypeError):
             detail = "The Catalog palette index could not be loaded."
+    portfolio = wallpaper_portfolio_snapshot(
+        target_count,
+        local_count,
+        wallpaper_directory,
+        catalog_available=catalog_available and sync_destination_allowed,
+    )
     sync = {"running": False, "log": ""}
     global WALLPAPER_SYNC
     if WALLPAPER_SYNC is not None:
@@ -2204,6 +2338,7 @@ def wallpaper_snapshot() -> dict[str, Any]:
         "local_image_count": local_count,
         "palette_metrics": palette_metrics,
         "discovery": wallpaper_campaign_snapshot(),
+        "portfolio": portfolio,
         "target_count": target_count,
         "remaining": max(0, target_count - local_count),
         "target_reached": local_count >= target_count,
