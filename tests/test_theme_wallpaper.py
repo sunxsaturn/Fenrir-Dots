@@ -158,6 +158,34 @@ class FenrirThemeTests(unittest.TestCase):
 
 
 class FenrirWallpaperTests(unittest.TestCase):
+    def test_default_collection_goal_is_20000_and_supported_overrides_remain_selectable(self):
+        with tempfile.TemporaryDirectory() as temp:
+            config = Path(temp) / "config"
+            with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config)}, clear=False):
+                self.assertEqual(wallpaper.resolution_policy()[2], 20000)
+                (config / "fenrir").mkdir(parents=True)
+                settings = config / "fenrir" / "settings.toml"
+                for target in (5000, 10000, 20000):
+                    settings.write_text(f"[wallpaper]\\nminimum_count = {target}\\n", encoding="utf-8")
+                    self.assertEqual(wallpaper.resolution_policy()[2], target)
+                settings.write_text("[wallpaper]\\nminimum_count = 15000\\n", encoding="utf-8")
+                self.assertEqual(wallpaper.resolution_policy()[2], 20000)
+
+    def test_catalog_sync_cli_defaults_to_20000_target(self):
+        result = {
+            "collection_id": "fenrir-test",
+            "catalog_sync": {"installed": 0, "already_present": 0, "skipped": {}},
+            "wallpaper_index": {"refreshed": False, "error": "test"},
+            "destination": "/tmp/wallpapers",
+        }
+        with patch.object(wallpaper, "sync_catalog_collection", return_value=result) as sync, patch.object(
+            wallpaper.sys, "argv", ["fenrir-wallpaper", "sync-catalog", "--collection-id", "fenrir-test"]
+        ), patch("builtins.print"):
+            self.assertEqual(wallpaper.main(), 0)
+        sync.assert_called_once_with(
+            "fenrir-test", target_count=20000, database=None, quarantine_root=None
+        )
+
     def test_random_picker_excludes_unsupported_files_and_current_wallpaper(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "wallpapers"
