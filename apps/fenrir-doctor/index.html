@@ -127,6 +127,17 @@
               <div id="wallpaper-discovery-summary" class="doctor-list"><p class="loading-card">No discovery campaign started yet.</p></div>
               <pre id="wallpaper-discovery-log" class="doctor-log" aria-live="polite"></pre>
             </section>
+            <section class="settings-section doctor-section" id="wallpaper-acquisition-runway">
+              <div class="eyebrow">ACQUISITION READINESS</div><h3>Campaign acquisition runway</h3>
+              <p class="field-help">A read-only view of the current campaign. Fenrir checks the latest license policy, human rights decision, provider download terms and per-asset authorization. It never downloads, approves or accepts assets from this view.</p>
+              <div id="wallpaper-acquisition-summary" class="loading-card">Waiting for a discovery campaign…</div>
+              <div class="system-grid" id="wallpaper-acquisition-metrics"></div>
+              <div class="settings-actions">
+                <span id="wallpaper-acquisition-status" role="status"></span>
+                <button class="primary-button" id="wallpaper-acquisition-refresh" type="button">Refresh readiness</button>
+              </div>
+              <div id="wallpaper-acquisition-items" class="doctor-list"><p class="loading-card">No campaign assets loaded.</p></div>
+            </section>
             <section class="settings-section doctor-section">
               <div class="eyebrow">AUTOMATIC DISCOVERY</div><h3>Scheduled campaign queue</h3>
               <p class="field-help">Select one or more sources and visual themes. Fenrir creates a finite queue of unique combinations and rotates through them sequentially.</p>
