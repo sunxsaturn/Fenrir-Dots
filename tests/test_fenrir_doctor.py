@@ -404,6 +404,7 @@ class WallpaperDiscoveryTests(unittest.TestCase):
             ("openverse", 2, 1),
             ("wikimedia_commons", 1, 2),
             ("wallhaven", 2, 1),
+            ("cleveland_museum", 2, 1),
         )
         for source, max_queries, requests_per_page in provider_cases:
             with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
@@ -507,7 +508,7 @@ class WallpaperDiscoveryTests(unittest.TestCase):
 
         providers = [
             {"source_key": key, "provider_budget": {"max_api_requests_per_slice": 4}}
-            for key in ("openverse", "wikimedia_commons", "wallhaven")
+            for key in ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum")
         ]
         profiles = [
             {"profile_key": key}
@@ -1235,6 +1236,31 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertTrue(result["enabled"])
         self.assertEqual(result["last_status"], "running")
         start.assert_not_called()
+
+    def test_campaign_queue_accepts_full_24_source_profile_matrix(self):
+        sources = ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum")
+        profiles = (
+            "fenrir-nordic-fantasy-v1",
+            "fenrir-cinematic-nature-v1",
+            "fenrir-cosmic-sci-fi-v1",
+            "fenrir-arctic-blue-v1",
+            "fenrir-architecture-monochrome-v1",
+            "fenrir-red-violet-dark-fantasy-v1",
+        )
+        queue = [
+            {
+                "source": source,
+                "profile": profile,
+                "contact": "fenrir@example.org" if source == "wikimedia_commons" else None,
+            }
+            for source in sources
+            for profile in profiles
+        ]
+        validated = server._validate_wallpaper_campaign_queue(queue)
+        self.assertEqual(len(validated), 24)
+        self.assertTrue(any(item["source"] == "cleveland_museum" for item in validated))
+        with self.assertRaisesRegex(ValueError, "24 unique"):
+            server._validate_wallpaper_campaign_queue(queue + [queue[0]])
 
     def test_campaign_queue_validation_rejects_duplicates_and_requires_commons_contact(self):
         queue = [
