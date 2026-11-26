@@ -349,6 +349,90 @@ async function loadWallpapers(showError = false) {
     });
     state.wallpaperTarget = data.target_count || state.wallpaperTarget;
     $('wallpaper-target').value = String(state.wallpaperTarget);
+
+    const portfolio = data.portfolio || {};
+    const portfolioSummary = $('wallpaper-portfolio-summary');
+    const portfolioMetrics = $('wallpaper-portfolio-metrics');
+    const providerCards = $('wallpaper-portfolio-providers');
+    const profileRows = $('wallpaper-portfolio-profiles');
+    portfolioMetrics.replaceChildren();
+    providerCards.replaceChildren();
+    profileRows.replaceChildren();
+    if (portfolio.available && portfolio.report) {
+      const report = portfolio.report;
+      const forecast = report.forecast || {};
+      const eta = forecast.estimated_days_at_recent_acceptance_rate;
+      portfolioSummary.textContent = forecast.forecast_status === 'historical_trend'
+        ? 'Trend uses the last ' + Number(forecast.history_days).toLocaleString()
+          + ' days of quality-eligible human acceptances. This estimate is not acquisition or synchronization authorization.'
+        : 'Insufficient human-acceptance history for a reliable ETA. Campaign and collection counts remain available.';
+      if (!portfolio.attribution_count_is_exact) {
+        portfolioSummary.textContent += ' Attribution sidecar is missing; accepted-but-local assets cannot yet be reconciled exactly.';
+      }
+      [
+        ['Collection projection', Number(forecast.projected_progress_percent).toFixed(1) + '%',
+          Number(forecast.projected_total_if_current_accepted_assets_are_synced).toLocaleString()
+          + ' / ' + Number(forecast.target_count).toLocaleString() + ' after eligible accepted assets.'],
+        ['Accepted and quality eligible', Number(forecast.accepted_quality_eligible_count).toLocaleString(),
+          'Human acceptance, valid stored checks, landscape dimensions and Fenrir palette policy.'],
+        ['Eligible not yet attributed locally', portfolio.attribution_count_is_exact
+          ? Number(forecast.estimated_accepted_not_yet_local).toLocaleString() : 'Unknown',
+          portfolio.attribution_count_is_exact
+            ? 'Estimate based on the local Catalog attribution sidecar.'
+            : 'A missing attribution sidecar prevents exact reconciliation.'],
+        ['Recent human acceptance pace', Number(forecast.recent_acceptance_rate_per_day).toFixed(2) + ' / day',
+          Number(forecast.recent_accepted_count).toLocaleString() + ' quality-eligible acceptances in '
+          + Number(forecast.history_days).toLocaleString() + ' days.'],
+        ['Estimated time remaining', eta === null ? 'Not available' : Number(eta).toLocaleString() + ' days',
+          eta === null ? 'At least five recent quality-eligible acceptances are required.'
+            : 'Assumes the recent human-acceptance pace continues.'],
+        ['New discovery records', Number((report.providers || []).reduce(
+          (sum, item) => sum + Number(item.new_assets || 0), 0
+        )).toLocaleString(),
+          'Metadata records only; not downloads, rights approvals or accepted images.']
+      ].forEach(([title, value, detail]) => {
+        const card = document.createElement('article'); card.className = 'metric-card';
+        const label = document.createElement('span'); label.className = 'eyebrow'; label.textContent = title;
+        const number = document.createElement('strong'); number.textContent = value;
+        const help = document.createElement('small'); help.textContent = detail;
+        card.append(label, number, help); portfolioMetrics.append(card);
+      });
+      (report.providers || []).forEach((provider) => {
+        const card = document.createElement('article'); card.className = 'portfolio-provider-card';
+        const title = document.createElement('strong');
+        title.textContent = ({
+          openverse: 'Openverse',
+          wikimedia_commons: 'Wikimedia Commons',
+          wallhaven: 'Wallhaven'
+        })[provider.source_key] || provider.source_key;
+        const budget = provider.provider_budget || {};
+        const stats = document.createElement('small');
+        stats.textContent = Number(provider.estimated_api_requests || 0).toLocaleString()
+          + ' estimated requests · ' + Number(provider.pages_processed || 0).toLocaleString()
+          + ' pages · ' + Number(provider.new_assets || 0).toLocaleString() + ' new records';
+        const policy = document.createElement('small');
+        policy.textContent = Number(budget.max_api_requests_per_slice || 0).toLocaleString()
+          + ' max requests / turn · ' + Number(budget.max_queries_per_slice || 0)
+          + ' queries × ' + Number(budget.max_pages_per_query || 0) + ' pages';
+        const status = document.createElement('small');
+        status.textContent = Number(provider.completed_campaigns || 0).toLocaleString()
+          + ' complete · ' + Number(provider.paused_campaigns || 0).toLocaleString()
+          + ' paused · ' + Number(provider.failed_campaigns || 0).toLocaleString() + ' failed';
+        card.append(title, stats, policy, status); providerCards.append(card);
+      });
+      (report.profiles || []).forEach((profile) => {
+        const row = document.createElement('div'); row.className = 'portfolio-profile-row';
+        const name = document.createElement('strong'); name.textContent = profile.profile_key;
+        const detail = document.createElement('span');
+        detail.textContent = Number(profile.new_assets || 0).toLocaleString()
+          + ' new records · ' + Number(profile.pages_processed || 0).toLocaleString()
+          + ' pages · ' + Number(profile.completed_campaigns || 0).toLocaleString()
+          + ' campaigns complete';
+        row.append(name, detail); profileRows.append(row);
+      });
+    } else {
+      portfolioSummary.textContent = portfolio.detail || 'The local Catalog portfolio report is unavailable.';
+    }
     const sync = data.sync || {};
     const syncPlan = state.wallpaperSyncPlan;
     const syncAvailable = data.catalog_available && data.sync_destination_allowed && !sync.running;
@@ -433,8 +517,9 @@ async function loadWallpapers(showError = false) {
       ? ' · ' + currentQueueItem.source + ' / ' + currentQueueItem.profile
       : '';
     const queueProgress = Number(schedule.queue_total || 0) > 0
-      ? ' · campaign ' + Math.min(Number(schedule.queue_position || 0), Number(schedule.queue_total))
-        + '/' + Number(schedule.queue_total) + currentQueueLabel
+      ? ' · turn ' + Math.min(Number(schedule.queue_position || 0), Number(schedule.queue_total))
+        + '/' + Number(schedule.queue_total) + ' · '
+        + Number(schedule.queue_completed_count || 0) + ' completed' + currentQueueLabel
       : '';
     if (schedule.enabled) {
       const next = schedule.next_run_at

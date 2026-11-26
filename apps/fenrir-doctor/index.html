@@ -105,6 +105,16 @@
             <div class="page-heading"><div><div class="eyebrow">RIGHTS-AWARE WALLPAPER LIBRARY</div><h2>Wallpaper intelligence</h2><p>Grow the local Fenrir wallpaper collection from accepted catalog assets.</p></div><div class="page-symbol">▧</div></div>
             <div id="wallpaper-summary" class="loading-card">Connecting to the local wallpaper catalog…</div>
             <div class="system-grid" id="wallpaper-metrics"></div>
+            <section class="settings-section doctor-section" id="wallpaper-portfolio">
+              <div class="eyebrow">COLLECTION INTELLIGENCE</div><h3>Provider balance and 20,000-image forecast</h3>
+              <p class="field-help">Read-only provider/profile campaign yield, accepted assets passing stored quality metadata, and recent human-acceptance pace. An ETA is withheld until enough real acceptance history exists. Sync preflight remains authoritative.</p>
+              <div id="wallpaper-portfolio-summary" class="loading-card">Loading provider and collection metrics…</div>
+              <div class="system-grid" id="wallpaper-portfolio-metrics"></div>
+              <h4 class="subheading">Provider balance</h4>
+              <div class="portfolio-provider-grid" id="wallpaper-portfolio-providers"></div>
+              <h4 class="subheading">Profile coverage</h4>
+              <div class="portfolio-profile-list" id="wallpaper-portfolio-profiles"></div>
+            </section>
             <section class="settings-section doctor-section">
               <div class="eyebrow">DISCOVER CANDIDATES</div><h3>Search wallpaper sources</h3>
               <label for="wallpaper-source">Metadata source</label>
@@ -122,7 +132,7 @@
                 <label for="wallpaper-contact">Commons contact email or project URL</label>
                 <input id="wallpaper-contact" maxlength="300" placeholder="https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog">
               </div>
-              <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Each user-started run processes the full built-in profile (up to 100 queries, two pages per query). Provider pacing is respected; interrupted or still-paginated campaigns remain resumable.</p>
+              <p class="field-help">Campaigns search provider metadata only. They do not download image files, approve licenses, authorize acquisition or accept images. Manual runs process the full selected profile. Automatic scheduling uses Catalog-defined source-specific budgets capped at four API requests per slice, with a separate saved cursor for each queued combination.</p>
               <div class="settings-actions"><span id="wallpaper-discovery-status" role="status"></span><button class="primary-button" id="wallpaper-discover-button" type="button">Start / resume discovery</button></div>
               <div id="wallpaper-discovery-summary" class="doctor-list"><p class="loading-card">No discovery campaign started yet.</p></div>
               <pre id="wallpaper-discovery-log" class="doctor-log" aria-live="polite"></pre>
@@ -152,7 +162,7 @@
             </section>
             <section class="settings-section doctor-section">
               <div class="eyebrow">AUTOMATIC DISCOVERY</div><h3>Scheduled campaign queue</h3>
-              <p class="field-help">Select one or more sources and visual themes. Fenrir creates a finite queue of unique combinations and rotates through them sequentially.</p>
+              <p class="field-help">Select one or more sources and visual themes. Fenrir creates a finite queue of unique combinations and gives each provider/profile one bounded slice per turn.</p>
               <div class="campaign-queue-grid">
                 <fieldset class="campaign-queue-options">
                   <legend>Sources</legend>
@@ -178,7 +188,7 @@
                 <option value="720">12 hours</option>
                 <option value="1440">24 hours</option>
               </select>
-              <p class="field-help">Up to 18 unique source/profile campaigns can be queued. Each campaign advances in bounded, resumable metadata-only slices; a completed campaign advances to the next queued combination. The finite queue stops for human review when exhausted, or stops safely on provider/catalog errors. Paused queues can be resumed without repeating completed campaigns. No wallpaper files are downloaded, licensed, accepted or synchronized by this scheduler.</p>
+              <p class="field-help">Up to 18 unique source/profile campaigns can be queued. Each provider/profile receives one bounded metadata-only slice per turn; unfinished campaigns resume from their own saved cursor on the next round. The finite queue stops for human review when exhausted, or stops safely on provider/catalog errors. Paused queues can be resumed without repeating completed campaigns. No wallpaper files are downloaded, licensed, accepted or synchronized by this scheduler.</p>
               <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Enable automatic discovery</button></div>
             </section>
             <section class="settings-section doctor-section">
