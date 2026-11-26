@@ -1519,7 +1519,7 @@ def _start_wallpaper_discovery_unlocked(
 
 def _default_wallpaper_discovery_schedule() -> dict[str, Any]:
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "enabled": False,
         "source": "openverse",
         "profile": "fenrir-nordic-fantasy-v1",
@@ -1533,6 +1533,8 @@ def _default_wallpaper_discovery_schedule() -> dict[str, Any]:
         "campaign_id": None,
         "queue": [],
         "queue_index": 0,
+        "campaign_ids": [],
+        "completed_indices": [],
     }
 
 
@@ -1543,15 +1545,12 @@ def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
         raise ValueError("Choose at least one wallpaper campaign for the queue.")
     if len(raw_queue) > 18:
         raise ValueError("A discovery queue may contain at most 18 unique source/profile campaigns.")
-
     queue: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(raw_queue):
         if not isinstance(item, dict) or set(item) - {"source", "profile", "contact"}:
             raise ValueError(f"Queue item {index + 1} has an invalid structure.")
-        source = item.get("source")
-        profile = item.get("profile")
-        contact = item.get("contact")
+        source, profile, contact = item.get("source"), item.get("profile"), item.get("contact")
         if not isinstance(source, str) or source not in allowed_sources:
             raise ValueError(f"Queue item {index + 1} has an unsupported source.")
         if not isinstance(profile, str) or profile not in DISCOVERY_PROFILES:
@@ -1559,7 +1558,6 @@ def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
         if (source, profile) in seen:
             raise ValueError("A source/profile combination may appear only once in a queue.")
         seen.add((source, profile))
-
         if source == "wikimedia_commons":
             if not isinstance(contact, str) or not contact.strip() or len(contact) > 300:
                 raise ValueError("Every Wikimedia Commons queue item requires a contact email or HTTPS project URL.")
@@ -1568,13 +1566,40 @@ def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
             raise ValueError("A contact identifier is accepted only for Wikimedia Commons.")
         else:
             contact = None
-
         queue.append({"source": source, "profile": profile, "contact": contact})
     return queue
 
 
+def _validate_campaign_ids(raw_ids: Any, queue_size: int) -> list[str | None]:
+    if not isinstance(raw_ids, list) or len(raw_ids) != queue_size:
+        raise ValueError("Saved campaign identifiers must match the campaign queue.")
+    identifiers: list[str | None] = []
+    for index, value in enumerate(raw_ids):
+        if value is not None and (
+            not isinstance(value, str) or not value.strip() or len(value) > 128
+            or any(ord(ch) < 32 for ch in value)
+        ):
+            raise ValueError(f"Saved campaign identifier {index + 1} is invalid.")
+        identifiers.append(value)
+    return identifiers
+
+
+def _validate_completed_indices(raw_indices: Any, queue_size: int) -> list[int]:
+    if not isinstance(raw_indices, list) or len(raw_indices) > queue_size:
+        raise ValueError("Saved completed campaign positions are invalid.")
+    completed: list[int] = []
+    for value in raw_indices:
+        if (
+            isinstance(value, bool) or not isinstance(value, int)
+            or not 0 <= value < queue_size or value in completed
+        ):
+            raise ValueError("Saved completed campaign positions are invalid.")
+        completed.append(value)
+    return sorted(completed)
+
+
 def read_wallpaper_discovery_schedule() -> dict[str, Any]:
-    """Read bounded scheduler state; malformed or symlinked state fails closed."""
+    """Read and safely migrate per-campaign cursors; malformed state fails closed."""
     defaults = _default_wallpaper_discovery_schedule()
     path = DISCOVERY_SCHEDULE_FILE
     try:
@@ -1582,10 +1607,11 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             raise ValueError("Scheduler state must not be a symbolic link.")
         if not path.exists():
             return defaults
-        if not path.is_file() or path.stat().st_size > 8192:
-            raise ValueError("Scheduler state is not a regular file or exceeds 8 KiB.")
+        if not path.is_file() or path.stat().st_size > 16384:
+            raise ValueError("Scheduler state is not a regular file or exceeds 16 KiB.")
         raw = strict_json(path.read_bytes())
-        if not isinstance(raw, dict) or raw.get("schema_version") not in {1, 2}:
+        version = raw.get("schema_version") if isinstance(raw, dict) else None
+        if not isinstance(raw, dict) or version not in {1, 2, 3}:
             raise ValueError("Unsupported scheduler state format.")
         if not isinstance(raw.get("enabled"), bool):
             raise ValueError("Scheduler enabled state is invalid.")
@@ -1610,9 +1636,10 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             value = raw.get(key)
             if value is not None and (not isinstance(value, str) or len(value) > 1000):
                 raise ValueError(f"Scheduler {key} value is invalid.")
-        campaign_id = raw.get("campaign_id")
-        if campaign_id is not None and (
-            not isinstance(campaign_id, str) or not campaign_id or len(campaign_id) > 128
+        legacy_campaign_id = raw.get("campaign_id")
+        if legacy_campaign_id is not None and (
+            not isinstance(legacy_campaign_id, str) or not legacy_campaign_id
+            or len(legacy_campaign_id) > 128 or any(ord(ch) < 32 for ch in legacy_campaign_id)
         ):
             raise ValueError("Scheduler campaign identifier is invalid.")
         status = raw.get("last_status", "disabled")
@@ -1622,23 +1649,40 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
         }:
             raise ValueError("Scheduler status is invalid.")
 
-        # Version 1 state is migrated in memory. The original state file remains
-        # untouched until the next explicit scheduler update.
-        queue = []
+        queue: list[dict[str, Any]] = []
+        campaign_ids: list[str | None] = []
+        completed_indices: list[int] = []
         queue_index = 0
-        if raw.get("schema_version") == 2:
+        if version in {2, 3}:
             raw_queue = raw.get("queue", [])
             if not isinstance(raw_queue, list):
                 raise ValueError("Scheduler queue must be a list.")
             queue = _validate_wallpaper_campaign_queue(raw_queue) if raw_queue else []
-            queue_index = raw.get("queue_index", 0)
+            raw_index = raw.get("queue_index", 0)
             if (
-                isinstance(queue_index, bool) or not isinstance(queue_index, int)
-                or not 0 <= queue_index <= len(queue)
-                or (not queue and queue_index != 0)
+                isinstance(raw_index, bool) or not isinstance(raw_index, int)
+                or raw_index < 0 or raw_index > len(queue)
+                or (not queue and raw_index != 0)
             ):
                 raise ValueError("Scheduler queue position is invalid.")
-
+            queue_index = raw_index
+            if version == 2:
+                campaign_ids = [None] * len(queue)
+                if queue:
+                    if queue_index == len(queue):
+                        completed_indices = list(range(len(queue)))
+                    else:
+                        campaign_ids[queue_index] = legacy_campaign_id
+            else:
+                campaign_ids = _validate_campaign_ids(raw.get("campaign_ids"), len(queue))
+                completed_indices = _validate_completed_indices(raw.get("completed_indices"), len(queue))
+                if queue and queue_index == len(queue) and len(completed_indices) != len(queue):
+                    raise ValueError("Completed queue position conflicts with unfinished campaigns.")
+        active_id = (
+            campaign_ids[queue_index]
+            if queue and queue_index < len(queue)
+            else legacy_campaign_id
+        )
         return {
             **defaults,
             "enabled": raw["enabled"],
@@ -1651,9 +1695,11 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             "last_status": status,
             "pause_reason": raw.get("pause_reason"),
             "last_error": raw.get("last_error"),
-            "campaign_id": campaign_id,
+            "campaign_id": active_id,
             "queue": queue,
             "queue_index": queue_index,
+            "campaign_ids": campaign_ids,
+            "completed_indices": completed_indices,
         }
     except (OSError, ValueError, TypeError, BadJSON) as exc:
         defaults["last_status"] = "invalid"
@@ -1663,7 +1709,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
 
 def _write_wallpaper_discovery_schedule(schedule: dict[str, Any]) -> None:
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    schedule["schema_version"] = 2
+    schedule["schema_version"] = 3
     atomic_json(DISCOVERY_SCHEDULE_FILE, schedule)
 
 
@@ -1671,16 +1717,20 @@ def wallpaper_discovery_schedule_snapshot() -> dict[str, Any]:
     schedule = read_wallpaper_discovery_schedule()
     queue = schedule["queue"]
     queue_index = schedule["queue_index"]
-    # The local scheduler only needs source/profile labels in the UI. Keep
-    # Commons contact identifiers private to the mode-0600 scheduler state.
+    # Keep Commons contact identifiers and saved campaign IDs private to state.
     queue_summary = [
         {
             "source": item["source"],
             "profile": item["profile"],
             "contact_configured": bool(item["contact"]),
+            "completed": index in schedule["completed_indices"],
+            "has_saved_campaign": bool(
+                index < len(schedule["campaign_ids"]) and schedule["campaign_ids"][index]
+            ),
         }
-        for item in queue
+        for index, item in enumerate(queue)
     ]
+    completed_count = len(schedule["completed_indices"])
     return {
         "enabled": schedule["enabled"],
         "source": schedule["source"],
@@ -1697,11 +1747,16 @@ def wallpaper_discovery_schedule_snapshot() -> dict[str, Any]:
         "queue_index": queue_index,
         "queue_total": len(queue),
         "queue_position": min(queue_index + 1, len(queue)) if queue else 0,
-        "queue_completed": bool(queue) and queue_index >= len(queue),
-        "queue_current": (
-            queue_summary[queue_index] if queue_summary and queue_index < len(queue_summary) else None
-        ),
+        "queue_completed_count": completed_count,
+        "queue_remaining_count": max(0, len(queue) - completed_count),
+        "queue_completed": bool(queue) and completed_count >= len(queue),
+        "queue_current": queue_summary[queue_index] if queue_summary and queue_index < len(queue_summary) else None,
+        "rotation_policy": "round_robin_one_bounded_provider_slice",
+        "max_api_requests_per_slice": 4,
     }
+
+
+
 
 
 def start_wallpaper_discovery(
@@ -1721,7 +1776,7 @@ def start_wallpaper_discovery(
 
 
 def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str, Any]:
-    """Enable, resume or pause a finite, sequential metadata-discovery queue."""
+    """Enable, resume or pause a finite round-robin metadata-discovery queue."""
     if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
         raise ValueError("Automatic discovery enabled state must be true or false.")
     with DISCOVERY_LOCK:
@@ -1742,27 +1797,48 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
         interval = payload.get("interval_minutes", schedule["interval_minutes"])
         if isinstance(interval, bool) or not isinstance(interval, int) or interval not in DISCOVERY_SCHEDULE_INTERVALS:
             raise ValueError("Choose an automatic discovery interval of 1, 3, 6, 12 or 24 hours.")
-
         resume_existing = payload.get("resume_existing_queue", False)
         if not isinstance(resume_existing, bool):
             raise ValueError("Queue resume flag must be true or false.")
 
         if resume_existing:
             queue = schedule["queue"]
+            campaign_ids = list(schedule["campaign_ids"])
+            completed_indices = list(schedule["completed_indices"])
             queue_index = schedule["queue_index"]
-            if not queue or queue_index >= len(queue):
+            if not queue or len(completed_indices) >= len(queue):
                 raise ValueError("There is no unfinished saved campaign queue to resume.")
+
+            active_process = DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None
             snapshot = wallpaper_campaign_snapshot()
-            campaign = snapshot.get("campaign")
-            if snapshot.get("process_running"):
+            if active_process:
+                if queue_index >= len(queue):
+                    raise ValueError("The active campaign queue position is invalid.")
                 active = queue[queue_index]
                 if snapshot.get("source") != active["source"] or snapshot.get("profile") != active["profile"]:
                     raise ValueError("The running campaign does not match the saved queue; inspect it before resuming.")
-            elif campaign is not None and campaign.get("status") == "completed":
-                queue_index += 1
-                if queue_index >= len(queue):
+                running_campaign = snapshot.get("campaign")
+                if isinstance(running_campaign, dict):
+                    running_id = running_campaign.get("campaign_id")
+                    if campaign_ids[queue_index] not in (None, running_id):
+                        raise ValueError("The running campaign ID does not match the saved queue cursor.")
+                    campaign_ids[queue_index] = running_id
+                    campaign_id = running_id
+                else:
+                    campaign_id = campaign_ids[queue_index]
+            else:
+                if snapshot.get("campaign") is not None and queue_index < len(queue):
+                    current_campaign = snapshot["campaign"]
+                    active_id = campaign_ids[queue_index]
+                    if current_campaign.get("campaign_id") == active_id and current_campaign.get("status") == "completed":
+                        if queue_index not in completed_indices:
+                            completed_indices.append(queue_index)
+                            completed_indices.sort()
+                if len(completed_indices) >= len(queue):
                     schedule.update({
                         "enabled": False,
+                        "campaign_ids": campaign_ids,
+                        "completed_indices": completed_indices,
                         "queue_index": len(queue),
                         "next_run_at": None,
                         "last_status": "needs_review",
@@ -1773,24 +1849,18 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
                     })
                     _write_wallpaper_discovery_schedule(schedule)
                     return wallpaper_discovery_schedule_snapshot()
-            elif campaign is not None and campaign.get("status") == "failed":
-                raise ValueError("The saved campaign failed. Review the error before creating a new queue.")
+                if queue_index in completed_indices:
+                    queue_index = next(i for i in range(len(queue)) if i not in completed_indices)
+                active = queue[queue_index]
+                started = _start_wallpaper_discovery_unlocked(
+                    active["source"], active["profile"], active["contact"],
+                    campaign_id=campaign_ids[queue_index], max_queries=None,
+                )
+                campaign_id = started["campaign_id"]
+                campaign_ids[queue_index] = campaign_id
 
             active = queue[queue_index]
             source, profile, contact = active["source"], active["profile"], active["contact"]
-            process_running = DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None
-            if process_running:
-                if DISCOVERY_STATE.is_symlink() or not DISCOVERY_STATE.is_file():
-                    raise ValueError("The active campaign state cannot be verified; inspect it before resuming.")
-                state = strict_json(DISCOVERY_STATE.read_bytes())
-                campaign_id = state.get("campaign_id")
-                if not isinstance(campaign_id, str) or not campaign_id:
-                    raise ValueError("The active campaign identifier is invalid.")
-            else:
-                started = _start_wallpaper_discovery_unlocked(
-                    source, profile, contact, max_queries=DISCOVERY_SLICE_MAX_QUERIES,
-                )
-                campaign_id = started["campaign_id"]
         else:
             if "queue" in payload:
                 queue = _validate_wallpaper_campaign_queue(payload["queue"])
@@ -1802,19 +1872,21 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
                     "source": source, "profile": profile, "contact": contact,
                 }])
             queue_index = 0
+            campaign_ids = [None] * len(queue)
+            completed_indices = []
             active = queue[0]
             source, profile, contact = active["source"], active["profile"], active["contact"]
-
             if DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None:
                 raise ValueError("A metadata campaign is already running; let it finish or pause it before replacing the queue.")
             started = _start_wallpaper_discovery_unlocked(
-                source, profile, contact, max_queries=DISCOVERY_SLICE_MAX_QUERIES,
+                source, profile, contact, max_queries=None,
             )
             campaign_id = started["campaign_id"]
+            campaign_ids[0] = campaign_id
 
         now = int(time.time())
         schedule.update({
-            "schema_version": 2,
+            "schema_version": 3,
             "enabled": True,
             "source": source,
             "profile": profile,
@@ -1828,18 +1900,43 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
             "campaign_id": campaign_id,
             "queue": queue,
             "queue_index": queue_index,
+            "campaign_ids": campaign_ids,
+            "completed_indices": completed_indices,
         })
         _write_wallpaper_discovery_schedule(schedule)
         return wallpaper_discovery_schedule_snapshot()
 
 
+
+
+
 def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]:
-    """Run one bounded slice at a time and rotate campaigns only after completion."""
+    """Run one provider-balanced slice, then rotate to the next unfinished queue item."""
     current_time = int(time.time()) if now is None else int(now)
     with DISCOVERY_LOCK:
         schedule = read_wallpaper_discovery_schedule()
         if not schedule["enabled"]:
             return wallpaper_discovery_schedule_snapshot()
+
+        queue = schedule["queue"]
+        campaign_ids = list(schedule["campaign_ids"])
+        completed_indices = list(schedule["completed_indices"])
+        if not queue:
+            queue = _validate_wallpaper_campaign_queue([{
+                "source": schedule["source"],
+                "profile": schedule["profile"],
+                "contact": schedule["contact"],
+            }])
+            campaign_ids = [schedule["campaign_id"]]
+            completed_indices = []
+            schedule["queue"] = queue
+            schedule["campaign_ids"] = campaign_ids
+            schedule["completed_indices"] = completed_indices
+            schedule["queue_index"] = 0
+
+        current_index = schedule["queue_index"]
+        if current_index >= len(queue):
+            current_index = next((i for i in range(len(queue)) if i not in completed_indices), 0)
 
         snapshot = wallpaper_campaign_snapshot()
         if snapshot.get("process_running"):
@@ -1849,57 +1946,29 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
             return wallpaper_discovery_schedule_snapshot()
 
         campaign = snapshot.get("campaign")
+        active_campaign_id = campaign_ids[current_index]
         if campaign is not None:
-            campaign_status = campaign.get("status")
-            if campaign_status == "completed":
-                queue = schedule["queue"]
-                next_index = schedule["queue_index"] + 1 if queue else 0
-                if queue and next_index < len(queue):
-                    next_item = queue[next_index]
-                    try:
-                        result = _start_wallpaper_discovery_unlocked(
-                            next_item["source"], next_item["profile"], next_item["contact"],
-                            max_queries=DISCOVERY_SLICE_MAX_QUERIES,
-                        )
-                    except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
-                        schedule.update({
-                            "enabled": False,
-                            "next_run_at": None,
-                            "last_status": "paused_error",
-                            "pause_reason": "Automatic discovery stopped while advancing to the next queued campaign.",
-                            "last_error": str(exc)[:1000],
-                        })
-                        _write_wallpaper_discovery_schedule(schedule)
-                        return wallpaper_discovery_schedule_snapshot()
-
-                    schedule.update({
-                        "source": next_item["source"],
-                        "profile": next_item["profile"],
-                        "contact": next_item["contact"],
-                        "queue_index": next_index,
-                        "campaign_id": result["campaign_id"],
-                        "next_run_at": current_time + schedule["interval_minutes"] * 60,
-                        "last_run_at": current_time,
-                        "last_status": "running",
-                        "pause_reason": None,
-                        "last_error": None,
-                    })
-                    _write_wallpaper_discovery_schedule(schedule)
-                    return wallpaper_discovery_schedule_snapshot()
-
+            snapshot_id = campaign.get("campaign_id")
+            if active_campaign_id and snapshot_id != active_campaign_id:
                 schedule.update({
                     "enabled": False,
-                    "queue_index": len(queue) if queue else 0,
                     "next_run_at": None,
-                    "last_status": "needs_review",
-                    "pause_reason": (
-                        "Metadata discovery is complete. Human rights review and explicit "
-                        "acceptance are required before acquisition or desktop synchronization."
-                    ),
+                    "last_status": "paused_error",
+                    "pause_reason": "The Catalog status does not match the active saved queue cursor.",
+                    "last_error": "Active campaign identity mismatch; inspect saved scheduler state.",
                 })
                 _write_wallpaper_discovery_schedule(schedule)
                 return wallpaper_discovery_schedule_snapshot()
-            if campaign_status == "failed":
+            if snapshot_id and not active_campaign_id:
+                campaign_ids[current_index] = snapshot_id
+                active_campaign_id = snapshot_id
+
+            campaign_status = campaign.get("status")
+            if campaign_status == "completed":
+                if current_index not in completed_indices:
+                    completed_indices.append(current_index)
+                    completed_indices.sort()
+            elif campaign_status == "failed":
                 error = campaign.get("error_summary") or "The Catalog campaign failed."
                 schedule.update({
                     "enabled": False,
@@ -1907,10 +1976,12 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
                     "last_status": "paused_error",
                     "pause_reason": "Automatic discovery stopped after a campaign error.",
                     "last_error": str(error)[:1000],
+                    "campaign_ids": campaign_ids,
+                    "completed_indices": completed_indices,
                 })
                 _write_wallpaper_discovery_schedule(schedule)
                 return wallpaper_discovery_schedule_snapshot()
-            if campaign_status not in {"planned", "running", "paused"}:
+            elif campaign_status not in {"planned", "running", "paused"}:
                 schedule.update({
                     "enabled": False,
                     "next_run_at": None,
@@ -1920,13 +1991,29 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
                 })
                 _write_wallpaper_discovery_schedule(schedule)
                 return wallpaper_discovery_schedule_snapshot()
-        elif snapshot.get("error"):
+        elif active_campaign_id or snapshot.get("error"):
             schedule.update({
                 "enabled": False,
                 "next_run_at": None,
                 "last_status": "paused_error",
-                "pause_reason": "Automatic discovery stopped because the Catalog status is unavailable.",
-                "last_error": str(snapshot["error"])[:1000],
+                "pause_reason": "Automatic discovery stopped because the saved Catalog campaign status is unavailable.",
+                "last_error": str(snapshot.get("error") or "Saved campaign not found.")[:1000],
+            })
+            _write_wallpaper_discovery_schedule(schedule)
+            return wallpaper_discovery_schedule_snapshot()
+
+        if len(completed_indices) >= len(queue):
+            schedule.update({
+                "enabled": False,
+                "campaign_ids": campaign_ids,
+                "completed_indices": completed_indices,
+                "queue_index": len(queue),
+                "next_run_at": None,
+                "last_status": "needs_review",
+                "pause_reason": (
+                    "All selected provider/profile campaigns are complete. Human rights review "
+                    "and explicit acceptance are required before acquisition or desktop sync."
+                ),
             })
             _write_wallpaper_discovery_schedule(schedule)
             return wallpaper_discovery_schedule_snapshot()
@@ -1934,36 +2021,74 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
         next_run_at = schedule["next_run_at"]
         if next_run_at is not None and current_time < next_run_at:
             if schedule["last_status"] != "scheduled":
-                schedule["last_status"] = "scheduled"
+                schedule.update({
+                    "last_status": "scheduled",
+                    "campaign_ids": campaign_ids,
+                    "completed_indices": completed_indices,
+                })
                 _write_wallpaper_discovery_schedule(schedule)
             return wallpaper_discovery_schedule_snapshot()
 
+        next_index = None
+        for offset in range(1, len(queue) + 1):
+            candidate_index = (current_index + offset) % len(queue)
+            if candidate_index not in completed_indices:
+                next_index = candidate_index
+                break
+        if next_index is None:
+            schedule.update({
+                "enabled": False,
+                "queue_index": len(queue),
+                "campaign_ids": campaign_ids,
+                "completed_indices": completed_indices,
+                "next_run_at": None,
+                "last_status": "needs_review",
+                "pause_reason": "All discovery campaigns completed; human review is required.",
+            })
+            _write_wallpaper_discovery_schedule(schedule)
+            return wallpaper_discovery_schedule_snapshot()
+
+        item = queue[next_index]
         try:
-            result = _start_wallpaper_discovery_unlocked(
-                schedule["source"], schedule["profile"], schedule["contact"],
-                max_queries=DISCOVERY_SLICE_MAX_QUERIES,
+            started = _start_wallpaper_discovery_unlocked(
+                item["source"], item["profile"], item["contact"],
+                campaign_id=campaign_ids[next_index],
+                max_queries=None,
             )
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
             schedule.update({
                 "enabled": False,
                 "next_run_at": None,
                 "last_status": "paused_error",
-                "pause_reason": "Automatic discovery stopped after an execution error.",
+                "pause_reason": "Automatic discovery stopped after a provider budget or campaign execution error.",
                 "last_error": str(exc)[:1000],
+                "campaign_ids": campaign_ids,
+                "completed_indices": completed_indices,
             })
             _write_wallpaper_discovery_schedule(schedule)
             return wallpaper_discovery_schedule_snapshot()
 
+        campaign_ids[next_index] = started["campaign_id"]
         schedule.update({
+            "enabled": True,
+            "source": item["source"],
+            "profile": item["profile"],
+            "contact": item["contact"],
+            "campaign_id": started["campaign_id"],
+            "campaign_ids": campaign_ids,
+            "completed_indices": completed_indices,
+            "queue_index": next_index,
             "next_run_at": current_time + schedule["interval_minutes"] * 60,
             "last_run_at": current_time,
             "last_status": "running",
             "pause_reason": None,
             "last_error": None,
-            "campaign_id": result["campaign_id"],
         })
         _write_wallpaper_discovery_schedule(schedule)
         return wallpaper_discovery_schedule_snapshot()
+
+
+
 
 
 def _wallpaper_discovery_scheduler_loop() -> None:
