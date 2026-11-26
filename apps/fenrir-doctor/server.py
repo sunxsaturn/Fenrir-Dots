@@ -1541,7 +1541,7 @@ def _default_wallpaper_discovery_schedule() -> dict[str, Any]:
 
 def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
     """Validate a finite, unique source/profile queue before persisting it."""
-    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
+    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
     if not isinstance(raw_queue, list) or not raw_queue:
         raise ValueError("Choose at least one wallpaper campaign for the queue.")
     if len(raw_queue) > 24:
@@ -1618,7 +1618,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             raise ValueError("Unsupported scheduler state format.")
         if not isinstance(raw.get("enabled"), bool):
             raise ValueError("Scheduler enabled state is invalid.")
-        if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven"}:
+        if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}:
             raise ValueError("Scheduler source is invalid.")
         if raw.get("profile") not in DISCOVERY_PROFILES:
             raise ValueError("Scheduler profile is invalid.")
@@ -2219,7 +2219,7 @@ def wallpaper_portfolio_snapshot(
         for provider in payload["providers"]:
             if (
                 not isinstance(provider, dict)
-                or provider.get("source_key") not in {"openverse", "wikimedia_commons", "wallhaven"}
+                or provider.get("source_key") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
             ):
                 raise ValueError("Catalog returned an invalid provider portfolio row.")
         for profile in payload["profiles"]:
