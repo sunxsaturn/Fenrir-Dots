@@ -200,6 +200,7 @@ class DoctorUtilityTests(unittest.TestCase):
                  patch.object(server, "current_wallpaper_directory", return_value=wallpaper_dir), \
                  patch.object(server, "wallpaper_sync_destination_allowed", return_value=True), \
                  patch.object(server.subprocess, "run", side_effect=[facets, palette]):
+                with patch.object(server, "wallpaper_portfolio_snapshot", return_value={"available": False, "read_only": True}):
                 result = server.wallpaper_snapshot()
             self.assertEqual(result["local_image_count"], 7)
             self.assertEqual(result["accepted_asset_count"], 12)
@@ -822,7 +823,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(result["campaign_id"], "campaign-1")
         self.assertEqual(saved["interval_minutes"], 360)
         self.assertEqual(saved["last_status"], "running")
-        start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, max_queries=2)
+        start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, max_queries=None)
 
     def test_enable_rejects_unsupported_interval_without_starting(self):
         import tempfile
@@ -900,7 +901,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
                 server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
             ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
                 "process_running": False,
-                "campaign": {"status": "paused"},
+                "campaign": {"campaign_id": "campaign-1", "status": "paused"},
             }), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
                 result = server.wallpaper_discovery_scheduler_tick(now=1999)
         self.assertTrue(result["enabled"])
@@ -968,7 +969,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
                 server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
             ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
                 "process_running": False,
-                "campaign": {"status": "failed", "error_summary": "provider unavailable"},
+                "campaign": {"campaign_id": "campaign-1", "status": "failed", "error_summary": "provider unavailable"},
             }):
                 result = server.wallpaper_discovery_scheduler_tick(now=999999999)
         self.assertFalse(result["enabled"])
@@ -1047,6 +1048,8 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             "source": "openverse",
             "profile": "fenrir-nordic-fantasy-v1",
             "contact_configured": False,
+            "completed": False,
+            "has_saved_campaign": True,
         })
         self.assertNotIn("contact", result["queue"][2])
         self.assertTrue(result["queue"][2]["contact_configured"])
@@ -1157,7 +1160,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
                 server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
             ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
                 "process_running": False,
-                "campaign": {"status": "paused"},
+                "campaign": {"campaign_id": "campaign-1", "status": "paused"},
             }), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
                 "campaign_id": "campaign-2", "started": True,
             }) as start:
