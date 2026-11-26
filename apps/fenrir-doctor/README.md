@@ -9,6 +9,7 @@ Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the
 - GitHub latest-release checks for Fenrir-Arch, Fenrir-Dots and Fenrir-Wallpaper-Catalog.
 - Reads the local installed-versions.json manifest written by Fenrir-Arch, with safe fallback for older installations.
 - Interactive upgrade handoff to a terminal. The user reviews and confirms pacman -Syu; no silent privileged update occurs.
+- Launches the Catalog's loopback-only Rights & Acquisition Studio with the configured private quarantine root, enabling identity-verified transient quarantine previews without changing files or decisions.
 - Recovery from Fenrir-managed configuration backups. Existing files are snapshotted before restore.
 - Local wallpaper synchronization through fenrir-catalog catalog library sync, with 5,000, 10,000 and 20,000 image targets.
 - Full-profile resumable Openverse, Wikimedia Commons and SFW Wallhaven metadata campaigns (up to 100 queries and two pages per query per user-started run), with saved per-query cursors. Discovery never downloads or accepts images.

@@ -644,6 +644,8 @@ class WallpaperRightsReviewTests(unittest.TestCase):
                 self.assertIn("rights", command)
                 self.assertIn("board", command)
                 self.assertIn("--no-browser", command)
+                self.assertIn("--quarantine-root", command)
+                self.assertEqual(command[command.index("--quarantine-root") + 1], str(server.QUARANTINE_ROOT))
                 self.assertEqual(command[command.index("--port") + 1], "0")
                 self.assertEqual(popen.call_count, 1)
                 server.stop_wallpaper_rights_review_studio()

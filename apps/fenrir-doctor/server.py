@@ -36,11 +36,11 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.12.2"
+APP_VERSION = "0.12.3"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.8.1",
-    "Fenrir-Dots": "0.12.2",
-    "Fenrir-Wallpaper-Catalog": "0.28.0",
+    "Fenrir-Arch": "0.8.2",
+    "Fenrir-Dots": "0.12.3",
+    "Fenrir-Wallpaper-Catalog": "0.29.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -1155,6 +1155,7 @@ def start_wallpaper_rights_review_studio() -> dict[str, Any]:
                 "--reviewer", reviewer,
                 "--port", "0",
                 "--no-browser",
+                "--quarantine-root", str(QUARANTINE_ROOT),
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
