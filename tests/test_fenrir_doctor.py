@@ -1053,7 +1053,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
                 server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
             ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
                 "process_running": False,
-                "campaign": {"campaign_id": "campaign-2", "status": "paused"},
+                "campaign": {"campaign_id": "campaign-1", "status": "paused"},
             }), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
                 "campaign_id": "campaign-1", "started": True,
             }) as start:
@@ -1062,7 +1062,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertTrue(result["enabled"])
         self.assertEqual(saved["last_run_at"], 1000)
         self.assertEqual(saved["next_run_at"], 1000 + 360 * 60)
-        start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, max_queries=2)
+        start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, campaign_id="campaign-1", max_queries=None)
 
     def test_completed_campaign_stops_for_human_review(self):
         import tempfile
@@ -1253,7 +1253,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
                 server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
             ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
                 "process_running": False,
-                "campaign": {"status": "completed"},
+                "campaign": {"campaign_id": "campaign-1", "status": "completed"},
             }), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
                 result = server.wallpaper_discovery_scheduler_tick(now=1000)
                 saved = server.strict_json((state / "schedule.json").read_bytes())
