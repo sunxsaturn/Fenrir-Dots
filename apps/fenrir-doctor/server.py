@@ -37,11 +37,11 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.13.0"
+APP_VERSION = "0.14.0"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.8.7",
-    "Fenrir-Dots": "0.13.0",
-    "Fenrir-Wallpaper-Catalog": "0.34.0",
+    "Fenrir-Arch": "0.8.8",
+    "Fenrir-Dots": "0.14.0",
+    "Fenrir-Wallpaper-Catalog": "0.35.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -1330,7 +1330,7 @@ def _start_wallpaper_discovery_unlocked(
     max_queries: int | None = 100,
 ) -> dict[str, Any]:
     global DISCOVERY_PROCESS
-    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
+    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum", "metmuseum"}
     allowed_profiles = DISCOVERY_PROFILES
     if max_queries is not None and (
         isinstance(max_queries, bool) or not isinstance(max_queries, int)
@@ -1338,7 +1338,7 @@ def _start_wallpaper_discovery_unlocked(
     ):
         raise ValueError("Discovery max_queries must be between 1 and 100.")
     if source not in allowed_sources:
-        raise ValueError("Choose Openverse, Wikimedia Commons, Wallhaven or Cleveland Museum of Art.")
+        raise ValueError("Choose Openverse, Wikimedia Commons, Wallhaven, Cleveland Museum of Art or The Met.")
     if profile not in allowed_profiles:
         raise ValueError("Choose a supported Fenrir wallpaper discovery profile.")
     if DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None:
@@ -1351,7 +1351,15 @@ def _start_wallpaper_discovery_unlocked(
             raise ValueError("Commons discovery requires a contact email or HTTPS project URL.")
     elif contact not in (None, ""):
         raise ValueError("A contact field is accepted only for Wikimedia Commons.")
+    if source == "metmuseum":
+        if max_queries not in (None, 1, 100):
+            raise ValueError("Met discovery is limited to one scheduled query per turn.")
+        # The normal manual-discovery default is 100; Met still follows the
+        # provider's one-query/one-page budget and resumes through its cursor.
+        max_queries = None
 
+    slice_limit = 3 if source == "metmuseum" else 20
+    slice_pages = 1 if source == "metmuseum" else DISCOVERY_SLICE_MAX_PAGES
     provider_budget = None
     if max_queries is None:
         planned = subprocess.run(
@@ -1360,8 +1368,8 @@ def _start_wallpaper_discovery_unlocked(
                 "--database", str(CATALOG_DB),
                 "--source", source,
                 "--profile", profile,
-                "--limit", "20",
-                "--max-pages-per-query", str(DISCOVERY_SLICE_MAX_PAGES),
+                "--limit", str(slice_limit),
+                "--max-pages-per-query", str(slice_pages),
             ],
             capture_output=True, text=True, timeout=20, check=False,
         )
@@ -1391,7 +1399,7 @@ def _start_wallpaper_discovery_unlocked(
         if (
             isinstance(max_queries, bool) or not isinstance(max_queries, int)
             or not 1 <= max_queries <= 2
-            or max_pages != DISCOVERY_SLICE_MAX_PAGES
+            or max_pages != slice_pages
             or isinstance(api_per_page, bool) or not isinstance(api_per_page, int)
             or api_per_page < 1
             or isinstance(max_requests, bool) or not isinstance(max_requests, int)
@@ -1451,8 +1459,8 @@ def _start_wallpaper_discovery_unlocked(
             "--database", str(CATALOG_DB),
             "--source", source,
             "--profile", profile,
-            "--limit", "20",
-            "--max-pages-per-query", str(DISCOVERY_SLICE_MAX_PAGES),
+            "--limit", str(slice_limit),
+            "--max-pages-per-query", str(slice_pages),
         ]
         created = subprocess.run(
             create_args, capture_output=True, text=True, timeout=20, check=False,
@@ -1487,8 +1495,8 @@ def _start_wallpaper_discovery_unlocked(
         "--profile", profile,
         "--campaign-id", campaign_id,
         "--max-queries", str(max_queries),
-        "--max-pages-per-query", str(DISCOVERY_SLICE_MAX_PAGES),
-        "--limit", "20",
+        "--max-pages-per-query", str(slice_pages),
+        "--limit", str(slice_limit),
     ]
     if source == "wikimedia_commons":
         run_args.extend(["--contact", contact.strip()])
@@ -1509,7 +1517,7 @@ def _start_wallpaper_discovery_unlocked(
         "pid": DISCOVERY_PROCESS.pid,
         "campaign_id": campaign_id,
         "max_queries_per_run": max_queries,
-        "max_pages_per_query": DISCOVERY_SLICE_MAX_PAGES,
+        "max_pages_per_query": slice_pages,
         "provider_budget": provider_budget,
         "downloads_started": False,
         "rights_decisions_created": 0,
@@ -1541,11 +1549,11 @@ def _default_wallpaper_discovery_schedule() -> dict[str, Any]:
 
 def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
     """Validate a finite, unique source/profile queue before persisting it."""
-    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
+    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum", "metmuseum"}
     if not isinstance(raw_queue, list) or not raw_queue:
         raise ValueError("Choose at least one wallpaper campaign for the queue.")
-    if len(raw_queue) > 24:
-        raise ValueError("A discovery queue may contain at most 24 unique source/profile campaigns.")
+    if len(raw_queue) > 30:
+        raise ValueError("A discovery queue may contain at most 30 unique source/profile campaigns.")
     queue: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(raw_queue):
@@ -1618,7 +1626,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             raise ValueError("Unsupported scheduler state format.")
         if not isinstance(raw.get("enabled"), bool):
             raise ValueError("Scheduler enabled state is invalid.")
-        if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}:
+        if raw.get("source") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum", "metmuseum"}:
             raise ValueError("Scheduler source is invalid.")
         if raw.get("profile") not in DISCOVERY_PROFILES:
             raise ValueError("Scheduler profile is invalid.")
@@ -2219,7 +2227,7 @@ def wallpaper_portfolio_snapshot(
         for provider in payload["providers"]:
             if (
                 not isinstance(provider, dict)
-                or provider.get("source_key") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
+                or provider.get("source_key") not in {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum", "metmuseum"}
             ):
                 raise ValueError("Catalog returned an invalid provider portfolio row.")
         for profile in payload["profiles"]:
