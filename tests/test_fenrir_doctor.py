@@ -394,6 +394,135 @@ class DoctorUtilityTests(unittest.TestCase):
 
 
 class WallpaperDiscoveryTests(unittest.TestCase):
+    def test_portfolio_snapshot_is_read_only_and_conservative_without_attribution(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        providers = [
+            {"source_key": key, "provider_budget": {"max_api_requests_per_slice": 4}}
+            for key in ("openverse", "wikimedia_commons", "wallhaven")
+        ]
+        profiles = [
+            {"profile_key": key}
+            for key in (
+                "fenrir-nordic-fantasy-v1",
+                "fenrir-cinematic-nature-v1",
+                "fenrir-cosmic-sci-fi-v1",
+                "fenrir-arctic-blue-v1",
+                "fenrir-architecture-monochrome-v1",
+                "fenrir-red-violet-dark-fantasy-v1",
+            )
+        ]
+        payload = {
+            "report": "org.fenrir.discovery-portfolio",
+            "report_version": 1,
+            "providers": providers,
+            "profiles": profiles,
+            "forecast": {
+                "target_count": 20000,
+                "local_qualifying_count": 500,
+                "accepted_quality_eligible_count": 900,
+                "estimated_accepted_not_yet_local": 900,
+                "projected_total_if_current_accepted_assets_are_synced": 1400,
+                "remaining_after_current_accepted_assets": 18600,
+                "projected_progress_percent": 7.0,
+                "recent_accepted_count": 12,
+                "history_days": 30,
+                "recent_acceptance_rate_per_day": 0.4,
+                "estimated_days_at_recent_acceptance_rate": 46500,
+                "forecast_status": "historical_trend",
+            },
+            "read_only": True,
+            "images_downloaded": 0,
+            "rights_decisions_created": 0,
+            "acquisition_authorizations_created": 0,
+            "human_acceptances_created": 0,
+            "files_modified": False,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            wallpaper_dir = Path(temporary)
+            completed = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+            with (
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "run", return_value=completed) as run,
+            ):
+                result = server.wallpaper_portfolio_snapshot(
+                    20000, 500, wallpaper_dir, catalog_available=True
+                )
+
+        self.assertTrue(result["available"])
+        self.assertTrue(result["read_only"])
+        self.assertFalse(result["attribution_count_is_exact"])
+        forecast = result["report"]["forecast"]
+        self.assertEqual(forecast["estimated_accepted_not_yet_local"], 0)
+        self.assertEqual(forecast["projected_total_if_current_accepted_assets_are_synced"], 500)
+        self.assertEqual(forecast["remaining_after_current_accepted_assets"], 19500)
+        self.assertEqual(forecast["forecast_basis"], "local_only_conservative_attribution_unknown")
+        command = run.call_args.args[0]
+        self.assertIn("portfolio", command)
+        self.assertIn("--local-image-count", command)
+        self.assertEqual(command[command.index("--attributed-asset-count") + 1], "0")
+
+    def test_portfolio_snapshot_uses_verified_attribution_sidecar(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        payload = {
+            "report": "org.fenrir.discovery-portfolio",
+            "report_version": 1,
+            "providers": [{"source_key": "openverse", "provider_budget": {}}],
+            "profiles": [{"profile_key": "fenrir-nordic-fantasy-v1"}],
+            "forecast": {
+                "target_count": 5000,
+                "local_qualifying_count": 1000,
+                "accepted_quality_eligible_count": 1200,
+                "estimated_accepted_not_yet_local": 1000,
+                "projected_total_if_current_accepted_assets_are_synced": 2000,
+                "remaining_after_current_accepted_assets": 3000,
+                "projected_progress_percent": 40.0,
+                "recent_accepted_count": 30,
+                "history_days": 30,
+                "recent_acceptance_rate_per_day": 1.0,
+                "estimated_days_at_recent_acceptance_rate": 3000,
+                "forecast_status": "historical_trend",
+            },
+            "read_only": True,
+            "images_downloaded": 0,
+            "rights_decisions_created": 0,
+            "acquisition_authorizations_created": 0,
+            "human_acceptances_created": 0,
+            "files_modified": False,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            wallpaper_dir = Path(temporary)
+            (wallpaper_dir / "fenrir-catalog-attribution.json").write_text(
+                json.dumps({
+                    "schema": "org.fenrir.wallpaper-catalog-local-install",
+                    "version": 1,
+                    "items": [{"asset_id": f"asset-{index}"} for index in range(200)],
+                }),
+                encoding="utf-8",
+            )
+            completed = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+            with patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"), patch.object(
+                server.subprocess, "run", return_value=completed
+            ):
+                result = server.wallpaper_portfolio_snapshot(
+                    5000, 1000, wallpaper_dir, catalog_available=True
+                )
+
+        self.assertTrue(result["available"])
+        self.assertTrue(result["attribution_count_is_exact"])
+        self.assertEqual(result["attributed_asset_count"], 200)
+        self.assertEqual(
+            result["report"]["forecast"]["forecast_basis"],
+            "local_plus_unattributed_accepted_assets",
+        )
+
     def test_all_catalog_discovery_profiles_are_available_to_doctor(self):
         self.assertEqual(
             server.DISCOVERY_PROFILES,
