@@ -23,8 +23,8 @@ Do not install this repository as a complete system installer. It expects Arch p
 - Explicit, collection-scoped Fenrir Catalog synchronization into the configured wallpaper directory, with integrity/rights checks retained and rotation index refresh
 - Manual screen recording toggle (`Super+Shift+F9`), screenshots and clipboard workflow
 - Fenrir Doctor local assistant, system diagnostics, GitHub release tracking, configuration recovery and rights-aware wallpaper intelligence; Ollama models remain opt-in
-  - Cleveland Museum of Art Open Access discovery is included in the supervised scheduler; only individually marked CC0 artworks with qualifying landscape images are kept in metadata discovery.
-  - Supervised provider-balanced wallpaper metadata scheduler: round-robin slices across up to 24 source/profile combinations, independent resumable campaign cursors, and Catalog-defined four-request budgets per turn; safe pause on errors and an explicit human-review boundary.
+  - Cleveland Museum of Art Open Access and The Met Open Access discovery are included in the supervised scheduler; only individually marked CC0/public-domain records with trusted image URLs are retained in metadata discovery.
+  - Supervised provider-balanced wallpaper metadata scheduler: round-robin slices across up to 30 source/profile combinations, independent resumable campaign cursors, and Catalog-defined four-request budgets per turn; safe pause on errors and an explicit human-review boundary.
   - Read-only collection portfolio dashboard: provider/profile yield, accepted quality-eligible inventory, local collection projection and human-acceptance trend; no guessed ETA without sufficient history.
   - `fenrir-doctor` provides the integrated local UI; `fenrir-upgrade` fetches the latest tagged Fenrir-Arch release and starts the interactive installer.
   - Complete source map: [apps/fenrir-doctor/README.md](apps/fenrir-doctor/README.md) (server, web assets, CLI, user service, desktop entry, icon and tests are all versioned in this repository)
