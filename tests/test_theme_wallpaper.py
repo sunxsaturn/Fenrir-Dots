@@ -166,7 +166,7 @@ class FenrirWallpaperTests(unittest.TestCase):
                 (config / "fenrir").mkdir(parents=True)
                 settings = config / "fenrir" / "settings.toml"
                 for target in (5000, 10000, 20000):
-                    settings.write_text(f"[wallpaper]\\nminimum_count = {target}\\n", encoding="utf-8")
+                    settings.write_text(f"[wallpaper]\nminimum_count = {target}\n", encoding="utf-8")
                     self.assertEqual(wallpaper.resolution_policy()[2], target)
                 settings.write_text("[wallpaper]\\nminimum_count = 15000\\n", encoding="utf-8")
                 self.assertEqual(wallpaper.resolution_policy()[2], 20000)
