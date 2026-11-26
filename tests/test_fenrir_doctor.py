@@ -394,6 +394,112 @@ class WallpaperDiscoveryTests(unittest.TestCase):
             self.assertEqual(command[command.index("--max-pages-per-query") + 1], "2")
             self.assertNotIn("--contact", command)
 
+    def test_acquisition_queue_snapshot_uses_read_only_catalog_report(self):
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        report = {
+            "report": "org.fenrir.acquisition-campaign-queue",
+            "read_only": True,
+            "downloads_started": 0,
+            "rights_decisions_created": 0,
+            "acquisition_authorizations_created": 0,
+            "human_acceptances_created": 0,
+            "total_campaign_assets": 4,
+            "ready_for_authorization_count": 1,
+            "authorized_batch_ready_count": 2,
+            "blocked_count": 1,
+            "items": [],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "catalog.sqlite3"
+            database.write_bytes(b"local catalog fixture")
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout=__import__("json").dumps(report),
+                stderr="",
+            )
+            with (
+                patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                    "campaign": {
+                        "campaign_id": "campaign-queue-test",
+                        "source_key": "openverse",
+                        "profile_key": "fenrir-nordic-fantasy-v1",
+                        "status": "paused",
+                    }
+                }),
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "run", return_value=completed) as run,
+            ):
+                result = server.wallpaper_acquisition_queue_snapshot()
+
+        command = run.call_args.args[0]
+        self.assertIn("catalog", command)
+        self.assertIn("acquisition", command)
+        self.assertIn("campaign-queue", command)
+        self.assertEqual(command[command.index("--limit") + 1], "100")
+        self.assertEqual(command[command.index("--offset") + 1], "0")
+        self.assertNotIn("run", command)
+        self.assertNotIn("download", command)
+        self.assertNotIn("--allowed-host", command)
+        self.assertEqual(run.call_args.kwargs["timeout"], 20)
+        self.assertEqual(result["queue"]["total_campaign_assets"], 4)
+        self.assertEqual(result["queue"]["downloads_started"], 0)
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["downloads_started"], 0)
+
+    def test_acquisition_queue_snapshot_does_not_call_catalog_without_campaign(self):
+        from unittest.mock import patch
+
+        with (
+            patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "campaign": None,
+                "error": "No campaign state",
+            }),
+            patch.object(server.subprocess, "run") as run,
+        ):
+            result = server.wallpaper_acquisition_queue_snapshot()
+
+        self.assertIsNone(result["queue"])
+        self.assertIn("No campaign", result["detail"])
+        self.assertTrue(result["read_only"])
+        run.assert_not_called()
+
+    def test_acquisition_queue_snapshot_rejects_non_read_only_catalog_response(self):
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        unsafe = {
+            "report": "org.fenrir.acquisition-campaign-queue",
+            "read_only": False,
+            "downloads_started": 1,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            database = Path(temporary) / "catalog.sqlite3"
+            database.write_bytes(b"local catalog fixture")
+            completed = SimpleNamespace(
+                returncode=0,
+                stdout=__import__("json").dumps(unsafe),
+                stderr="",
+            )
+            with (
+                patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                    "campaign": {"campaign_id": "campaign-queue-test"}
+                }),
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "run", return_value=completed),
+            ):
+                result = server.wallpaper_acquisition_queue_snapshot()
+
+        self.assertIsNone(result["queue"])
+        self.assertIn("read-only contract", result["detail"])
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["downloads_started"], 0)
+
     def test_wallhaven_rejects_commons_contact_parameter(self):
         import tempfile
         from unittest.mock import patch
