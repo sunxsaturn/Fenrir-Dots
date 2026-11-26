@@ -512,7 +512,7 @@ async function loadWallpapers(showError = false) {
     const resumableQueue = schedule.last_status === 'paused'
       && Number(schedule.queue_total || 0) > Number(schedule.queue_index || 0);
     scheduleButton.textContent = schedule.enabled
-      ? 'Pause automatic discovery'
+      ? 'Pause collection run'
       : (resumableQueue ? 'Resume collection run' : 'Start 20,000-image collection run');
     scheduleButton.disabled = !schedule.enabled && !data.catalog_available;
     const currentQueueItem = schedule.queue_current || null;
