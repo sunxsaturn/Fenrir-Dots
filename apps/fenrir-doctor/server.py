@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import select
 import shutil
 import sqlite3
 import subprocess
@@ -35,11 +36,11 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.11.2"
+APP_VERSION = "0.12.0"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.7.6",
-    "Fenrir-Dots": "0.10.0",
-    "Fenrir-Wallpaper-Catalog": "0.25.0",
+    "Fenrir-Arch": "0.7.9",
+    "Fenrir-Dots": "0.12.0",
+    "Fenrir-Wallpaper-Catalog": "0.26.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -79,6 +80,9 @@ DISCOVERY_LOG = STATE / "wallpaper-discovery.log"
 DISCOVERY_STATE = STATE / "wallpaper-discovery.json"
 DISCOVERY_SCHEDULE_FILE = STATE / "wallpaper-discovery-schedule.json"
 DISCOVERY_LOCK = threading.RLock()
+RIGHTS_STUDIO_LOCK = threading.RLock()
+RIGHTS_STUDIO_PROCESS: subprocess.Popen | None = None
+RIGHTS_STUDIO_URL: str | None = None
 DISCOVERY_SCHEDULER_STOP = threading.Event()
 DISCOVERY_SCHEDULER_THREAD: threading.Thread | None = None
 DISCOVERY_SCHEDULE_INTERVALS = {60, 180, 360, 720, 1440}
@@ -982,6 +986,246 @@ def wallpaper_acquisition_queue_snapshot() -> dict[str, Any]:
         }
 
 
+def wallpaper_rights_review_snapshot() -> dict[str, Any]:
+    """Return a sanitized, read-only summary of the Catalog human-review queue."""
+    unavailable = {
+        "available": False,
+        "queue": None,
+        "detail": "The local Fenrir Wallpaper Catalog CLI or database is unavailable.",
+        "read_only": True,
+        "rights_decisions_created": 0,
+        "acquisition_authorizations_created": 0,
+    }
+    executable = shutil.which("fenrir-catalog")
+    if not executable or CATALOG_DB.is_symlink() or not CATALOG_DB.is_file():
+        return unavailable
+
+    try:
+        result = subprocess.run(
+            [
+                executable, "catalog", "rights", "queue",
+                "--database", str(CATALOG_DB), "--limit", "100",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+        )
+        if result.returncode != 0:
+            detail = (result.stderr or result.stdout or "Rights-review queue unavailable.")[:260]
+            return {**unavailable, "detail": detail}
+
+        payload = strict_json(result.stdout.encode("utf-8"))
+        if (
+            not isinstance(payload, dict)
+            or payload.get("queue") != "human-rights-review"
+            or payload.get("read_only") is not True
+            or payload.get("automatic_rights_decision") is not False
+            or payload.get("automatic_acquisition_authorization") is not False
+        ):
+            raise ValueError("Catalog rights queue did not confirm its read-only contract.")
+
+        raw_counts = payload.get("status_counts")
+        raw_items = payload.get("results")
+        if not isinstance(raw_counts, dict) or not isinstance(raw_items, list):
+            raise ValueError("Catalog returned an incomplete rights-review report.")
+
+        status_counts: dict[str, int] = {}
+        for status in ("unknown", "review_required", "eligible"):
+            count = raw_counts.get(status, 0)
+            if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+                raise ValueError("Catalog returned an invalid rights-review status count.")
+            status_counts[status] = count
+
+        items: list[dict[str, Any]] = []
+        for item in raw_items[:12]:
+            if not isinstance(item, dict) or not isinstance(item.get("id"), str):
+                continue
+            gaps = item.get("metadata_gaps", [])
+            if not isinstance(gaps, list):
+                gaps = []
+            policy = item.get("policy_assessment")
+            review = item.get("latest_human_review")
+            items.append({
+                "asset_id": item["id"][:128],
+                "title": item.get("title") if isinstance(item.get("title"), str) else "Untitled asset",
+                "source_key": item.get("source_key") if isinstance(item.get("source_key"), str) else "unknown",
+                "rights_status": item.get("rights_status") if isinstance(item.get("rights_status"), str) else "unknown",
+                "license_identifier": item.get("license_identifier") if isinstance(item.get("license_identifier"), str) else None,
+                "metadata_gaps": [gap[:80] for gap in gaps[:12] if isinstance(gap, str)],
+                "evidence_count": item.get("evidence_count") if isinstance(item.get("evidence_count"), int) else 0,
+                "policy_decision": policy.get("decision") if isinstance(policy, dict) and isinstance(policy.get("decision"), str) else "unavailable",
+                "latest_human_review": {
+                    "decision": review.get("decision"),
+                    "reviewer": review.get("reviewer"),
+                    "recorded_at": review.get("recorded_at"),
+                } if isinstance(review, dict) else None,
+            })
+
+        total_count = sum(status_counts.values())
+        return {
+            "available": True,
+            "queue": {
+                "total_count": total_count,
+                "returned_count": len(items),
+                "has_more": bool(payload.get("next_cursor")),
+                "status_counts": status_counts,
+                "items": items,
+            },
+            "detail": "Read-only rights-review snapshot loaded. Evidence and decisions are handled in the separate guarded Studio.",
+            "read_only": True,
+            "rights_decisions_created": 0,
+            "acquisition_authorizations_created": 0,
+        }
+    except (OSError, ValueError, TypeError, subprocess.SubprocessError, BadJSON) as exc:
+        return {**unavailable, "detail": str(exc)[:260]}
+
+
+def _stop_rights_review_studio_unlocked() -> None:
+    global RIGHTS_STUDIO_PROCESS, RIGHTS_STUDIO_URL
+    process = RIGHTS_STUDIO_PROCESS
+    RIGHTS_STUDIO_PROCESS = None
+    RIGHTS_STUDIO_URL = None
+    if process is None:
+        return
+    try:
+        if process.poll() is None:
+            process.terminate()
+            try:
+                process.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=2)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    finally:
+        try:
+            if process.stdout is not None:
+                process.stdout.close()
+        except OSError:
+            pass
+
+
+def stop_wallpaper_rights_review_studio() -> None:
+    """Stop the child rights board when Fenrir Doctor shuts down."""
+    with RIGHTS_STUDIO_LOCK:
+        _stop_rights_review_studio_unlocked()
+
+
+
+def _drain_rights_review_studio_output(stream: Any) -> None:
+    """Consume child service logs without retaining or blocking on a full pipe."""
+    try:
+        for _line in stream:
+            pass
+    except (OSError, ValueError):
+        pass
+    finally:
+        try:
+            stream.close()
+        except (OSError, ValueError):
+            pass
+
+
+
+def start_wallpaper_rights_review_studio() -> dict[str, Any]:
+    """Launch or reuse the Catalog's loopback-only, token-protected rights board."""
+    global RIGHTS_STUDIO_PROCESS, RIGHTS_STUDIO_URL
+    executable = shutil.which("fenrir-catalog")
+    if not executable:
+        raise RuntimeError("The fenrir-catalog command is not installed.")
+    if CATALOG_DB.is_symlink() or not CATALOG_DB.is_file():
+        raise ValueError("The Catalog database is missing or is a symbolic link.")
+
+    reviewer = (os.environ.get("USER") or "Fenrir Doctor").strip()[:300] or "Fenrir Doctor"
+    with RIGHTS_STUDIO_LOCK:
+        if RIGHTS_STUDIO_PROCESS is not None and RIGHTS_STUDIO_PROCESS.poll() is None and RIGHTS_STUDIO_URL:
+            return {
+                "started": False,
+                "already_running": True,
+                "url": RIGHTS_STUDIO_URL,
+                "message": "The existing local Rights Review Studio session is ready.",
+            }
+
+        _stop_rights_review_studio_unlocked()
+        process = subprocess.Popen(
+            [
+                executable, "catalog", "rights", "board",
+                "--database", str(CATALOG_DB),
+                "--reviewer", reviewer,
+                "--port", "0",
+                "--no-browser",
+            ],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
+            close_fds=True,
+            start_new_session=True,
+        )
+        try:
+            if process.stdout is None:
+                raise RuntimeError("Catalog did not provide a startup status stream.")
+            ready, _, _ = select.select([process.stdout], [], [], 10)
+            if not ready:
+                raise RuntimeError("The Rights Review Studio did not announce readiness within ten seconds.")
+            announcement = process.stdout.readline().strip()
+            prefix = "Fenrir Rights Review Board: "
+            if not announcement.startswith(prefix):
+                raise RuntimeError("Catalog could not start the Rights Review Studio: " + announcement[:180])
+            board_url = announcement[len(prefix):].strip()
+            parsed = urllib.parse.urlparse(board_url)
+            if (
+                parsed.scheme != "http"
+                or parsed.hostname != "127.0.0.1"
+                or parsed.port is None
+                or not 1 <= parsed.port <= 65535
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+                or re.fullmatch(r"/s/[A-Za-z0-9_-]{32,64}/", parsed.path) is None
+            ):
+                raise RuntimeError("Catalog returned a non-loopback or invalid Rights Review Studio URL.")
+            if process.poll() is not None:
+                raise RuntimeError("The Rights Review Studio exited during startup.")
+            threading.Thread(
+                target=_drain_rights_review_studio_output,
+                args=(process.stdout,),
+                name="fenrir-rights-studio-output",
+                daemon=True,
+            ).start()
+        except Exception:
+            try:
+                if process.poll() is None:
+                    process.terminate()
+                    try:
+                        process.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=2)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            try:
+                if process.stdout is not None:
+                    process.stdout.close()
+            except OSError:
+                pass
+            raise
+
+        RIGHTS_STUDIO_PROCESS = process
+        RIGHTS_STUDIO_URL = board_url
+        return {
+            "started": True,
+            "already_running": False,
+            "url": board_url,
+            "message": "A private loopback-only Rights Review Studio session is ready.",
+        }
+
+
 def _start_wallpaper_discovery_unlocked(
     source: Any,
     profile: Any,
@@ -1721,7 +1965,7 @@ def launch_upgrade_terminal() -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FenrirDoctor/0.11.2"
+    server_version = "FenrirDoctor/0.12.0"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Never log prompt, response, or request-body content.
@@ -1813,6 +2057,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_bytes(200, wallpaper_campaign_snapshot())
         if path == "/api/doctor/wallpapers/acquisition-queue":
             return self.send_bytes(200, wallpaper_acquisition_queue_snapshot())
+        if path == "/api/doctor/wallpapers/rights-review":
+            return self.send_bytes(200, wallpaper_rights_review_snapshot())
         if path == "/api/weather":
             try:
                 return self.send_bytes(200, weather_snapshot())
@@ -1888,6 +2134,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_bytes(202, launch_upgrade_terminal())
             except RuntimeError as exc:
                 return self.send_bytes(503, {"error": str(exc)[:260]})
+        if path == "/api/doctor/wallpapers/rights-studio":
+            try:
+                return self.send_bytes(200, start_wallpaper_rights_review_studio())
+            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
+                return self.send_bytes(503, {"error": str(exc)[:300]})
+
         if path == "/api/doctor/wallpapers/sync":
             try:
                 return self.send_bytes(202, start_wallpaper_sync(obj.get("target_count", 5000)))
@@ -1970,6 +2222,7 @@ def main() -> int:
         pass
     finally:
         DISCOVERY_SCHEDULER_STOP.set()
+        stop_wallpaper_rights_review_studio()
         server.server_close()
     return 0
 
