@@ -397,24 +397,34 @@ async function loadWallpapers(showError = false) {
     const schedule = discovery.scheduler || {};
     state.wallpaperSchedule = schedule;
     $('wallpaper-schedule-interval').value = String(schedule.interval_minutes || 360);
+    const queueInputs = document.querySelectorAll('.wallpaper-queue-source, .wallpaper-queue-profile');
+    queueInputs.forEach((input) => { input.disabled = Boolean(schedule.enabled); });
     $('wallpaper-schedule-interval').disabled = Boolean(schedule.enabled);
     $('wallpaper-source').disabled = Boolean(schedule.enabled);
     $('wallpaper-profile').disabled = Boolean(schedule.enabled);
     $('wallpaper-contact').disabled = Boolean(schedule.enabled);
     const scheduleButton = $('wallpaper-schedule-button');
-    scheduleButton.textContent = schedule.enabled ? 'Pause automatic discovery' : 'Enable automatic discovery';
+    const resumableQueue = schedule.last_status === 'paused'
+      && Number(schedule.queue_total || 0) > Number(schedule.queue_index || 0);
+    scheduleButton.textContent = schedule.enabled
+      ? 'Pause automatic discovery'
+      : (resumableQueue ? 'Resume saved campaign queue' : 'Enable automatic discovery');
     scheduleButton.disabled = !schedule.enabled && !data.catalog_available;
+    const queueProgress = Number(schedule.queue_total || 0) > 0
+      ? ' · campaign ' + Math.min(Number(schedule.queue_position || 0), Number(schedule.queue_total))
+        + '/' + Number(schedule.queue_total)
+      : '';
     if (schedule.enabled) {
       const next = schedule.next_run_at
         ? new Date(schedule.next_run_at * 1000).toLocaleString()
         : 'when the current slice finishes';
-      $('wallpaper-schedule-status').textContent = 'Automatic discovery active · next slice ' + next;
+      $('wallpaper-schedule-status').textContent = 'Automatic discovery active' + queueProgress + ' · next slice ' + next;
     } else if (schedule.last_status === 'needs_review') {
-      $('wallpaper-schedule-status').textContent = 'Paused for human rights review and acceptance.';
+      $('wallpaper-schedule-status').textContent = 'Queue complete. Human rights review and explicit acceptance are required.';
     } else if (schedule.last_status === 'paused_error' || schedule.last_status === 'invalid') {
       $('wallpaper-schedule-status').textContent = 'Stopped safely: ' + (schedule.last_error || schedule.pause_reason || 'inspect scheduler status');
     } else if (schedule.last_status === 'paused') {
-      $('wallpaper-schedule-status').textContent = 'Automatic discovery paused. A running slice is allowed to finish.';
+      $('wallpaper-schedule-status').textContent = 'Automatic discovery paused. ' + (resumableQueue ? 'The saved queue can be resumed.' : 'A running slice is allowed to finish.');
     } else {
       $('wallpaper-schedule-status').textContent = 'Automatic discovery is off.';
     }
@@ -480,10 +490,16 @@ $('wallpaper-target').addEventListener('change', async () => {
 
 function updateCommonsContactVisibility() {
   const group = $('commons-contact-group');
-  if (group) group.classList.toggle('hidden', $('wallpaper-source').value !== 'wikimedia_commons');
+  const queueUsesCommons = Array.from(document.querySelectorAll('.wallpaper-queue-source:checked'))
+    .some((input) => input.value === 'wikimedia_commons');
+  if (group) group.classList.toggle('hidden',
+    $('wallpaper-source').value !== 'wikimedia_commons' && !queueUsesCommons);
 }
 
 $('wallpaper-source').addEventListener('change', updateCommonsContactVisibility);
+document.querySelectorAll('.wallpaper-queue-source').forEach((input) => {
+  input.addEventListener('change', updateCommonsContactVisibility);
+});
 
 $('wallpaper-discover-button').addEventListener('click', async () => {
   const source = $('wallpaper-source').value;
@@ -536,34 +552,59 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
     return;
   }
 
-  const source = $('wallpaper-source').value;
-  const profile = $('wallpaper-profile').value;
-  const contact = $('wallpaper-contact').value.trim();
-  if (source === 'wikimedia_commons' && !contact) {
-    toast('Enter a contact email or project URL for Wikimedia Commons.');
-    $('wallpaper-contact').focus();
-    return;
-  }
   const interval = Number($('wallpaper-schedule-interval').value);
-  if (!window.confirm('Enable automatic ' + source + ' metadata discovery every '
-      + (interval / 60) + ' hour(s)? Each run is sequential and bounded. No image files will be downloaded, licensed, accepted or synchronized. The scheduler stops for human review when discovery is complete.')) return;
+  const resumableQueue = schedule.last_status === 'paused'
+    && Array.isArray(schedule.queue)
+    && Number(schedule.queue_total || 0) > Number(schedule.queue_index || 0);
+  let payload;
+  let description;
 
+  if (resumableQueue) {
+    payload = { enabled: true, resume_existing_queue: true, interval_minutes: interval };
+    description = 'Resume the saved queue at campaign '
+      + (Number(schedule.queue_index || 0) + 1) + ' of ' + Number(schedule.queue_total)
+      + '? Completed campaigns will not be repeated. Discovery remains metadata-only.';
+  } else {
+    const sources = Array.from(document.querySelectorAll('.wallpaper-queue-source:checked'))
+      .map((input) => input.value);
+    const profiles = Array.from(document.querySelectorAll('.wallpaper-queue-profile:checked'))
+      .map((input) => input.value);
+    if (!sources.length || !profiles.length) {
+      toast('Choose at least one source and one search profile for the queue.');
+      return;
+    }
+    const contact = $('wallpaper-contact').value.trim();
+    if (sources.includes('wikimedia_commons') && !contact) {
+      toast('Enter a contact email or project URL for Wikimedia Commons.');
+      $('wallpaper-contact').focus();
+      return;
+    }
+    const queue = [];
+    sources.forEach((source) => profiles.forEach((profile) => {
+      queue.push({
+        source,
+        profile,
+        contact: source === 'wikimedia_commons' ? contact : null
+      });
+    }));
+    payload = { enabled: true, queue, interval_minutes: interval };
+    description = 'Enable a finite queue of ' + queue.length + ' source/profile campaigns, running one at a time every '
+      + (interval / 60) + ' hour(s)? Each campaign uses bounded metadata-only slices. No image files will be downloaded, licensed, accepted or synchronized. Human rights review remains manual.';
+  }
+
+  if (!window.confirm(description)) return;
   const button = $('wallpaper-schedule-button');
   button.disabled = true;
-  $('wallpaper-schedule-status').textContent = 'Starting the first bounded metadata slice…';
+  $('wallpaper-schedule-status').textContent = resumableQueue
+    ? 'Resuming saved discovery queue…'
+    : 'Starting the first bounded metadata campaign…';
   try {
     const result = await api('/api/doctor/wallpapers/schedule', {
       method: 'POST',
-      body: JSON.stringify({
-        enabled: true,
-        source,
-        profile,
-        contact: source === 'wikimedia_commons' ? contact : null,
-        interval_minutes: interval
-      })
+      body: JSON.stringify(payload)
     });
     state.wallpaperSchedule = result;
-    toast('Automatic wallpaper discovery enabled');
+    toast(resumableQueue ? 'Wallpaper campaign queue resumed' : 'Wallpaper campaign queue enabled');
     loadWallpapers();
   } catch (error) {
     $('wallpaper-schedule-status').textContent = error.message;
