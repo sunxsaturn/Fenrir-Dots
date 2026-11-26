@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+from math import ceil
 import re
 import select
 import shutil
@@ -2442,7 +2443,7 @@ def launch_upgrade_terminal() -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FenrirDoctor/0.12.5"
+    server_version = "FenrirDoctor/0.12.8"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Never log prompt, response, or request-body content.
