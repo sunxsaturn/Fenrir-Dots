@@ -635,6 +635,216 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(result["last_status"], "running")
         start.assert_not_called()
 
+    def test_campaign_queue_validation_rejects_duplicates_and_requires_commons_contact(self):
+        queue = [
+            {"source": "openverse", "profile": "fenrir-nordic-fantasy-v1"},
+            {"source": "wallhaven", "profile": "fenrir-nordic-fantasy-v1"},
+        ]
+        validated = server._validate_wallpaper_campaign_queue(queue)
+        self.assertEqual(len(validated), 2)
+        with self.assertRaisesRegex(ValueError, "only once"):
+            server._validate_wallpaper_campaign_queue(queue + [queue[0]])
+        with self.assertRaisesRegex(ValueError, "contact"):
+            server._validate_wallpaper_campaign_queue([
+                {"source": "wikimedia_commons", "profile": "fenrir-nordic-fantasy-v1"}
+            ])
+        with self.assertRaises(ValueError):
+            server._validate_wallpaper_campaign_queue([
+                {"source": {"invalid": "type"}, "profile": "fenrir-nordic-fantasy-v1"}
+            ])
+
+    def test_queue_enable_persists_unique_campaigns_and_starts_first_item(self):
+        import tempfile
+        from unittest.mock import patch
+
+        queue = [
+            {"source": "openverse", "profile": "fenrir-nordic-fantasy-v1", "contact": None},
+            {"source": "wallhaven", "profile": "fenrir-cosmic-sci-fi-v1", "contact": None},
+            {"source": "wikimedia_commons", "profile": "fenrir-arctic-blue-v1", "contact": "fenrir@example.org"},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
+                "campaign_id": "queue-campaign-1", "started": True,
+            }) as start:
+                result = server.configure_wallpaper_discovery_schedule({
+                    "enabled": True, "queue": queue, "interval_minutes": 180,
+                })
+                saved = server.strict_json((state / "schedule.json").read_bytes())
+
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["queue_total"], 3)
+        self.assertEqual(result["queue_index"], 0)
+        self.assertEqual(result["queue_current"], queue[0])
+        self.assertEqual(saved["schema_version"], 2)
+        self.assertEqual(saved["queue"], queue)
+        self.assertEqual(saved["queue_index"], 0)
+        start.assert_called_once_with(
+            "openverse", "fenrir-nordic-fantasy-v1", None, max_queries=2
+        )
+
+    def test_completed_campaign_advances_to_next_queued_item(self):
+        import tempfile
+        from unittest.mock import patch
+
+        queue = [
+            {"source": "openverse", "profile": "fenrir-nordic-fantasy-v1", "contact": None},
+            {"source": "wikimedia_commons", "profile": "fenrir-arctic-blue-v1", "contact": "fenrir@example.org"},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": True, "queue": queue, "queue_index": 0,
+                "campaign_id": "campaign-1", "last_status": "scheduled",
+                "next_run_at": 1000,
+            })
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "completed"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
+                "campaign_id": "campaign-2", "started": True,
+            }) as start:
+                result = server.wallpaper_discovery_scheduler_tick(now=1000)
+                saved = server.strict_json((state / "schedule.json").read_bytes())
+
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["queue_index"], 1)
+        self.assertEqual(result["queue_position"], 2)
+        self.assertEqual(result["source"], "wikimedia_commons")
+        self.assertEqual(result["profile"], "fenrir-arctic-blue-v1")
+        self.assertEqual(result["campaign_id"], "campaign-2")
+        self.assertEqual(saved["next_run_at"], 1000 + 180 * 60)
+        start.assert_called_once_with(
+            "wikimedia_commons", "fenrir-arctic-blue-v1", "fenrir@example.org",
+            max_queries=2,
+        )
+
+    def test_final_queued_campaign_stops_for_human_review(self):
+        import tempfile
+        from unittest.mock import patch
+
+        queue = [{"source": "openverse", "profile": "fenrir-nordic-fantasy-v1", "contact": None}]
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": True, "queue": queue, "queue_index": 0,
+                "campaign_id": "campaign-1",
+            })
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "completed"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                result = server.wallpaper_discovery_scheduler_tick(now=1000)
+                saved = server.strict_json((state / "schedule.json").read_bytes())
+
+        self.assertFalse(result["enabled"])
+        self.assertEqual(result["last_status"], "needs_review")
+        self.assertTrue(result["queue_completed"])
+        self.assertEqual(result["queue_index"], 1)
+        self.assertIsNone(saved["next_run_at"])
+        self.assertIn("Human rights review", result["pause_reason"])
+        start.assert_not_called()
+
+    def test_paused_queue_resumes_without_restarting_completed_campaigns(self):
+        import tempfile
+        from unittest.mock import patch
+
+        queue = [
+            {"source": "openverse", "profile": "fenrir-nordic-fantasy-v1", "contact": None},
+            {"source": "wallhaven", "profile": "fenrir-cosmic-sci-fi-v1", "contact": None},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": False, "queue": queue, "queue_index": 1,
+                "source": "wallhaven", "profile": "fenrir-cosmic-sci-fi-v1",
+                "last_status": "paused",
+            })
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "paused"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
+                "campaign_id": "campaign-2", "started": True,
+            }) as start:
+                result = server.configure_wallpaper_discovery_schedule({
+                    "enabled": True, "resume_existing_queue": True,
+                })
+
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["queue_index"], 1)
+        self.assertEqual(result["campaign_id"], "campaign-2")
+        start.assert_called_once_with(
+            "wallhaven", "fenrir-cosmic-sci-fi-v1", None, max_queries=2
+        )
+
+    def test_resume_skips_campaign_completed_while_queue_was_paused(self):
+        import tempfile
+        from unittest.mock import patch
+
+        queue = [
+            {"source": "openverse", "profile": "fenrir-nordic-fantasy-v1", "contact": None},
+            {"source": "wallhaven", "profile": "fenrir-cosmic-sci-fi-v1", "contact": None},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": False, "queue": queue, "queue_index": 0,
+                "last_status": "paused",
+            })
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"status": "completed"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
+                "campaign_id": "campaign-2", "started": True,
+            }) as start:
+                result = server.configure_wallpaper_discovery_schedule({
+                    "enabled": True, "resume_existing_queue": True,
+                })
+
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["queue_index"], 1)
+        self.assertEqual(result["source"], "wallhaven")
+        self.assertEqual(result["campaign_id"], "campaign-2")
+        start.assert_called_once_with(
+            "wallhaven", "fenrir-cosmic-sci-fi-v1", None, max_queries=2
+        )
+
+    def test_legacy_scheduler_state_migrates_to_an_empty_queue(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            legacy = server._default_wallpaper_discovery_schedule()
+            legacy["schema_version"] = 1
+            legacy.pop("queue")
+            legacy.pop("queue_index")
+            server.atomic_json(state / "schedule.json", legacy)
+            with patch.object(server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"):
+                loaded = server.read_wallpaper_discovery_schedule()
+
+        self.assertEqual(loaded["queue"], [])
+        self.assertEqual(loaded["queue_index"], 0)
+        self.assertEqual(loaded["source"], "openverse")
+
     def test_corrupt_scheduler_state_fails_closed(self):
         import tempfile
         from unittest.mock import patch
