@@ -37,10 +37,10 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.13.2"
+APP_VERSION = "0.13.3"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.8.9",
-    "Fenrir-Dots": "0.13.2",
+    "Fenrir-Dots": "0.13.3",
     "Fenrir-Wallpaper-Catalog": "0.34.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
@@ -94,6 +94,8 @@ DISCOVERY_PROFILES = frozenset({
     "fenrir-arctic-blue-v1",
     "fenrir-architecture-monochrome-v1",
     "fenrir-red-violet-dark-fantasy-v1",
+    "fenrir-deep-ocean-bioluminescence-v1",
+    "fenrir-obsidian-abstract-v1",
 })
 FENRIR_USER_STATE = Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state")) / "fenrir"
 DISCOVERY_SLICE_MAX_QUERIES = 2
@@ -1520,8 +1522,9 @@ def _start_wallpaper_discovery_unlocked(
 
 def _default_wallpaper_discovery_schedule() -> dict[str, Any]:
     return {
-        "schema_version": 3,
+        "schema_version": 4,
         "enabled": False,
+        "run_mode": "continuous",
         "source": "openverse",
         "profile": "fenrir-nordic-fantasy-v1",
         "contact": None,
@@ -1544,8 +1547,8 @@ def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
     allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
     if not isinstance(raw_queue, list) or not raw_queue:
         raise ValueError("Choose at least one wallpaper campaign for the queue.")
-    if len(raw_queue) > 24:
-        raise ValueError("A discovery queue may contain at most 24 unique source/profile campaigns.")
+    if len(raw_queue) > 32:
+        raise ValueError("A discovery queue may contain at most 32 unique source/profile campaigns.")
     queue: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(raw_queue):
@@ -1614,7 +1617,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             raise ValueError("Scheduler state is not a regular file or exceeds 16 KiB.")
         raw = strict_json(path.read_bytes())
         version = raw.get("schema_version") if isinstance(raw, dict) else None
-        if not isinstance(raw, dict) or version not in {1, 2, 3}:
+        if not isinstance(raw, dict) or version not in {1, 2, 3, 4}:
             raise ValueError("Unsupported scheduler state format.")
         if not isinstance(raw.get("enabled"), bool):
             raise ValueError("Scheduler enabled state is invalid.")
@@ -1645,6 +1648,9 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
             or len(legacy_campaign_id) > 128 or any(ord(ch) < 32 for ch in legacy_campaign_id)
         ):
             raise ValueError("Scheduler campaign identifier is invalid.")
+        run_mode = raw.get("run_mode", "scheduled") if version == 4 else "scheduled"
+        if run_mode not in {"continuous", "scheduled"}:
+            raise ValueError("Scheduler run mode is invalid.")
         status = raw.get("last_status", "disabled")
         if status not in {
             "disabled", "running", "scheduled", "paused", "needs_review",
@@ -1689,6 +1695,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
         return {
             **defaults,
             "enabled": raw["enabled"],
+            "run_mode": run_mode,
             "source": raw["source"],
             "profile": raw["profile"],
             "contact": contact,
@@ -1712,7 +1719,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
 
 def _write_wallpaper_discovery_schedule(schedule: dict[str, Any]) -> None:
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
-    schedule["schema_version"] = 3
+    schedule["schema_version"] = 4
     atomic_json(DISCOVERY_SCHEDULE_FILE, schedule)
 
 
@@ -1736,6 +1743,7 @@ def wallpaper_discovery_schedule_snapshot() -> dict[str, Any]:
     completed_count = len(schedule["completed_indices"])
     return {
         "enabled": schedule["enabled"],
+        "run_mode": schedule["run_mode"],
         "source": schedule["source"],
         "profile": schedule["profile"],
         "interval_minutes": schedule["interval_minutes"],
@@ -1754,7 +1762,11 @@ def wallpaper_discovery_schedule_snapshot() -> dict[str, Any]:
         "queue_remaining_count": max(0, len(queue) - completed_count),
         "queue_completed": bool(queue) and completed_count >= len(queue),
         "queue_current": queue_summary[queue_index] if queue_summary and queue_index < len(queue_summary) else None,
-        "rotation_policy": "round_robin_one_bounded_provider_slice",
+        "rotation_policy": (
+            "continuous_round_robin_one_bounded_provider_slice"
+            if schedule["run_mode"] == "continuous"
+            else "scheduled_round_robin_one_bounded_provider_slice"
+        ),
         "max_api_requests_per_slice": 4,
     }
 
@@ -1779,7 +1791,7 @@ def start_wallpaper_discovery(
 
 
 def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str, Any]:
-    """Enable, resume or pause a finite round-robin metadata-discovery queue."""
+    """Enable, resume or pause a continuous or interval-based metadata queue."""
     if not isinstance(payload, dict) or not isinstance(payload.get("enabled"), bool):
         raise ValueError("Automatic discovery enabled state must be true or false.")
     with DISCOVERY_LOCK:
@@ -1800,6 +1812,9 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
         interval = payload.get("interval_minutes", schedule["interval_minutes"])
         if isinstance(interval, bool) or not isinstance(interval, int) or interval not in DISCOVERY_SCHEDULE_INTERVALS:
             raise ValueError("Choose an automatic discovery interval of 1, 3, 6, 12 or 24 hours.")
+        run_mode = payload.get("run_mode", schedule["run_mode"])
+        if run_mode not in {"continuous", "scheduled"}:
+            raise ValueError("Choose continuous collection or scheduled discovery mode.")
         resume_existing = payload.get("resume_existing_queue", False)
         if not isinstance(resume_existing, bool):
             raise ValueError("Queue resume flag must be true or false.")
@@ -1889,13 +1904,14 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
 
         now = int(time.time())
         schedule.update({
-            "schema_version": 3,
+            "schema_version": 4,
             "enabled": True,
+            "run_mode": run_mode,
             "source": source,
             "profile": profile,
             "contact": contact,
             "interval_minutes": interval,
-            "next_run_at": now + interval * 60,
+            "next_run_at": now if run_mode == "continuous" else now + interval * 60,
             "last_run_at": now,
             "last_status": "running",
             "pause_reason": None,
@@ -2081,7 +2097,11 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
             "campaign_ids": campaign_ids,
             "completed_indices": completed_indices,
             "queue_index": next_index,
-            "next_run_at": current_time + schedule["interval_minutes"] * 60,
+            "next_run_at": (
+                current_time
+                if schedule["run_mode"] == "continuous"
+                else current_time + schedule["interval_minutes"] * 60
+            ),
             "last_run_at": current_time,
             "last_status": "running",
             "pause_reason": None,
@@ -2095,7 +2115,11 @@ def wallpaper_discovery_scheduler_tick(now: int | None = None) -> dict[str, Any]
 
 
 def _wallpaper_discovery_scheduler_loop() -> None:
-    while not DISCOVERY_SCHEDULER_STOP.wait(30):
+    while True:
+        schedule = read_wallpaper_discovery_schedule()
+        poll_interval = 1 if schedule["enabled"] and schedule["run_mode"] == "continuous" else 30
+        if DISCOVERY_SCHEDULER_STOP.wait(poll_interval):
+            break
         try:
             wallpaper_discovery_scheduler_tick()
         except Exception as exc:
