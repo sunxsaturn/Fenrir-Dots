@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 5000, wallpaperSchedule: null };
+const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 5000, wallpaperSchedule: null, wallpaperSyncPlan: null };
 const views = ['chat', 'weather', 'system', 'doctor', 'wallpapers', 'history', 'settings'];
 
 async function api(path, options = {}) {
@@ -350,9 +350,27 @@ async function loadWallpapers(showError = false) {
     state.wallpaperTarget = data.target_count || state.wallpaperTarget;
     $('wallpaper-target').value = String(state.wallpaperTarget);
     const sync = data.sync || {};
-    $('wallpaper-sync-button').disabled = Boolean(sync.running) || !data.catalog_available || !data.sync_destination_allowed;
+    const syncPlan = state.wallpaperSyncPlan;
+    const syncAvailable = data.catalog_available && data.sync_destination_allowed && !sync.running;
+    $('wallpaper-sync-plan-button').disabled = !syncAvailable;
+    $('wallpaper-sync-button').disabled = !syncAvailable || !syncPlan
+      || syncPlan.target_count !== state.wallpaperTarget || !syncPlan.sync_allowed;
     $('wallpaper-sync-button').textContent = sync.running ? 'Synchronization running…' : 'Sync accepted wallpapers';
     $('wallpaper-sync-status').textContent = sync.running ? 'Copying verified local assets…' : (sync.returncode === 0 ? 'Last synchronization completed.' : (sync.returncode ? 'Synchronization stopped (exit ' + sync.returncode + ').' : 'Ready'));
+    if (!syncPlan || syncPlan.target_count !== state.wallpaperTarget) {
+      $('wallpaper-sync-plan-status').textContent = 'Run a fresh read-only preflight before synchronization.';
+    } else if (syncPlan.sync_allowed) {
+      $('wallpaper-sync-plan-status').textContent = 'Preflight ready: '
+        + Number(syncPlan.planned_new_copies).toLocaleString() + ' new accepted assets; projected total '
+        + Number(syncPlan.projected_total_count).toLocaleString() + ' / '
+        + Number(syncPlan.target_count).toLocaleString() + '.';
+    } else if (!syncPlan.plan_complete) {
+      $('wallpaper-sync-plan-status').textContent = 'Preflight incomplete: the bounded scan could not verify enough candidates. Synchronization is blocked.';
+    } else if (syncPlan.remaining_slots === 0) {
+      $('wallpaper-sync-plan-status').textContent = 'The selected local wallpaper target is already reached.';
+    } else {
+      $('wallpaper-sync-plan-status').textContent = 'No new accepted assets are currently ready for synchronization. Review the blockers in the Catalog.';
+    }
     $('wallpaper-sync-log').textContent = sync.log || '';
 
     const discovery = data.discovery || {};
@@ -650,6 +668,8 @@ $('upgrade-button').addEventListener('click', async () => {
 
 $('wallpaper-target').addEventListener('change', async () => {
   state.wallpaperTarget = Number($('wallpaper-target').value);
+  state.wallpaperSyncPlan = null;
+  $('wallpaper-sync-plan-status').textContent = 'Target changed. Run a fresh read-only preflight.';
   try {
     const settings = await api('/api/settings');
     await api('/api/settings', { method: 'POST', body: JSON.stringify({
@@ -841,10 +861,54 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
   }
 });
 
+$('wallpaper-sync-plan-button').addEventListener('click', async () => {
+  const button = $('wallpaper-sync-plan-button');
+  button.disabled = true;
+  $('wallpaper-sync-plan-status').textContent = 'Inspecting accepted assets and local filename conflicts…';
+  state.wallpaperSyncPlan = null;
+  $('wallpaper-sync-button').disabled = true;
+  try {
+    const plan = await api('/api/doctor/wallpapers/sync-plan', {
+      method: 'POST',
+      body: JSON.stringify({ target_count: state.wallpaperTarget })
+    });
+    state.wallpaperSyncPlan = plan;
+    $('wallpaper-sync-plan-status').textContent = plan.sync_allowed
+      ? 'Preflight ready: ' + Number(plan.planned_new_copies).toLocaleString()
+        + ' new accepted assets; projected total '
+        + Number(plan.projected_total_count).toLocaleString() + ' / '
+        + Number(plan.target_count).toLocaleString() + '.'
+      : (!plan.plan_complete
+        ? 'Preflight incomplete. More accepted metadata must be inspected; synchronization is blocked.'
+        : (plan.remaining_slots === 0
+          ? 'The selected local wallpaper target is already reached.'
+          : 'No new accepted assets are ready. Review the Catalog blockers.'));
+    toast(plan.sync_allowed ? 'Wallpaper sync preflight passed' : 'Wallpaper sync preflight blocked');
+    loadWallpapers();
+  } catch (error) {
+    $('wallpaper-sync-plan-status').textContent = error.message;
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $('wallpaper-sync-button').addEventListener('click', async () => {
-  if (!window.confirm('Copy catalog-approved wallpapers into your local folder until the ' + Number(state.wallpaperTarget).toLocaleString() + ' image target is reached? This does not publish or upload images.')) return;
+  const plan = state.wallpaperSyncPlan;
+  if (!plan || !plan.sync_allowed || plan.target_count !== state.wallpaperTarget) {
+    toast('Run a fresh read-only preflight before synchronization.');
+    return;
+  }
+  const confirmText = 'Copy up to ' + Number(plan.planned_new_copies).toLocaleString()
+    + ' already accepted, rights-approved and verified wallpapers? The current preflight projects '
+    + Number(plan.projected_total_count).toLocaleString() + ' / '
+    + Number(plan.target_count).toLocaleString()
+    + '. The Catalog will revalidate every quarantine file before copying; no provider downloads or rights decisions are performed.';
+  if (!window.confirm(confirmText)) return;
   try {
     await api('/api/doctor/wallpapers/sync', { method: 'POST', body: JSON.stringify({ target_count: state.wallpaperTarget }) });
+    state.wallpaperSyncPlan = null;
+    $('wallpaper-sync-plan-status').textContent = 'Synchronization started. Run another preflight after it finishes.';
     toast('Wallpaper synchronization started');
     loadWallpapers();
     window.setTimeout(loadWallpapers, 1500);
