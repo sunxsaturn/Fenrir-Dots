@@ -88,17 +88,17 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.28.0\ndef456\trefs/tags/v0.29.0\n",
+                stdout="abc123\trefs/tags/v0.29.0\ndef456\trefs/tags/v0.30.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.29.0")
+            self.assertEqual(result["latest"], "0.30.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.29.0", result["url"])
+            self.assertIn("/releases/tag/v0.30.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
