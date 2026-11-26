@@ -1581,6 +1581,8 @@ def _validate_campaign_ids(raw_ids: Any, queue_size: int) -> list[str | None]:
             or any(ord(ch) < 32 for ch in value)
         ):
             raise ValueError(f"Saved campaign identifier {index + 1} is invalid.")
+        if value is not None and value in identifiers:
+            raise ValueError("Saved campaign identifiers must be unique.")
         identifiers.append(value)
     return identifiers
 
