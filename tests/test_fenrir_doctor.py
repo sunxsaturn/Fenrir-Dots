@@ -401,12 +401,13 @@ class WallpaperDiscoveryTests(unittest.TestCase):
         from unittest.mock import patch
 
         provider_cases = (
-            ("openverse", 2, 1),
-            ("wikimedia_commons", 1, 2),
-            ("wallhaven", 2, 1),
-            ("cleveland_museum", 2, 1),
+            ("openverse", 2, 1, 2, 20),
+            ("wikimedia_commons", 1, 2, 2, 20),
+            ("wallhaven", 2, 1, 2, 20),
+            ("cleveland_museum", 2, 1, 2, 20),
+            ("metmuseum", 1, 4, 1, 3),
         )
-        for source, max_queries, requests_per_page in provider_cases:
+        for source, max_queries, requests_per_page, max_pages, limit in provider_cases:
             with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
                 state = Path(temporary)
                 database = state / "catalog.sqlite3"
@@ -416,7 +417,7 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                     "profile_key": "fenrir-nordic-fantasy-v1",
                     "provider_budget": {
                         "max_queries_per_slice": max_queries,
-                        "max_pages_per_query": 2,
+                        "max_pages_per_query": max_pages,
                         "api_requests_per_page": requests_per_page,
                         "max_api_requests_per_slice": 4,
                     },
@@ -451,9 +452,11 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                 execute_command = popen.call_args.args[0]
                 self.assertEqual(plan_command[1:3], ["campaign", "plan"])
                 self.assertIn("--max-pages-per-query", plan_command)
+                self.assertEqual(plan_command[plan_command.index("--limit") + 1], str(limit))
                 self.assertEqual(execute_command[execute_command.index("--max-queries") + 1], str(max_queries))
-                self.assertEqual(execute_command[execute_command.index("--max-pages-per-query") + 1], "2")
-                self.assertEqual(max_queries * 2 * requests_per_page, 4)
+                self.assertEqual(execute_command[execute_command.index("--max-pages-per-query") + 1], str(max_pages))
+                self.assertEqual(execute_command[execute_command.index("--limit") + 1], str(limit))
+                self.assertEqual(max_queries * max_pages * requests_per_page, 4)
                 self.assertEqual(result["provider_budget"]["max_api_requests_per_slice"], 4)
                 if source == "wikimedia_commons":
                     self.assertIn("--contact", execute_command)
@@ -508,7 +511,7 @@ class WallpaperDiscoveryTests(unittest.TestCase):
 
         providers = [
             {"source_key": key, "provider_budget": {"max_api_requests_per_slice": 4}}
-            for key in ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum")
+            for key in ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum", "metmuseum")
         ]
         profiles = [
             {"profile_key": key}
@@ -1237,8 +1240,8 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(result["last_status"], "running")
         start.assert_not_called()
 
-    def test_campaign_queue_accepts_full_24_source_profile_matrix(self):
-        sources = ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum")
+    def test_campaign_queue_accepts_full_30_source_profile_matrix(self):
+        sources = ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum", "metmuseum")
         profiles = (
             "fenrir-nordic-fantasy-v1",
             "fenrir-cinematic-nature-v1",
@@ -1257,9 +1260,10 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             for profile in profiles
         ]
         validated = server._validate_wallpaper_campaign_queue(queue)
-        self.assertEqual(len(validated), 24)
+        self.assertEqual(len(validated), 30)
         self.assertTrue(any(item["source"] == "cleveland_museum" for item in validated))
-        with self.assertRaisesRegex(ValueError, "24 unique"):
+        self.assertTrue(any(item["source"] == "metmuseum" for item in validated))
+        with self.assertRaisesRegex(ValueError, "30 unique"):
             server._validate_wallpaper_campaign_queue(queue + [queue[0]])
 
     def test_campaign_queue_validation_rejects_duplicates_and_requires_commons_contact(self):
