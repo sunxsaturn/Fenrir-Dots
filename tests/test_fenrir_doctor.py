@@ -677,7 +677,13 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertTrue(result["enabled"])
         self.assertEqual(result["queue_total"], 3)
         self.assertEqual(result["queue_index"], 0)
-        self.assertEqual(result["queue_current"], queue[0])
+        self.assertEqual(result["queue_current"], {
+            "source": "openverse",
+            "profile": "fenrir-nordic-fantasy-v1",
+            "contact_configured": False,
+        })
+        self.assertNotIn("contact", result["queue"][2])
+        self.assertTrue(result["queue"][2]["contact_configured"])
         self.assertEqual(saved["schema_version"], 2)
         self.assertEqual(saved["queue"], queue)
         self.assertEqual(saved["queue_index"], 0)
