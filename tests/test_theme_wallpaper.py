@@ -168,7 +168,7 @@ class FenrirWallpaperTests(unittest.TestCase):
                 for target in (5000, 10000, 20000):
                     settings.write_text(f"[wallpaper]\nminimum_count = {target}\n", encoding="utf-8")
                     self.assertEqual(wallpaper.resolution_policy()[2], target)
-                settings.write_text("[wallpaper]\\nminimum_count = 15000\\n", encoding="utf-8")
+                settings.write_text("[wallpaper]\nminimum_count = 15000\n", encoding="utf-8")
                 self.assertEqual(wallpaper.resolution_policy()[2], 20000)
 
     def test_catalog_sync_cli_defaults_to_20000_target(self):
