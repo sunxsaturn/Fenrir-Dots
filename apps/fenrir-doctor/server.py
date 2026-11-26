@@ -36,11 +36,11 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.12.1"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.7.9",
-    "Fenrir-Dots": "0.12.0",
-    "Fenrir-Wallpaper-Catalog": "0.26.0",
+    "Fenrir-Arch": "0.8.0",
+    "Fenrir-Dots": "0.12.1",
+    "Fenrir-Wallpaper-Catalog": "0.27.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -1965,7 +1965,7 @@ def launch_upgrade_terminal() -> dict[str, Any]:
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "FenrirDoctor/0.12.0"
+    server_version = "FenrirDoctor/0.12.1"
 
     def log_message(self, fmt: str, *args: Any) -> None:
         # Never log prompt, response, or request-body content.
