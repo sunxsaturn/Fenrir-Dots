@@ -394,6 +394,111 @@ class DoctorUtilityTests(unittest.TestCase):
 
 
 class WallpaperDiscoveryTests(unittest.TestCase):
+    def test_scheduler_queries_catalog_budget_before_each_automatic_provider_slice(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        provider_cases = (
+            ("openverse", 2, 1),
+            ("wikimedia_commons", 1, 2),
+            ("wallhaven", 2, 1),
+        )
+        for source, max_queries, requests_per_page in provider_cases:
+            with self.subTest(source=source), tempfile.TemporaryDirectory() as temporary:
+                state = Path(temporary)
+                database = state / "catalog.sqlite3"
+                database.write_bytes(b"catalog")
+                plan = {
+                    "source_key": source,
+                    "profile_key": "fenrir-nordic-fantasy-v1",
+                    "provider_budget": {
+                        "max_queries_per_slice": max_queries,
+                        "max_pages_per_query": 2,
+                        "api_requests_per_page": requests_per_page,
+                        "max_api_requests_per_slice": 4,
+                    },
+                    "operation": "metadata_discovery_only",
+                    "image_downloads": 0,
+                    "rights_decisions": 0,
+                    "acquisition_authorizations": 0,
+                    "human_acceptances": 0,
+                    "read_only": True,
+                }
+                created = {"campaign_id": "new-" + source}
+                completed_plan = SimpleNamespace(returncode=0, stdout=json.dumps(plan), stderr="")
+                completed_create = SimpleNamespace(returncode=0, stdout=json.dumps(created), stderr="")
+                process = SimpleNamespace(pid=12345)
+                with (
+                    patch.object(server, "CATALOG_DB", database),
+                    patch.object(server, "STATE", state),
+                    patch.object(server, "DISCOVERY_STATE", state / "discovery.json"),
+                    patch.object(server, "DISCOVERY_LOG", state / "discovery.log"),
+                    patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                    patch.object(server.subprocess, "run", side_effect=[completed_plan, completed_create]) as run,
+                    patch.object(server.subprocess, "Popen", return_value=process) as popen,
+                    patch.object(server, "DISCOVERY_PROCESS", None),
+                ):
+                    result = server._start_wallpaper_discovery_unlocked(
+                        source,
+                        "fenrir-nordic-fantasy-v1",
+                        "fenrir@example.org" if source == "wikimedia_commons" else None,
+                        max_queries=None,
+                    )
+                plan_command = run.call_args_list[0].args[0]
+                execute_command = popen.call_args.args[0]
+                self.assertEqual(plan_command[1:3], ["campaign", "plan"])
+                self.assertIn("--max-pages-per-query", plan_command)
+                self.assertEqual(execute_command[execute_command.index("--max-queries") + 1], str(max_queries))
+                self.assertEqual(execute_command[execute_command.index("--max-pages-per-query") + 1], "2")
+                self.assertEqual(max_queries * 2 * requests_per_page, 4)
+                self.assertEqual(result["provider_budget"]["max_api_requests_per_slice"], 4)
+                if source == "wikimedia_commons":
+                    self.assertIn("--contact", execute_command)
+                else:
+                    self.assertNotIn("--contact", execute_command)
+
+    def test_scheduler_rejects_provider_budget_above_four_api_requests(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            database = state / "catalog.sqlite3"
+            database.write_bytes(b"catalog")
+            unsafe = {
+                "source_key": "openverse",
+                "profile_key": "fenrir-nordic-fantasy-v1",
+                "provider_budget": {
+                    "max_queries_per_slice": 2,
+                    "max_pages_per_query": 2,
+                    "api_requests_per_page": 2,
+                    "max_api_requests_per_slice": 4,
+                },
+                "operation": "metadata_discovery_only",
+                "image_downloads": 0,
+                "rights_decisions": 0,
+                "acquisition_authorizations": 0,
+                "human_acceptances": 0,
+                "read_only": True,
+            }
+            completed = SimpleNamespace(returncode=0, stdout=json.dumps(unsafe), stderr="")
+            with (
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server.subprocess, "run", return_value=completed),
+                patch.object(server.subprocess, "Popen") as popen,
+                patch.object(server, "DISCOVERY_PROCESS", None),
+            ):
+                with self.assertRaisesRegex(ValueError, "four-request"):
+                    server._start_wallpaper_discovery_unlocked(
+                        "openverse", "fenrir-nordic-fantasy-v1", max_queries=None
+                    )
+            popen.assert_not_called()
+
     def test_portfolio_snapshot_is_read_only_and_conservative_without_attribution(self):
         import json
         import tempfile
@@ -1453,6 +1558,41 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(loaded["queue"], [])
         self.assertEqual(loaded["queue_index"], 0)
         self.assertEqual(loaded["source"], "openverse")
+
+    def test_legacy_schema_v2_queue_migrates_campaign_id_to_active_entry(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            legacy = {
+                "schema_version": 2,
+                "enabled": False,
+                "source": "wallhaven",
+                "profile": "fenrir-cosmic-sci-fi-v1",
+                "contact": None,
+                "interval_minutes": 360,
+                "next_run_at": None,
+                "last_run_at": None,
+                "last_status": "paused",
+                "pause_reason": None,
+                "last_error": None,
+                "campaign_id": "legacy-active-campaign",
+                "queue": [
+                    {"source": "openverse", "profile": "fenrir-nordic-fantasy-v1", "contact": None},
+                    {"source": "wallhaven", "profile": "fenrir-cosmic-sci-fi-v1", "contact": None},
+                ],
+                "queue_index": 1,
+            }
+            schedule_file = state / "schedule.json"
+            server.atomic_json(schedule_file, legacy)
+            with patch.object(server, "DISCOVERY_SCHEDULE_FILE", schedule_file):
+                migrated = server.read_wallpaper_discovery_schedule()
+
+        self.assertEqual(migrated["campaign_ids"], [None, "legacy-active-campaign"])
+        self.assertEqual(migrated["completed_indices"], [])
+        self.assertEqual(migrated["queue_index"], 1)
+        self.assertEqual(migrated["campaign_id"], "legacy-active-campaign")
 
     def test_corrupt_scheduler_state_fails_closed(self):
         import tempfile
