@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 5000, wallpaperSchedule: null, wallpaperSyncPlan: null };
+const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 20000, wallpaperSchedule: null, wallpaperSyncPlan: null };
 const views = ['chat', 'weather', 'system', 'doctor', 'wallpapers', 'history', 'settings'];
 
 async function api(path, options = {}) {
@@ -634,7 +634,7 @@ async function loadSettings() {
     $('weather-location').value = data.weather.location || '';
     $('weather-latitude').value = data.weather.latitude ?? '';
     $('weather-longitude').value = data.weather.longitude ?? '';
-    state.wallpaperTarget = data.wallpaper_target_count || 5000;
+    state.wallpaperTarget = data.wallpaper_target_count || 20000;
     if ($('wallpaper-target')) $('wallpaper-target').value = String(state.wallpaperTarget);
   } catch (error) { toast(error.message); }
 }

@@ -30,7 +30,7 @@ Do not install this repository as a complete system installer. It expects Arch p
 
 ## Wallpaper policy
 
-Wallpapers are user-owned files under `~/Pictures/Wallpapers` by default. Qualifying images must be readable landscape images at least 2560×1440; 3840×2160 or higher is preferred. Rotation uses the currently acquired qualifying images every 15 minutes. The **5,000-image target is a real collection goal, not a rotation prerequisite**; status does not report it as met until 5,000 actual files pass validation.
+Wallpapers are user-owned files under `~/Pictures/Wallpapers` by default. Qualifying images must be readable landscape images at least 2560×1440; 3840×2160 or higher is preferred. Rotation uses the currently acquired qualifying images every 15 minutes. The **20,000-image target is the recommended collection goal, not a rotation prerequisite**; status does not report it as met until 20,000 actual files pass validation.
 
 No bulk image collection is bundled or fabricated. Do not download copyrighted images without permission. The separate Fenrir Wallpaper Catalog owns source discovery, rights review, acquisition authorization, deduplication and acceptance provenance. See [Fenrir-Arch's wallpaper-pack contract](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/WALLPAPER-PACK.md).
 
@@ -64,7 +64,7 @@ private database/quarantine paths under
 `~/.local/share/fenrir/catalog`. Optional `--database` and
 `--quarantine-root` arguments support an explicitly selected local Catalog.
 Use `--target-count 5000|10000|20000` to choose the destination target; the
-default is 5000. The Catalog command only copies assets which are already
+default is 20000. The Catalog command only copies assets which are already
 human-accepted, rights-approved, license-approved, sufficiently high
 resolution, palette-eligible, and verified against quarantine SHA-256/size
 evidence. Collection membership alone never grants rights approval or

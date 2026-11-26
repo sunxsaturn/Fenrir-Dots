@@ -142,7 +142,7 @@ def default_settings() -> dict[str, Any]:
     return {
         "default_model": "",
         "weather": {"location": "", "latitude": None, "longitude": None},
-        "wallpaper_target_count": 5000,
+        "wallpaper_target_count": 20000,
     }
 
 
@@ -155,7 +155,7 @@ def read_settings() -> dict[str, Any]:
         model = raw.get("default_model", "")
         if isinstance(model, str) and len(model) <= 160:
             settings["default_model"] = model
-        target_count = raw.get("wallpaper_target_count", 5000)
+        target_count = raw.get("wallpaper_target_count", 20000)
         if target_count in {5000, 10000, 20000}:
             settings["wallpaper_target_count"] = target_count
         weather = raw.get("weather", {})
@@ -1918,7 +1918,7 @@ def start_wallpaper_discovery_scheduler() -> None:
 
 
 def wallpaper_snapshot() -> dict[str, Any]:
-    target_count = read_settings().get("wallpaper_target_count", 5000)
+    target_count = read_settings().get("wallpaper_target_count", 20000)
     accepted = None
     catalog_available = shutil.which("fenrir-catalog") is not None and CATALOG_DB.is_file() and QUARANTINE_ROOT.is_dir()
     detail = "Catalog is not installed or its local database has not been initialized."
@@ -2216,7 +2216,7 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_bytes(400, {"error": "provide both latitude and longitude"})
                 if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
                     return self.send_bytes(400, {"error": "coordinates out of range"})
-            target_count = obj.get("wallpaper_target_count", read_settings().get("wallpaper_target_count", 5000))
+            target_count = obj.get("wallpaper_target_count", read_settings().get("wallpaper_target_count", 20000))
             if target_count not in {5000, 10000, 20000}:
                 return self.send_bytes(400, {"error": "Wallpaper target must be 5000, 10000 or 20000."})
             settings = {
@@ -2247,14 +2247,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/doctor/wallpapers/sync-plan":
             try:
                 return self.send_bytes(200, wallpaper_sync_preflight(
-                    obj.get("target_count", 5000)
+                    obj.get("target_count", 20000)
                 ))
             except (OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:300]})
 
         if path == "/api/doctor/wallpapers/sync":
             try:
-                return self.send_bytes(202, start_wallpaper_sync(obj.get("target_count", 5000)))
+                return self.send_bytes(202, start_wallpaper_sync(obj.get("target_count", 20000)))
             except (OSError, ValueError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:260]})
 
