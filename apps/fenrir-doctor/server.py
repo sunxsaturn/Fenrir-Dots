@@ -1330,7 +1330,7 @@ def _start_wallpaper_discovery_unlocked(
     max_queries: int | None = 100,
 ) -> dict[str, Any]:
     global DISCOVERY_PROCESS
-    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
+    allowed_sources = {"openverse", "wikimedia_commons", "wallhaven", "cleveland_museum"}
     allowed_profiles = DISCOVERY_PROFILES
     if max_queries is not None and (
         isinstance(max_queries, bool) or not isinstance(max_queries, int)
@@ -1338,7 +1338,7 @@ def _start_wallpaper_discovery_unlocked(
     ):
         raise ValueError("Discovery max_queries must be between 1 and 100.")
     if source not in allowed_sources:
-        raise ValueError("Choose Openverse, Wikimedia Commons or Wallhaven.")
+        raise ValueError("Choose Openverse, Wikimedia Commons, Wallhaven or Cleveland Museum of Art.")
     if profile not in allowed_profiles:
         raise ValueError("Choose a supported Fenrir wallpaper discovery profile.")
     if DISCOVERY_PROCESS is not None and DISCOVERY_PROCESS.poll() is None:
@@ -1544,8 +1544,8 @@ def _validate_wallpaper_campaign_queue(raw_queue: Any) -> list[dict[str, Any]]:
     allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
     if not isinstance(raw_queue, list) or not raw_queue:
         raise ValueError("Choose at least one wallpaper campaign for the queue.")
-    if len(raw_queue) > 18:
-        raise ValueError("A discovery queue may contain at most 18 unique source/profile campaigns.")
+    if len(raw_queue) > 24:
+        raise ValueError("A discovery queue may contain at most 24 unique source/profile campaigns.")
     queue: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for index, item in enumerate(raw_queue):
