@@ -505,7 +505,6 @@ async function loadWallpapers(showError = false) {
     $('wallpaper-schedule-interval').disabled = Boolean(schedule.enabled) || schedule.run_mode === 'continuous';
     const queueInputs = document.querySelectorAll('.wallpaper-queue-source, .wallpaper-queue-profile');
     queueInputs.forEach((input) => { input.disabled = Boolean(schedule.enabled); });
-    $('wallpaper-schedule-interval').disabled = Boolean(schedule.enabled) || schedule.run_mode === 'continuous';
     $('wallpaper-source').disabled = Boolean(schedule.enabled);
     $('wallpaper-profile').disabled = Boolean(schedule.enabled);
     $('wallpaper-contact').disabled = Boolean(schedule.enabled);
@@ -514,7 +513,7 @@ async function loadWallpapers(showError = false) {
       && Number(schedule.queue_total || 0) > Number(schedule.queue_index || 0);
     scheduleButton.textContent = schedule.enabled
       ? 'Pause automatic discovery'
-      : (resumableQueue ? 'Resume saved campaign queue' : 'Enable automatic discovery');
+      : (resumableQueue ? 'Resume collection run' : 'Start 20,000-image collection run');
     scheduleButton.disabled = !schedule.enabled && !data.catalog_available;
     const currentQueueItem = schedule.queue_current || null;
     const currentQueueLabel = currentQueueItem
