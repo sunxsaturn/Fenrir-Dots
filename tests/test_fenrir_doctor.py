@@ -1065,6 +1065,24 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(saved["last_status"], "running")
         start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, max_queries=None)
 
+    def test_enable_rejects_unsupported_run_mode_without_starting(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                with self.assertRaisesRegex(ValueError, "run mode"):
+                    server.configure_wallpaper_discovery_schedule({
+                        "enabled": True,
+                        "run_mode": "unbounded",
+                        "source": "openverse",
+                        "profile": "fenrir-nordic-fantasy-v1",
+                    })
+        start.assert_not_called()
+
     def test_enable_rejects_unsupported_interval_without_starting(self):
         import tempfile
         from unittest.mock import patch
@@ -1671,6 +1689,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(migrated["completed_indices"], [])
         self.assertEqual(migrated["queue_index"], 1)
         self.assertEqual(migrated["campaign_id"], "legacy-active-campaign")
+        self.assertEqual(migrated["run_mode"], "scheduled")
 
     def test_corrupt_scheduler_state_fails_closed(self):
         import tempfile
