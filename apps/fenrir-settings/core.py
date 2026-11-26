@@ -364,7 +364,7 @@ def update_waybar_modules(settings: dict[str, Any]) -> None:
 def set_startup_app(name: str, desktop_id: str, enabled: bool) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+\.desktop", desktop_id):
         raise ValueError("Invalid desktop entry id")
-    if name not in {"Discord", "Spotify", "Sun AI", "EasyEffects"}:
+    if name not in {"Discord", "Spotify", "Fenrir Doctor", "Sun AI", "EasyEffects"}:
         raise ValueError("Unsupported startup application")
     autostart = CONFIG_HOME / "autostart"
     target = autostart / desktop_id
