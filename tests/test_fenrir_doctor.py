@@ -88,17 +88,19 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.34.0\ndef456\trefs/tags/v0.35.0\n",
+                stdout="abc123\trefs/tags/v0.35.0\ndef456\trefs/tags/v0.36.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
+                server, "installed_release_versions", return_value=dict(server.LOCAL_RELEASES),
+            ), patch.object(
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.35.0")
+            self.assertEqual(result["latest"], "0.36.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.35.0", result["url"])
+            self.assertIn("/releases/tag/v0.36.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
@@ -519,6 +521,8 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                 "fenrir-arctic-blue-v1",
                 "fenrir-architecture-monochrome-v1",
                 "fenrir-red-violet-dark-fantasy-v1",
+                "fenrir-deep-ocean-bioluminescence-v1",
+                "fenrir-obsidian-abstract-v1",
             )
         ]
         payload = {
@@ -639,6 +643,8 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                 "fenrir-arctic-blue-v1",
                 "fenrir-architecture-monochrome-v1",
                 "fenrir-red-violet-dark-fantasy-v1",
+                "fenrir-deep-ocean-bioluminescence-v1",
+                "fenrir-obsidian-abstract-v1",
             },
         )
 
@@ -1033,6 +1039,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
                 result = server.wallpaper_discovery_schedule_snapshot()
         self.assertFalse(result["enabled"])
         self.assertEqual(result["interval_minutes"], 360)
+        self.assertEqual(result["run_mode"], "continuous")
         self.assertEqual(result["last_status"], "disabled")
 
     def test_enable_starts_only_one_bounded_slice_and_persists_schedule(self):
@@ -1059,6 +1066,24 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(saved["interval_minutes"], 360)
         self.assertEqual(saved["last_status"], "running")
         start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, max_queries=None)
+
+    def test_enable_rejects_unsupported_run_mode_without_starting(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "_start_wallpaper_discovery_unlocked") as start:
+                with self.assertRaisesRegex(ValueError, "mode"):
+                    server.configure_wallpaper_discovery_schedule({
+                        "enabled": True,
+                        "run_mode": "unbounded",
+                        "source": "openverse",
+                        "profile": "fenrir-nordic-fantasy-v1",
+                    })
+        start.assert_not_called()
 
     def test_enable_rejects_unsupported_interval_without_starting(self):
         import tempfile
@@ -1128,7 +1153,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             state = Path(temporary)
             schedule = server._default_wallpaper_discovery_schedule()
             schedule.update({
-                "enabled": True, "next_run_at": 2000,
+                "enabled": True, "run_mode": "scheduled", "next_run_at": 2000,
                 "campaign_id": "campaign-1", "last_status": "scheduled",
             })
             server.atomic_json(state / "schedule.json", schedule)
@@ -1150,7 +1175,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             state = Path(temporary)
             schedule = server._default_wallpaper_discovery_schedule()
             schedule.update({
-                "enabled": True, "interval_minutes": 360,
+                "enabled": True, "run_mode": "scheduled", "interval_minutes": 360,
                 "next_run_at": 1000, "campaign_id": "campaign-1",
                 "last_status": "scheduled",
             })
@@ -1169,6 +1194,49 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(saved["last_run_at"], 1000)
         self.assertEqual(saved["next_run_at"], 1000 + 360 * 60)
         start.assert_called_once_with("openverse", "fenrir-nordic-fantasy-v1", None, campaign_id="campaign-1", max_queries=None)
+
+    def test_continuous_mode_starts_next_slice_without_waiting_for_interval(self):
+        import tempfile
+        from unittest.mock import patch
+
+        queue = [
+            {"source": "openverse", "profile": "fenrir-nordic-fantasy-v1", "contact": None},
+            {"source": "wallhaven", "profile": "fenrir-cosmic-sci-fi-v1", "contact": None},
+        ]
+        with tempfile.TemporaryDirectory() as temporary:
+            state = Path(temporary)
+            schedule = server._default_wallpaper_discovery_schedule()
+            schedule.update({
+                "enabled": True,
+                "run_mode": "continuous",
+                "queue": queue,
+                "queue_index": 0,
+                "campaign_ids": ["campaign-openverse", "campaign-wallhaven"],
+                "completed_indices": [],
+                "campaign_id": "campaign-openverse",
+                "next_run_at": 999999,
+                "last_status": "scheduled",
+            })
+            server.atomic_json(state / "schedule.json", schedule)
+            with patch.object(server, "STATE", state), patch.object(
+                server, "DISCOVERY_SCHEDULE_FILE", state / "schedule.json"
+            ), patch.object(server, "wallpaper_campaign_snapshot", return_value={
+                "process_running": False,
+                "campaign": {"campaign_id": "campaign-openverse", "status": "paused"},
+            }), patch.object(server, "_start_wallpaper_discovery_unlocked", return_value={
+                "campaign_id": "campaign-wallhaven", "started": True,
+            }) as start:
+                result = server.wallpaper_discovery_scheduler_tick(now=1000)
+                saved = server.strict_json((state / "schedule.json").read_bytes())
+
+        self.assertTrue(result["enabled"])
+        self.assertEqual(result["run_mode"], "continuous")
+        self.assertEqual(result["queue_index"], 1)
+        self.assertEqual(saved["next_run_at"], 1000)
+        start.assert_called_once_with(
+            "wallhaven", "fenrir-cosmic-sci-fi-v1", None,
+            campaign_id="campaign-wallhaven", max_queries=None,
+        )
 
     def test_completed_campaign_stops_for_human_review(self):
         import tempfile
@@ -1237,7 +1305,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(result["last_status"], "running")
         start.assert_not_called()
 
-    def test_campaign_queue_accepts_full_24_source_profile_matrix(self):
+    def test_campaign_queue_accepts_full_32_source_profile_matrix(self):
         sources = ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum")
         profiles = (
             "fenrir-nordic-fantasy-v1",
@@ -1246,6 +1314,8 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             "fenrir-arctic-blue-v1",
             "fenrir-architecture-monochrome-v1",
             "fenrir-red-violet-dark-fantasy-v1",
+            "fenrir-deep-ocean-bioluminescence-v1",
+            "fenrir-obsidian-abstract-v1",
         )
         queue = [
             {
@@ -1257,9 +1327,9 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
             for profile in profiles
         ]
         validated = server._validate_wallpaper_campaign_queue(queue)
-        self.assertEqual(len(validated), 24)
+        self.assertEqual(len(validated), 32)
         self.assertTrue(any(item["source"] == "cleveland_museum" for item in validated))
-        with self.assertRaisesRegex(ValueError, "24 unique"):
+        with self.assertRaisesRegex(ValueError, "32 unique"):
             server._validate_wallpaper_campaign_queue(queue + [queue[0]])
 
     def test_campaign_queue_validation_rejects_duplicates_and_requires_commons_contact(self):
@@ -1313,7 +1383,8 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         })
         self.assertNotIn("contact", result["queue"][2])
         self.assertTrue(result["queue"][2]["contact_configured"])
-        self.assertEqual(saved["schema_version"], 3)
+        self.assertEqual(saved["schema_version"], 4)
+        self.assertEqual(saved["run_mode"], "continuous")
         self.assertEqual(saved["queue"], queue)
         self.assertEqual(saved["queue_index"], 0)
         self.assertEqual(saved["campaign_ids"], ["queue-campaign-1", None, None])
@@ -1359,7 +1430,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(result["source"], "wikimedia_commons")
         self.assertEqual(result["profile"], "fenrir-arctic-blue-v1")
         self.assertEqual(result["campaign_id"], "campaign-2")
-        self.assertEqual(saved["next_run_at"], 1000 + 180 * 60)
+        self.assertEqual(saved["next_run_at"], 1000)  # Continuous mode starts the next turn immediately.
         start.assert_called_once_with(
             "wikimedia_commons", "fenrir-arctic-blue-v1", "fenrir@example.org",
             campaign_id=None, max_queries=None,
@@ -1584,6 +1655,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(loaded["queue"], [])
         self.assertEqual(loaded["queue_index"], 0)
         self.assertEqual(loaded["source"], "openverse")
+        self.assertEqual(loaded["run_mode"], "scheduled")
 
     def test_legacy_schema_v2_queue_migrates_campaign_id_to_active_entry(self):
         import tempfile
@@ -1619,6 +1691,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(migrated["completed_indices"], [])
         self.assertEqual(migrated["queue_index"], 1)
         self.assertEqual(migrated["campaign_id"], "legacy-active-campaign")
+        self.assertEqual(migrated["run_mode"], "scheduled")
 
     def test_corrupt_scheduler_state_fails_closed(self):
         import tempfile
