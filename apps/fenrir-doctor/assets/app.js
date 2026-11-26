@@ -500,9 +500,12 @@ async function loadWallpapers(showError = false) {
     const schedule = discovery.scheduler || {};
     state.wallpaperSchedule = schedule;
     $('wallpaper-schedule-interval').value = String(schedule.interval_minutes || 360);
+    $('wallpaper-schedule-mode').value = schedule.run_mode || 'continuous';
+    $('wallpaper-schedule-mode').disabled = Boolean(schedule.enabled);
+    $('wallpaper-schedule-interval').disabled = Boolean(schedule.enabled) || schedule.run_mode === 'continuous';
     const queueInputs = document.querySelectorAll('.wallpaper-queue-source, .wallpaper-queue-profile');
     queueInputs.forEach((input) => { input.disabled = Boolean(schedule.enabled); });
-    $('wallpaper-schedule-interval').disabled = Boolean(schedule.enabled);
+    $('wallpaper-schedule-interval').disabled = Boolean(schedule.enabled) || schedule.run_mode === 'continuous';
     $('wallpaper-source').disabled = Boolean(schedule.enabled);
     $('wallpaper-profile').disabled = Boolean(schedule.enabled);
     $('wallpaper-contact').disabled = Boolean(schedule.enabled);
@@ -523,10 +526,14 @@ async function loadWallpapers(showError = false) {
         + Number(schedule.queue_completed_count || 0) + ' completed' + currentQueueLabel
       : '';
     if (schedule.enabled) {
-      const next = schedule.next_run_at
-        ? new Date(schedule.next_run_at * 1000).toLocaleString()
-        : 'when the current slice finishes';
-      $('wallpaper-schedule-status').textContent = 'Automatic discovery active' + queueProgress + ' · next slice ' + next;
+      if (schedule.run_mode === 'continuous') {
+        $('wallpaper-schedule-status').textContent = 'Continuous collection run active' + queueProgress + ' · next bounded slice starts automatically';
+      } else {
+        const next = schedule.next_run_at
+          ? new Date(schedule.next_run_at * 1000).toLocaleString()
+          : 'when the current slice finishes';
+        $('wallpaper-schedule-status').textContent = 'Scheduled discovery active' + queueProgress + ' · next slice ' + next;
+      }
     } else if (schedule.last_status === 'needs_review') {
       $('wallpaper-schedule-status').textContent = 'Queue complete. Human rights review and explicit acceptance are required.';
     } else if (schedule.last_status === 'paused_error' || schedule.last_status === 'invalid') {
@@ -868,6 +875,10 @@ $('wallpaper-discover-button').addEventListener('click', async () => {
   }
 });
 
+$('wallpaper-schedule-mode').addEventListener('change', () => {
+  $('wallpaper-schedule-interval').disabled = $('wallpaper-schedule-mode').value === 'continuous';
+});
+
 $('wallpaper-schedule-button').addEventListener('click', async () => {
   const schedule = state.wallpaperSchedule || {};
   if (schedule.enabled) {
@@ -887,6 +898,7 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
   }
 
   const interval = Number($('wallpaper-schedule-interval').value);
+  const runMode = $('wallpaper-schedule-mode').value;
   const resumableQueue = schedule.last_status === 'paused'
     && Array.isArray(schedule.queue)
     && Number(schedule.queue_total || 0) > Number(schedule.queue_index || 0);
@@ -894,10 +906,14 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
   let description;
 
   if (resumableQueue) {
-    payload = { enabled: true, resume_existing_queue: true, interval_minutes: interval };
+    payload = { enabled: true, resume_existing_queue: true, interval_minutes: interval, run_mode: runMode };
     description = 'Resume the saved queue at campaign '
       + (Number(schedule.queue_index || 0) + 1) + ' of ' + Number(schedule.queue_total)
-      + '? Completed campaigns will not be repeated. Discovery remains metadata-only.';
+      + '? Completed campaigns will not be repeated. '
+      + (runMode === 'continuous'
+        ? 'Fenrir will keep rotating through bounded provider slices until discovery finishes or an error needs attention.'
+        : 'Fenrir will run one bounded slice at the selected interval.')
+      + ' Discovery remains metadata-only; rights review and acceptance stay separate.';
   } else {
     const sources = Array.from(document.querySelectorAll('.wallpaper-queue-source:checked'))
       .map((input) => input.value);
@@ -923,17 +939,20 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
         contact: source === 'wikimedia_commons' ? contact : null
       });
     }));
-    payload = { enabled: true, queue, interval_minutes: interval };
-    description = 'Enable a finite queue of ' + queue.length + ' source/profile campaigns, running one at a time every '
-      + (interval / 60) + ' hour(s)? Each campaign uses bounded metadata-only slices. No image files will be downloaded, licensed, accepted or synchronized. Human rights review remains manual.';
+    payload = { enabled: true, queue, interval_minutes: interval, run_mode: runMode };
+    description = 'Start one collection run for ' + queue.length + ' provider/profile campaigns? '
+      + (runMode === 'continuous'
+        ? 'Fenrir will keep running provider-balanced slices without waiting between turns.'
+        : 'Fenrir will run one provider-balanced slice at the selected interval.')
+      + ' Every turn is capped at four provider API requests. Discovery records metadata only; it does not download files or decide rights, authorization, duplicates or acceptance.';
   }
 
   if (!window.confirm(description)) return;
   const button = $('wallpaper-schedule-button');
   button.disabled = true;
   $('wallpaper-schedule-status').textContent = resumableQueue
-    ? 'Resuming saved discovery queue…'
-    : 'Starting the first bounded metadata campaign…';
+    ? 'Resuming saved collection run…'
+    : (runMode === 'continuous' ? 'Starting continuous collection run…' : 'Starting scheduled discovery…');
   try {
     const result = await api('/api/doctor/wallpapers/schedule', {
       method: 'POST',
