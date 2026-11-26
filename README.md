@@ -96,3 +96,9 @@ To use that collection for rotation, set the existing `wallpaper.directory` valu
 
 The GitHub mirror contains only assets with separate public-redistribution and provider-terms clearance. The private Catalog remains the source of truth for discovery, evidence, acquisition, validation and human acceptance; local Catalog acceptance alone does not authorize publication.
 
+## Multi-volume wallpaper library
+
+Fenrir's wallpaper library is indexed by [the Fenrir-Wallpapers volume registry](https://github.com/sunxsaturn/Fenrir-Wallpapers/blob/main/manifest/volumes.json). The registry identifies the hub and every image volume, along with each volume's image root and manifest. New numbered repositories will be added there rather than hard-coded into the desktop. The local wallpaper scanner already walks nested directories, so synchronized volumes can be exposed beneath one configured wallpaper root.
+
+The current repository is Volume 01. Future volumes are intended to use `Fenrir-Wallpapers-02`, `-03`, etc. A unified multi-volume sync command still needs to be wired to the registry before automatic desktop sync across all shards is considered complete.
+
