@@ -41,7 +41,7 @@ APP_VERSION = "0.13.3"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.8.9",
     "Fenrir-Dots": "0.13.3",
-    "Fenrir-Wallpaper-Catalog": "0.35.0",
+    "Fenrir-Wallpaper-Catalog": "0.34.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -1662,7 +1662,7 @@ def read_wallpaper_discovery_schedule() -> dict[str, Any]:
         campaign_ids: list[str | None] = []
         completed_indices: list[int] = []
         queue_index = 0
-        if version in {2, 3}:
+        if version in {2, 3, 4}:
             raw_queue = raw.get("queue", [])
             if not isinstance(raw_queue, list):
                 raise ValueError("Scheduler queue must be a list.")
@@ -1814,7 +1814,7 @@ def configure_wallpaper_discovery_schedule(payload: dict[str, Any]) -> dict[str,
             raise ValueError("Choose an automatic discovery interval of 1, 3, 6, 12 or 24 hours.")
         run_mode = payload.get("run_mode", schedule["run_mode"])
         if not isinstance(run_mode, str) or run_mode not in {"continuous", "scheduled"}:
-            raise ValueError("Choose continuous collection or scheduled discovery mode.")
+            raise ValueError("Unsupported run mode. Choose continuous collection or scheduled discovery mode.")
         resume_existing = payload.get("resume_existing_queue", False)
         if not isinstance(resume_existing, bool):
             raise ValueError("Queue resume flag must be true or false.")
