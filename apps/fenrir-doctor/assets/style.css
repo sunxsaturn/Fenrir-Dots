@@ -23,3 +23,5 @@
 .campaign-queue-options input[type=checkbox]{flex:0 0 auto;width:14px;height:14px;margin:0;accent-color:var(--accent)}
 .campaign-queue-options input[type=checkbox]:disabled{opacity:.45}
 @media(max-width:760px){.campaign-queue-grid{grid-template-columns:1fr}}
+
+.secondary-button{display:flex;align-items:center;gap:10px;border:1px solid color-mix(in srgb,var(--accent) 48%,transparent);border-radius:10px;background:color-mix(in srgb,var(--accent) 9%,transparent);color:var(--foreground);padding:10px 15px;font:inherit;font-size:11px;font-weight:550;cursor:pointer}.secondary-button:hover{background:color-mix(in srgb,var(--accent) 17%,transparent);border-color:var(--accent)}.secondary-button:disabled{opacity:.45;cursor:not-allowed}
