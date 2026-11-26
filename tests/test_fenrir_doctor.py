@@ -201,7 +201,7 @@ class DoctorUtilityTests(unittest.TestCase):
                  patch.object(server, "wallpaper_sync_destination_allowed", return_value=True), \
                  patch.object(server.subprocess, "run", side_effect=[facets, palette]):
                 with patch.object(server, "wallpaper_portfolio_snapshot", return_value={"available": False, "read_only": True}):
-                result = server.wallpaper_snapshot()
+                    result = server.wallpaper_snapshot()
             self.assertEqual(result["local_image_count"], 7)
             self.assertEqual(result["accepted_asset_count"], 12)
             self.assertEqual(result["palette_metrics"]["excluded_palette_color"], 3)
