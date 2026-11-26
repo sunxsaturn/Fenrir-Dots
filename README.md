@@ -83,3 +83,16 @@ must be a safe local directory outside `/mnt/storage`.
 Launch the loopback-only visual workbench from the terminal with `fenrir-wallpaper studio`, or use **Open Wallpaper Studio** in Fenrir Settings → Wallpapers. The Studio browses accepted Catalog assets, inspects rights/provenance, builds ordered collections, reviews possible duplicates and previews 16:9, 16:10, 21:9 and 32:9 scaling without modifying source images.
 
 Adding an accepted image or batch to a collection automatically stages the updated collection through the existing rights- and integrity-checked Catalog sync and refreshes the wallpaper rotation index. New qualifying images become eligible immediately for the next scheduled or manual wallpaper change; the active wallpaper is not forcibly replaced. Existing collections also have a manual sync control. Removal from a collection does not delete previously staged user-owned wallpaper files.
+
+## GitHub wallpaper library
+
+The public wallpaper files are hosted separately at [sunxsaturn/Fenrir-Wallpapers](https://github.com/sunxsaturn/Fenrir-Wallpapers), inside its `Fenrir Wallpapers/` directory. Clone it locally:
+
+```bash
+git clone --depth=1 https://github.com/sunxsaturn/Fenrir-Wallpapers.git ~/Pictures/Fenrir-Wallpapers
+```
+
+To use that collection for rotation, set the existing `wallpaper.directory` value in `~/.config/fenrir/settings.toml` to `~/Pictures/Fenrir-Wallpapers/Fenrir Wallpapers`. Pull the repository periodically to receive new committed images. Fenrir's normal image validation and rotation rules still apply.
+
+The GitHub mirror contains only assets with separate public-redistribution and provider-terms clearance. The private Catalog remains the source of truth for discovery, evidence, acquisition, validation and human acceptance; local Catalog acceptance alone does not authorize publication.
+
