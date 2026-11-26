@@ -1325,12 +1325,16 @@ def _start_wallpaper_discovery_unlocked(
     profile: Any,
     contact: Any = None,
     *,
-    max_queries: int = 100,
+    campaign_id: str | None = None,
+    max_queries: int | None = 100,
 ) -> dict[str, Any]:
     global DISCOVERY_PROCESS
     allowed_sources = {"openverse", "wikimedia_commons", "wallhaven"}
     allowed_profiles = DISCOVERY_PROFILES
-    if isinstance(max_queries, bool) or not isinstance(max_queries, int) or not 1 <= max_queries <= 100:
+    if max_queries is not None and (
+        isinstance(max_queries, bool) or not isinstance(max_queries, int)
+        or not 1 <= max_queries <= 100
+    ):
         raise ValueError("Discovery max_queries must be between 1 and 100.")
     if source not in allowed_sources:
         raise ValueError("Choose Openverse, Wikimedia Commons or Wallhaven.")
@@ -1347,9 +1351,81 @@ def _start_wallpaper_discovery_unlocked(
     elif contact not in (None, ""):
         raise ValueError("A contact field is accepted only for Wikimedia Commons.")
 
-    campaign_id = None
+    provider_budget = None
+    if max_queries is None:
+        planned = subprocess.run(
+            [
+                executable, "campaign", "plan",
+                "--database", str(CATALOG_DB),
+                "--source", source,
+                "--profile", profile,
+                "--limit", "20",
+                "--max-pages-per-query", str(DISCOVERY_SLICE_MAX_PAGES),
+            ],
+            capture_output=True, text=True, timeout=20, check=False,
+        )
+        if planned.returncode != 0:
+            detail = (planned.stderr or planned.stdout or "Provider budget plan failed.").strip()
+            raise ValueError(detail[:300])
+        plan = strict_json(planned.stdout.encode("utf-8"))
+        if (
+            not isinstance(plan, dict)
+            or plan.get("source_key") != source
+            or plan.get("profile_key") != profile
+            or plan.get("operation") != "metadata_discovery_only"
+            or plan.get("read_only") is not True
+            or plan.get("image_downloads") != 0
+            or plan.get("rights_decisions") != 0
+            or plan.get("acquisition_authorizations") != 0
+            or plan.get("human_acceptances") != 0
+        ):
+            raise ValueError("Catalog returned an invalid or unsafe provider budget plan.")
+        provider_budget = plan.get("provider_budget")
+        if not isinstance(provider_budget, dict):
+            raise ValueError("Catalog did not provide a source-specific scheduler budget.")
+        max_queries = provider_budget.get("max_queries_per_slice")
+        max_pages = provider_budget.get("max_pages_per_query")
+        api_per_page = provider_budget.get("api_requests_per_page")
+        max_requests = provider_budget.get("max_api_requests_per_slice")
+        if (
+            isinstance(max_queries, bool) or not isinstance(max_queries, int)
+            or not 1 <= max_queries <= 2
+            or max_pages != DISCOVERY_SLICE_MAX_PAGES
+            or isinstance(api_per_page, bool) or not isinstance(api_per_page, int)
+            or api_per_page < 1
+            or isinstance(max_requests, bool) or not isinstance(max_requests, int)
+            or max_queries * max_pages * api_per_page > max_requests
+            or max_requests > 4
+        ):
+            raise ValueError("Catalog provider budget exceeds the four-request scheduler cap.")
+
     resumed = False
-    if DISCOVERY_STATE.is_file() and not DISCOVERY_STATE.is_symlink():
+    if campaign_id is not None:
+        if (
+            not isinstance(campaign_id, str) or not campaign_id.strip()
+            or len(campaign_id) > 128 or any(ord(ch) < 32 for ch in campaign_id)
+        ):
+            raise ValueError("Saved campaign identifier is invalid.")
+        status_result = subprocess.run(
+            [
+                executable, "campaign", "status",
+                "--database", str(CATALOG_DB), campaign_id,
+            ],
+            capture_output=True, text=True, timeout=12, check=False,
+        )
+        if status_result.returncode != 0:
+            detail = (status_result.stderr or status_result.stdout or "Saved campaign status unavailable.").strip()
+            raise ValueError(detail[:300])
+        saved = strict_json(status_result.stdout.encode("utf-8"))
+        if (
+            saved.get("campaign_id") != campaign_id
+            or saved.get("source_key") != source
+            or saved.get("profile_key") != profile
+            or saved.get("status") not in {"planned", "running", "paused"}
+        ):
+            raise ValueError("Saved campaign does not match this queue item or is not resumable.")
+        resumed = True
+    elif DISCOVERY_STATE.is_file() and not DISCOVERY_STATE.is_symlink():
         try:
             previous = strict_json(DISCOVERY_STATE.read_bytes())
             if previous.get("source") == source and previous.get("profile") == profile:
@@ -1425,6 +1501,7 @@ def _start_wallpaper_discovery_unlocked(
         "campaign_id": campaign_id,
         "max_queries_per_run": max_queries,
         "max_pages_per_query": DISCOVERY_SLICE_MAX_PAGES,
+        "provider_budget": provider_budget,
         "downloads_started": False,
         "rights_decisions_created": 0,
         "acceptances_created": 0,
