@@ -840,13 +840,20 @@ def current_wallpaper_directory() -> Path:
         except (OSError, tomllib.TOMLDecodeError, AttributeError):
             configured = None
     path = Path(configured).expanduser() if isinstance(configured, str) and configured.strip() else Path.home() / "Pictures/Wallpapers"
-    return path.resolve()
+    # Normalize relative components without resolving symlinks. The sync
+    # boundary checks each path component before any directory is created.
+    return Path(os.path.abspath(os.fspath(path)))
 
 
 def wallpaper_sync_destination_allowed(path: Path) -> bool:
-    pictures = (Path.home() / "Pictures").resolve()
-    resolved = path.resolve()
-    return resolved == pictures or pictures in resolved.parents
+    absolute = Path(os.path.abspath(os.fspath(path.expanduser())))
+    pictures = Path(os.path.abspath(os.fspath(Path.home() / "Pictures")))
+    current = Path(absolute.anchor)
+    for component in absolute.parts[1:]:
+        current = current / component
+        if current.is_symlink():
+            return False
+    return absolute == pictures or pictures in absolute.parents
 
 
 def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
@@ -885,9 +892,9 @@ def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
         or payload.get("target_count") != target_count
         or payload.get("read_only") is not True
         or payload.get("sync_started") is not False
-        or payload.get("sync_allowed") not in {True, False}
-        or payload.get("plan_complete") not in {True, False}
-        or payload.get("destination_parent_writable") not in {True, False}
+        or not isinstance(payload.get("sync_allowed"), bool)
+        or not isinstance(payload.get("plan_complete"), bool)
+        or not isinstance(payload.get("destination_parent_writable"), bool)
     ):
         raise ValueError("Catalog returned an invalid or incomplete wallpaper sync preflight.")
 
