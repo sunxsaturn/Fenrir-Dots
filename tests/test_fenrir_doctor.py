@@ -1428,7 +1428,7 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
         self.assertEqual(result["source"], "wikimedia_commons")
         self.assertEqual(result["profile"], "fenrir-arctic-blue-v1")
         self.assertEqual(result["campaign_id"], "campaign-2")
-        self.assertEqual(saved["next_run_at"], 1000 + 180 * 60)
+        self.assertEqual(saved["next_run_at"], 1000)  # Continuous mode starts the next turn immediately.
         start.assert_called_once_with(
             "wikimedia_commons", "fenrir-arctic-blue-v1", "fenrir@example.org",
             campaign_id=None, max_queries=None,
