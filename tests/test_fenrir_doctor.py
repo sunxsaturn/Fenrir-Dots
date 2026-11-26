@@ -216,6 +216,98 @@ class DoctorUtilityTests(unittest.TestCase):
                 self.assertFalse(server.wallpaper_sync_destination_allowed(home / "Downloads" / "Wallpapers"))
                 self.assertFalse(server.wallpaper_sync_destination_allowed(Path("/mnt/storage/wallpapers")))
 
+    def test_wallpaper_sync_preflight_uses_bounded_read_only_catalog_plan(self):
+        import json
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "catalog.sqlite3"
+            database.write_bytes(b"catalog fixture")
+            quarantine = root / "quarantine"
+            quarantine.mkdir(mode=0o700)
+            destination = root / "Pictures" / "Wallpapers"
+            payload = {
+                "report": "org.fenrir.wallpaper-sync-preflight",
+                "target_count": 20000,
+                "before_count": 5000,
+                "remaining_slots": 15000,
+                "accepted_assets_examined": 12,
+                "metadata_eligible_count": 8,
+                "already_present_count": 2,
+                "planned_new_copies": 6,
+                "projected_total_count": 5006,
+                "projected_target_reached": False,
+                "plan_complete": True,
+                "selection_satisfied": False,
+                "has_more": False,
+                "destination_parent_writable": True,
+                "sync_allowed": True,
+                "skipped": {"license_not_approved": 4},
+                "read_only": True,
+                "database_writes": 0,
+                "files_written": 0,
+                "directories_created": 0,
+                "attribution_written": False,
+                "palette_cache_written": False,
+                "quarantine_files_read": 0,
+                "downloads_started": 0,
+                "acceptance_decisions_created": 0,
+                "sync_started": False,
+            }
+            completed = SimpleNamespace(
+                returncode=0, stdout=json.dumps(payload), stderr=""
+            )
+            with (
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server, "QUARANTINE_ROOT", quarantine),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server, "current_wallpaper_directory", return_value=destination),
+                patch.object(server, "wallpaper_sync_destination_allowed", return_value=True),
+                patch.object(server.subprocess, "run", return_value=completed) as run,
+            ):
+                plan = server.wallpaper_sync_preflight(20000)
+
+        self.assertTrue(plan["read_only"])
+        self.assertTrue(plan["sync_allowed"])
+        self.assertEqual(plan["planned_new_copies"], 6)
+        self.assertEqual(plan["skipped"], {"license_not_approved": 4})
+        command = run.call_args.args[0]
+        self.assertIn("sync-plan", command)
+        self.assertIn("--max-plan-assets", command)
+        self.assertIn("20000", command)
+        self.assertFalse(destination.exists())
+
+    def test_wallpaper_sync_requires_successful_preflight_before_writes(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            database = root / "catalog.sqlite3"
+            database.write_bytes(b"catalog fixture")
+            quarantine = root / "quarantine"
+            quarantine.mkdir(mode=0o700)
+            destination = root / "Pictures" / "Wallpapers"
+            with (
+                patch.object(server, "WALLPAPER_SYNC", None),
+                patch.object(server, "CATALOG_DB", database),
+                patch.object(server, "QUARANTINE_ROOT", quarantine),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-catalog"),
+                patch.object(server, "current_wallpaper_directory", return_value=destination),
+                patch.object(server, "wallpaper_sync_destination_allowed", return_value=True),
+                patch.object(server, "wallpaper_sync_preflight", return_value={
+                    "sync_allowed": False, "plan_complete": False,
+                }),
+                patch.object(server.subprocess, "Popen") as process,
+            ):
+                with self.assertRaisesRegex(ValueError, "preflight blocked"):
+                    server.start_wallpaper_sync(20000)
+            self.assertFalse(destination.exists())
+            process.assert_not_called()
+
     def test_release_snapshot_caches_github_checks(self):
         from unittest.mock import patch
         original_cache, original_time = server.RELEASE_CACHE, server.RELEASE_CACHE_AT
