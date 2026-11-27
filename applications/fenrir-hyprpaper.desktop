@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Wallpaper Backend
+Exec=hyprpaper
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
