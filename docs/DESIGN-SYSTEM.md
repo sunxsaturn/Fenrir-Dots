@@ -22,7 +22,7 @@ There is no universal Linux switch that can make every application window transl
 
 ## Accessibility and performance
 
-Keep foreground contrast at WCAG-friendly levels, provide a high-contrast fallback, and never enable expensive blur passes on the whole screen by default. Glass is optional and independently switchable. Text readability and stable gaming frame times take priority over visual effects.
+Keep foreground contrast at WCAG-friendly levels, provide a high-contrast fallback, and never enable expensive blur passes on the whole screen by default. Glass is enabled by default and independently switchable. Text readability and stable gaming frame times take priority over visual effects.
 
 ## Terminal
 
