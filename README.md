@@ -1,6 +1,6 @@
 # Fenrir-Dots
 
-**Version:** 0.17.3
+**Version:** 0.17.4
 
 Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, Waybar, launcher, terminal, notifications, file manager, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
 
@@ -12,7 +12,7 @@ A single theme engine generates matching tokens for Hyprland, Waybar, Kitty, GTK
 
 ## Glass mode
 
-Glass mode is a user-toggleable appearance profile. Its default active-surface opacity is 80%, with compositor blur where supported. Fullscreen, game, media, lock and authentication surfaces remain opaque. The profile can be controlled with `fenrir-glass enable|disable|status`.
+Glass mode is a user-toggleable appearance profile. Its default active-surface opacity is 60%, with compositor blur where supported. Fullscreen, game, media, lock and authentication surfaces remain opaque. The profile can be controlled with `fenrir-glass enable|disable|status`.
 
 ## Wallpaper integration
 

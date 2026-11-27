@@ -7,9 +7,9 @@ from pathlib import Path
 
 from PIL import Image
 
-PREFERRED = {"blue", "red", "purple", "black", "violet"}
-TOLERATED = {"green", "white", "neutral"}
-EXCLUDED = {"yellow", "brown", "orange", "pink"}
+PREFERRED = {"red", "purple", "blue", "white", "black", "violet"}
+TOLERATED = {"green", "neutral", "pink"}
+EXCLUDED = {"yellow", "orange", "brown"}
 OBSIDIAN = "#090b12"
 
 

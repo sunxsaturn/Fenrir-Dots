@@ -29,9 +29,9 @@ CATEGORY_IDS = {
     "mountains", "astronomy", "planets", "knights-in-battle", "swords",
     "magic", "nordic-mythology",
 }
-PREFERRED = {"blue", "red", "purple", "black", "violet"}
-TOLERATED = {"green", "white", "neutral"}
-EXCLUDED = {"yellow", "brown", "orange", "pink"}
+PREFERRED = {"red", "purple", "blue", "white", "black", "violet"}
+TOLERATED = {"green", "neutral", "pink"}
+EXCLUDED = {"yellow", "orange", "brown"}
 
 
 class WallpaperSyncError(RuntimeError):
@@ -190,7 +190,7 @@ def _validate_manifest(manifest: dict, volume: dict) -> list[dict]:
             raise WallpaperSyncError("Wallpaper manifest dimensions must meet the 2560x1440 landscape minimum")
         if relative.stem != digest:
             raise WallpaperSyncError("Content-addressed image filename must equal its SHA-256")
-        if item.get("palette_policy") != "fenrir-wallpaper-palette-v2":
+        if item.get("palette_policy") != "fenrir-wallpaper-palette-v3":
             raise WallpaperSyncError("Image has not passed the current Fenrir wallpaper palette policy")
         seen_paths.add(path)
         seen_hashes.add(digest)

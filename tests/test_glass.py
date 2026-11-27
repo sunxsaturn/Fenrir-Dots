@@ -6,9 +6,9 @@ from fenrir_dots.glass import render_glass, set_glass
 
 
 class GlassTests(unittest.TestCase):
-    def test_enabled_mode_uses_eighty_percent_opacity_and_blur(self):
+    def test_enabled_mode_uses_sixty_percent_opacity_and_blur(self):
         result = render_glass(True)
-        self.assertIn('opacity = "0.80 override 0.80 override 1.0 override"', result)
+        self.assertIn('opacity = "0.60 override 0.60 override 1.0 override"', result)
         self.assertIn("enabled = true", result)
         self.assertIn('name = "fenrir-glass-default"', result)
 

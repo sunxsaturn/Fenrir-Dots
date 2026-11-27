@@ -20,9 +20,9 @@ class DesktopCliTests(unittest.TestCase):
                 patch("fenrir_dots.cli.reload_hyprland", return_value=True),
                 contextlib.redirect_stdout(output),
             ):
-                result = glass_main(["enable", "--opacity", "0.80"])
+                result = glass_main(["enable", "--opacity", "0.60"])
             self.assertEqual(result, 0)
-            set_glass.assert_called_once_with(True, 0.8)
+            set_glass.assert_called_once_with(True, 0.6)
             self.assertIn('"enabled": true', output.getvalue())
 
     def test_rotation_theme_command_accepts_apply_subcommand(self):

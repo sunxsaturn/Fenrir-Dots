@@ -3,6 +3,9 @@ import unittest
 from fenrir_dots.wallpaper_library import (
     MANIFEST_SCHEMA,
     LIBRARY_ID,
+    PREFERRED,
+    TOLERATED,
+    EXCLUDED,
     WallpaperSyncError,
     _safe_path,
     _validate_manifest,
@@ -17,6 +20,11 @@ CATEGORIES = [
 
 
 class WallpaperLibraryTests(unittest.TestCase):
+    def test_sync_policy_matches_fimbulwinter_palette_v3(self):
+        self.assertEqual(EXCLUDED, {"yellow", "orange", "brown"})
+        self.assertTrue({"red", "purple", "blue", "white", "black"} <= PREFERRED)
+        self.assertIn("green", TOLERATED)
+        self.assertNotIn("pink", EXCLUDED)
     def registry(self, state="published", legacy_reused=0):
         return {
             "schema": "org.fenrir.wallpaper-library-volumes.v2",
@@ -51,7 +59,7 @@ class WallpaperLibraryTests(unittest.TestCase):
             "source_page": "https://example.org/source",
             "rights_evidence_id": "rights:123",
             "source_terms_evidence_id": "terms:123",
-            "palette_policy": "fenrir-wallpaper-palette-v2",
+            "palette_policy": "fenrir-wallpaper-palette-v3",
         }
 
     def test_registry_requires_all_5000_to_be_published(self):
