@@ -1,6 +1,6 @@
 # Fenrir Dots
 
-**Version:** 0.14.2
+**Version:** 0.15.0
 
 **Documentation:** [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Project map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md) · [Version policy](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/VERSIONING.md)
 
@@ -18,7 +18,7 @@ cd ~/Fenrir
 
 Do not use Fenrir-Dots as a standalone system installer. It expects the Arch packages and system integration provided by Fenrir-Arch.
 
-The current stable Fenrir-Arch installer pin is **Fenrir-Dots 0.14.1**. This repository's 0.14.2 maintenance release does not silently change that integration pin; the pin moves only in a separate tested Fenrir-Arch update.
+The current installer pin remains the previously released Fenrir-Dots version until the corresponding Fenrir-Arch integration update is merged and validated.
 
 ## What is included
 
@@ -38,12 +38,12 @@ The current stable Fenrir-Arch installer pin is **Fenrir-Dots 0.14.1**. This rep
 
 Fenrir Doctor combines read-only system diagnostics, release tracking, configuration recovery and wallpaper intelligence. An optional local Ollama assistant provides chat and weather; the service starts on demand and does not download model weights automatically.
 
-Wallpaper Intelligence includes:
+Wallpaper Library includes:
 
 - Opt-in, resumable metadata discovery across Openverse, Wikimedia Commons, SFW Wallhaven and Cleveland Museum of Art Open Access.
 - Eight visual profiles and a persisted round-robin queue of up to **32 source/profile combinations**.
 - Provider-defined scheduling slices capped at **four API requests per turn**; pause on errors or when a campaign queue reaches the human-review boundary.
-- A read-only provider/profile portfolio and collection projection based on local yield and recorded human-acceptance history. It withholds an ETA when there is not enough history.
+- A read-only provider/profile portfolio showing observed local inventory and recorded human-acceptance activity. It does not set a collection-size goal or infer a completion ETA.
 - A read-only acquisition runway and launchers for the Catalog's loopback-only Rights & Acquisition Studio. Rights decisions, acquisition authorization, downloads, duplicate review, acceptance and sync remain separate operations.
 
 Doctor is the desktop control surface; rights and acquisition policy remains in the private Catalog.
@@ -54,7 +54,7 @@ Fenrir keeps two wallpaper ingestion paths separate.
 
 ### Public multi-volume library
 
-The public library is hosted by [Fenrir-Wallpapers](https://github.com/sunxsaturn/Fenrir-Wallpapers). Its volume registry is authoritative; Fenrir does not hard-code the number of active volumes.
+The public library is hosted by [Fenrir-Wallpapers](https://github.com/sunxsaturn/Fenrir-Wallpapers). Population is closed at the existing 1,871 published images; all three registered volumes remain active for desktop sync. Run `fenrir-wallpaper audit-library --json` for the read-only manifest and metadata audit. The volume registry remains authoritative.
 
 Preview a sync without writing files:
 
@@ -78,7 +78,7 @@ Sync one explicitly curated Catalog collection into the configured rotation dire
 fenrir-wallpaper sync-catalog --collection-id COLLECTION_ID
 ```
 
-The default target is 20,000 qualifying local images; 5,000 and 10,000 remain selectable. Sync copies only assets that have passed the Catalog's current rights, license, authorization, human-acceptance, integrity, resolution and palette checks. Collection membership alone does not grant permission. The private database and quarantine remain local and are never published by this command.
+Sync copies only assets that have passed the Catalog's current rights, license, authorization, human-acceptance, integrity, resolution and palette checks. Collection membership alone does not grant permission. The private database and quarantine remain local and are never published by this command.
 
 ### Wallpaper Studio
 
@@ -92,7 +92,7 @@ The loopback-only workbench browses accepted Catalog assets, inspects rights and
 
 ## Wallpaper quality policy
 
-The rotation target is a quality goal, not an installation prerequisite or a claim that a 20,000-image corpus is bundled. Qualifying images must be readable landscape files at least 2560×1440; 3840×2160 or higher is preferred.
+There is no image-count goal. Rotation uses all qualifying images already present in the selected directory. Qualifying images must be readable landscape files at least 2560×1440; 3840×2160 or higher is preferred.
 
 The enforced dominant-palette policy excludes yellow, orange and brown; red, purple, blue, white and black are preferred; green and neutral grey are allowed. The desktop validates decoded image pixels rather than trusting titles or provider tags.
 
