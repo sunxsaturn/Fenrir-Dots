@@ -17,6 +17,7 @@ test = []
 fenrir-glass = "fenrir_dots.glass:main"
 fenrir-theme = "fenrir_dots.theme:main"
 fenrir-wallpaper = "fenrir_dots.wallpaper_library:main"
+fenrir-wallpaper-rotate = "fenrir_dots.rotation:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
