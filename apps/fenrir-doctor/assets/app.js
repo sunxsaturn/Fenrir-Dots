@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 20000, wallpaperSchedule: null, wallpaperSyncPlan: null };
+const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 20000, wallpaperSchedule: null, wallpaperSyncPlan: null, publicLibraryPlan: null };
 const views = ['chat', 'weather', 'system', 'doctor', 'wallpapers', 'history', 'settings'];
 
 async function api(path, options = {}) {
@@ -349,6 +349,30 @@ async function loadWallpapers(showError = false) {
     });
     state.wallpaperTarget = data.target_count || state.wallpaperTarget;
     $('wallpaper-target').value = String(state.wallpaperTarget);
+
+    const publicLibrary = data.public_library || {};
+    const publicRunning = publicLibrary.running === true;
+    const publicPlan = state.publicLibraryPlan;
+    const publicAvailable = publicLibrary.available === true;
+    $('wallpaper-public-library-plan-button').disabled = !publicAvailable || publicRunning;
+    $('wallpaper-public-library-sync-button').disabled = !publicAvailable || publicRunning
+      || !publicPlan || Number(publicPlan.selected_downloads || 0) === 0;
+    $('wallpaper-public-library-sync-button').textContent = publicRunning
+      ? 'Public library synchronization running…' : 'Synchronize public volumes';
+    $('wallpaper-public-library-status').textContent = publicRunning
+      ? 'Downloading verified public wallpapers; progress is recorded in the log below.'
+      : (publicLibrary.returncode === 0 ? 'Last public-library synchronization completed.'
+        : (publicLibrary.returncode !== null && publicLibrary.returncode !== undefined
+          ? 'Public-library synchronization stopped (exit ' + publicLibrary.returncode + ').'
+          : (publicAvailable ? 'Ready; preview before starting.' : 'fenrir-wallpaper is not installed.')));
+    $('wallpaper-public-library-log').textContent = publicLibrary.log || '';
+    if (!publicPlan) {
+      $('wallpaper-public-library-summary').textContent = publicAvailable
+        ? 'The public mirror is ready. Preview the active volumes and missing images before downloading.'
+        : 'The Fenrir wallpaper command is unavailable.';
+      $('wallpaper-public-library-plan-status').textContent = publicRunning
+        ? 'Synchronization is already running.' : 'Read-only preview has not been run.';
+    }
 
     const portfolio = data.portfolio || {};
     const portfolioSummary = $('wallpaper-portfolio-summary');
@@ -964,6 +988,91 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
     $('wallpaper-schedule-status').textContent = error.message;
     button.disabled = false;
     toast(error.message);
+  }
+});
+
+$('wallpaper-public-library-plan-button').addEventListener('click', async () => {
+  const button = $('wallpaper-public-library-plan-button');
+  button.disabled = true;
+  $('wallpaper-public-library-plan-status').textContent = 'Reading the hub registry and validating every active volume manifest…';
+  $('wallpaper-public-library-sync-button').disabled = true;
+  state.publicLibraryPlan = null;
+  try {
+    const plan = await api('/api/doctor/wallpapers/public-library-plan', {
+      method: 'POST',
+      body: JSON.stringify({})
+    });
+    state.publicLibraryPlan = plan;
+    $('wallpaper-public-library-summary').textContent =
+      Number(plan.unique_images).toLocaleString() + ' globally unique images across '
+      + plan.active_volumes.length + ' active volumes. '
+      + Number(plan.already_present).toLocaleString() + ' are already present locally.';
+    const metrics = $('wallpaper-public-library-metrics');
+    metrics.replaceChildren();
+    [
+      ['Active volumes', plan.active_volumes.join(', '), 'Read from the canonical hub registry.'],
+      ['Unique images', Number(plan.unique_images).toLocaleString(), 'Global SHA-256 deduplication across all active manifests.'],
+      ['Already present', Number(plan.already_present).toLocaleString(), 'Locally matched by content hash.'],
+      ['Missing images', Number(plan.selected_downloads).toLocaleString(), 'Images selected by this complete preview.'],
+      ['Estimated transfer', (Number(plan.selected_download_bytes) / (1024 * 1024 * 1024)).toFixed(2) + ' GiB', 'Exact bytes reported by the manifests.'],
+      ['Destination', plan.destination, 'The configured wallpaper.directory; existing files are preserved.']
+    ].forEach(([title, value, detail]) => {
+      const card = document.createElement('article'); card.className = 'metric-card';
+      const label = document.createElement('span'); label.className = 'eyebrow'; label.textContent = title;
+      const number = document.createElement('strong'); number.textContent = value;
+      const help = document.createElement('small'); help.textContent = detail;
+      card.append(label, number, help); metrics.append(card);
+    });
+    $('wallpaper-public-library-plan-status').textContent = plan.read_only
+      ? 'Preview complete · no files, folders or private Catalog data were changed.'
+      : 'Preview contract could not be verified.';
+    $('wallpaper-public-library-sync-button').disabled =
+      !plan.read_only || Number(plan.selected_downloads) === 0;
+    toast(plan.selected_downloads ? 'Public wallpaper library preview ready' : 'Public wallpaper library already synchronized');
+  } catch (error) {
+    $('wallpaper-public-library-summary').textContent = error.message;
+    $('wallpaper-public-library-plan-status').textContent = 'Preview failed.';
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
+$('wallpaper-public-library-sync-button').addEventListener('click', async () => {
+  const plan = state.publicLibraryPlan;
+  if (!plan || !plan.read_only || Number(plan.selected_downloads || 0) < 1) {
+    toast('Run a fresh public-library preview before synchronizing.');
+    return;
+  }
+  const transferGiB = Number(plan.selected_download_bytes) / (1024 * 1024 * 1024);
+  const confirmText = 'Download ' + Number(plan.selected_downloads).toLocaleString()
+    + ' missing wallpapers (' + transferGiB.toFixed(2) + ' GiB) from '
+    + plan.active_volumes.length + ' active public volumes into ' + plan.destination + '? '
+    + 'Files are hash-verified and existing files are never overwritten or deleted. This does not access the private Catalog.';
+  if (!window.confirm(confirmText)) return;
+  const button = $('wallpaper-public-library-sync-button');
+  button.disabled = true;
+  $('wallpaper-public-library-status').textContent = 'Starting public-library synchronization…';
+  try {
+    const result = await api('/api/doctor/wallpapers/public-library-sync', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: true })
+    });
+    state.publicLibraryPlan = null;
+    if (result.started) {
+      $('wallpaper-public-library-status').textContent =
+        'Synchronization started for ' + Number(result.selected_downloads).toLocaleString() + ' images.';
+      toast('Public wallpaper library synchronization started');
+    } else {
+      $('wallpaper-public-library-status').textContent = result.message || 'No missing public images.';
+      toast('Public wallpaper library is already synchronized');
+    }
+    loadWallpapers();
+  } catch (error) {
+    $('wallpaper-public-library-status').textContent = error.message;
+    toast(error.message);
+  } finally {
+    button.disabled = false;
   }
 });
 
