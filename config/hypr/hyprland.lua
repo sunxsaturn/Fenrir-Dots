@@ -26,7 +26,7 @@ hl.config({
 })
 
 hl.bind("SUPER + Return", hl.dsp.exec_cmd(terminal))
-hl.bind("SUPER + Space", hl.dsp.exec_cmd(launcher))
+hl.bind("SUPER + Space", hl.dsp.exec_cmd("qs ipc call fenrir toggleLauncher"))\nhl.bind("SUPER + ALT + Space", hl.dsp.exec_cmd(launcher))
 hl.bind("SUPER + E", hl.dsp.exec_cmd(fileManager))
 hl.bind("SUPER + W", hl.dsp.exec_cmd("fenrir-wallpaper next"))
 hl.bind("SUPER + A", hl.dsp.exec_cmd("fenrir-doctor"))
