@@ -41,7 +41,7 @@ APP_VERSION = "0.14.2"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.9.4",
     "Fenrir-Dots": "0.14.2",
-    "Fenrir-Wallpaper-Catalog": "0.35.1",
+    "Fenrir-Wallpaper-Catalog": "0.36.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
