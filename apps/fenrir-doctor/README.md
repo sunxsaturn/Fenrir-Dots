@@ -25,7 +25,7 @@ Doctor is the desktop control surface, not the Catalog's rights authority. It re
 
 ## Public multi-volume wallpaper library and audit
 
-Fenrir Doctor exposes the separately published GitHub wallpaper mirror under **Wallpapers → Public multi-volume library**. The manifest-only audit checks all active volume manifests, category distribution, duplicate SHA-256 identifiers, metadata gaps and the population state without downloading image bytes or inspecting local files. A separate read-only sync preview shows already-present files, missing images and transfer size. Starting a download is a separate explicit confirmation.
+Fresh installations download the public library during the single Fenrir-Arch installer run. Fenrir Doctor also exposes the separately published GitHub wallpaper mirror under **Wallpapers → Public multi-volume library** for auditing, later reconciliation and recovery. The manifest-only audit checks all active volume manifests, category distribution, duplicate SHA-256 identifiers, metadata gaps and the population state without downloading image bytes or inspecting local files. A separate read-only sync preview shows already-present files, missing images and transfer size. Starting a download is a separate explicit confirmation.
 
 This public mirror is not the private Catalog workflow. It does not read the Catalog database or quarantine, create rights decisions, authorize acquisition, approve publication or change Catalog acceptance. It only synchronizes already-committed public manifest assets through `fenrir-wallpaper sync-library`, preserving attribution in its own sidecar.
 
