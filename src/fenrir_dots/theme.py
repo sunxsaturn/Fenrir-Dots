@@ -52,14 +52,18 @@ def contrast_ratio(first: str, second: str) -> float:
 
 
 def _readable_accent(color: str) -> str:
+    """Lighten a wallpaper accent minimally while preserving its hue family."""
     if contrast_ratio(color, BASE) >= 3.0:
         return color.lower()
-    red, green, blue = (int(color[i:i + 2], 16) for i in (1, 3, 5))
-    hue, saturation, _value = colorsys.rgb_to_hsv(red / 255, green / 255, blue / 255)
-    for step in range(101):
-        value = step / 100
-        rgb = colorsys.hsv_to_rgb(hue, saturation, value)
-        candidate = "#" + "".join(f"{round(part * 255):02x}" for part in rgb)
+    channels = [int(color[i:i + 2], 16) for i in (1, 3, 5)]
+    for step in range(1, 256):
+        # Blend toward white; this preserves the original hue better than
+        # changing hue or returning white for a low-contrast dark blue.
+        candidate_channels = [
+            round(value + (255 - value) * step / 255)
+            for value in channels
+        ]
+        candidate = "#" + "".join(f"{value:02x}" for value in candidate_channels)
         if contrast_ratio(candidate, BASE) >= 3.0:
             return candidate
     return "#ffffff"
