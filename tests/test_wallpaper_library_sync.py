@@ -85,6 +85,7 @@ def make_item(payload: bytes):
         "source_page": "https://example.org/source",
         "license_identifier": "CC BY 4.0",
         "license_url": "https://creativecommons.org/licenses/by/4.0/",
+        "dominant_colors": ["#18233a", "#f4f4f4", "#050505"],
     }
 
 
@@ -92,6 +93,7 @@ class FakeNetwork:
     def __init__(self, payload: bytes):
         self.image = payload
         self.registry = make_registry()
+        self.registry["policy"] = {"github_repository_size_safety_limit_bytes": 10 * 1024 * 1024 * 1024}
         self.item = make_item(payload)
         self.manifest = {
             "schema": library.MANIFEST_SCHEMA,
@@ -107,6 +109,8 @@ class FakeNetwork:
             return FakeResponse(json.dumps(self.registry).encode())
         if url.endswith("/manifest/index.json"):
             return FakeResponse(json.dumps(self.manifest).encode())
+        if url.startswith("https://api.github.com/repos/"):
+            return FakeResponse(json.dumps({"size": 1024}).encode())
         if url.endswith(self.item["path"].replace(" ", "%20")) or "/nordic-mythology-fantasy/" in url:
             headers = dict(request.header_items())
             range_header = headers.get("Range")
@@ -146,12 +150,25 @@ class PublicLibrarySyncTests(unittest.TestCase):
         self.assertEqual(result["manifest_records"], 1)
         self.assertEqual(result["unique_images"], 1)
         self.assertEqual(result["category_counts"], {"nordic-mythology-fantasy": 1})
+        self.assertEqual(result["palette"]["excluded_yellow_orange_brown_records"], 0)
+        self.assertEqual(result["license_counts"]["permitted_family"], 1)
+        self.assertEqual(result["volumes"][0]["storage"]["status"], "within_safety_limit")
         self.assertTrue(result["read_only"])
         self.assertEqual(result["image_bytes_fetched"], 0)
         self.assertFalse(result["files_modified"])
-        self.assertEqual(len(self.network.calls), 2)
+        self.assertEqual(len(self.network.calls), 3)
         self.assertFalse(any("/nordic-mythology-fantasy/" in url for url, _headers in self.network.calls))
         self.assertFalse(self.destination.exists())
+
+    def test_read_only_audit_flags_palette_and_license_policy_gaps(self):
+        self.network.item["dominant_colors"] = ["#ffff00"]
+        self.network.item["license_identifier"] = "CC BY-NC 4.0"
+        self.network.manifest["items"] = [self.network.item]
+        result = library.audit_public_library(opener=self.network)
+        self.assertEqual(result["palette"]["excluded_yellow_orange_brown_records"], 1)
+        self.assertEqual(result["license_counts"]["excluded"], 1)
+        self.assertEqual(result["audit_status"], "review_required")
+        self.assertEqual(result["image_bytes_fetched"], 0)
 
     def test_read_only_audit_flags_duplicate_content_hashes_across_volumes(self):
         registry = make_registry()
