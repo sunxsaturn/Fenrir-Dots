@@ -3,7 +3,7 @@
   "theme": "fimbulwinter-obsidian",
   "accent_source": "current-wallpaper",
   "glass": {
-    "enabled": false,
+    "enabled": true,
     "surface_opacity": 0.8,
     "blur_px": 24
   },
