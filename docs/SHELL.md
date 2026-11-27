@@ -36,6 +36,19 @@ The native system center now integrates Quickshell's own service APIs:
 
 The settings window groups these controls under Fimbulwinter styling. Network credential entry remains in NetworkManager's own connection editor; the shell does not handle or store Wi-Fi passwords.
 
+## Live DWTE palette bridge (0.19.1)
+
+The shell reads the wallpaper engine's semantic token document at
+`~/.config/fenrir/theme/theme.json` using Quickshell's `FileView`. The file watcher reloads
+the document when DWTE publishes a new palette; the root palette property then updates
+panel, dock, workspace indicators, control center, media rows and notification surfaces
+without restarting Quickshell.
+
+Only the validated six-digit semantic colors are accepted. A malformed, missing or
+unreadable token file leaves the previous palette in place; a clean start without a
+generated theme uses the bundled obsidian/violet fallback. Glass opacity remains a
+separate profile setting and the base background always stays dark.
+
 ## Remaining acceptance boundary
 
 This increment does not yet include a PAM-backed lockscreen/greeter, a full power profile/device inventory surface, an advanced Bluetooth pairing workflow, tray DBus submenu rendering, notification action buttons/inline replies, or per-application audio routing. These are explicitly not represented as complete features.
