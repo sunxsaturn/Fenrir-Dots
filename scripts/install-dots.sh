@@ -9,6 +9,7 @@ log(){ printf '[Fenrir Dots] %s\n' "$*"; }
 [[ $EUID -ne 0 ]] || die "Run as the desktop user, not root."
 command -v git >/dev/null || die "Git is required."
 command -v python3 >/dev/null || die "Python 3 is required."
+command -v quickshell >/dev/null || die "The official Arch quickshell package is required."
 
 ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 DOTS_COMMIT="${FENRIR_DOTS_COMMIT:-}"
@@ -30,7 +31,7 @@ git -C "$DOTS_DIR" checkout --detach "$DOTS_COMMIT"
 actual="$(git -C "$DOTS_DIR" rev-parse HEAD)"
 [[ "$actual" == "$DOTS_COMMIT" ]] || die "Pinned Dots checkout mismatch."
 version="$(tr -d '\r\n' < "$DOTS_DIR/VERSION")"
-[[ "$version" == "0.17.4" ]] || die "Expected Dots 0.17.4, found $version."
+[[ "$version" == "0.18.0" ]] || die "Expected Dots 0.18.0, found $version."
 [[ -f "$DOTS_DIR/pyproject.toml" && -f "$DOTS_DIR/config/hypr/hyprland.lua" ]] || die "Pinned Dots source tree is incomplete."
 
 python3 -m venv "$VENV"
@@ -58,10 +59,24 @@ copy_config "$DOTS_DIR/config/waybar/style.css" "$HOME/.config/waybar/style.css"
 copy_config "$DOTS_DIR/config/mako/config" "$HOME/.config/mako/config"
 copy_config "$DOTS_DIR/config/fuzzel/fuzzel.ini" "$HOME/.config/fuzzel/fuzzel.ini"
 copy_config "$DOTS_DIR/config/fenrir/appearance.json" "$HOME/.config/fenrir/appearance.json"
+
+QS_CONFIG_NAME=""
+for candidate in fenrir-system fenrir-system-default fenrir-system-v0-18; do
+  candidate_dir="$HOME/.config/quickshell/$candidate"
+  if [[ ! -e "$candidate_dir/shell.qml" ]] || cmp -s "$DOTS_DIR/quickshell/fenrir/shell.qml" "$candidate_dir/shell.qml"; then
+    QS_CONFIG_NAME="$candidate"
+    QS_CONFIG_DIR="$candidate_dir"
+    break
+  fi
+done
+[[ -n "$QS_CONFIG_NAME" ]] || die "All managed Quickshell config paths already contain different user files; preserve them and choose a new config name."
+install -Dm644 "$DOTS_DIR/quickshell/fenrir/shell.qml" "$QS_CONFIG_DIR/shell.qml"
+install -d -m 0755 "$HOME/.config/fenrir"
+printf '%s\n' "$QS_CONFIG_NAME" > "$HOME/.config/fenrir/quickshell-config"
 for unit in fenrir-wallpaper.service fenrir-wallpaper.timer; do
   install -Dm644 "$DOTS_DIR/systemd/user/$unit" "$HOME/.config/systemd/user/$unit"
 done
-for desktop in fenrir-wallpaper-timer.desktop fenrir-waybar.desktop fenrir-mako.desktop fenrir-hyprpaper.desktop fenrir-initial-wallpaper.desktop; do
+for desktop in fenrir-wallpaper-timer.desktop fenrir-mako.desktop fenrir-hyprpaper.desktop fenrir-initial-wallpaper.desktop; do
   install -Dm644 "$DOTS_DIR/applications/$desktop" "$HOME/.config/autostart/$desktop"
 done
 sudo install -Dm644 "$DOTS_DIR/applications/fenrir.desktop" /usr/share/wayland-sessions/fenrir.desktop
@@ -85,5 +100,5 @@ if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]]; then
   systemctl --user daemon-reload
   systemctl --user enable --now fenrir-wallpaper.timer
 fi
-log "Installed Fenrir-Dots $version at $actual."
+log "Installed Fenrir-Dots $version at $actual with Quickshell config $QS_CONFIG_NAME."
 log "Hyprland session is available as Fenrir in SDDM."

@@ -39,6 +39,8 @@ def render_glass(enabled: bool, opacity: float = DEFAULT_OPACITY) -> str:
         f'  match = {{ class = "{PROTECTED_CLASSES}" }},',
         '  opacity = "1.0 override 1.0 override 1.0 override",',
         "})",
+        'hl.layer_rule({ name = "fenrir-glass-top", match = { namespace = "fenrir-top" }, blur = true, ignore_alpha = 0.10 })',
+        'hl.layer_rule({ name = "fenrir-glass-dock", match = { namespace = "fenrir-dock" }, blur = true, ignore_alpha = 0.10 })',
         'hl.layer_rule({ name = "fenrir-glass-waybar", match = { namespace = "waybar" }, blur = true, ignore_alpha = 0.10 })',
         'hl.layer_rule({ name = "fenrir-glass-fuzzel", match = { namespace = "fuzzel" }, blur = true, ignore_alpha = 0.10 })',
         'hl.layer_rule({ name = "fenrir-glass-mako", match = { namespace = "mako" }, blur = true, ignore_alpha = 0.10 })',

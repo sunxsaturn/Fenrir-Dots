@@ -21,4 +21,4 @@ Glass changes compositor opacity and blur on supported Wayland surfaces. Fullscr
 
 ## Cross-application tokens
 
-Fenrir writes a shared token set for Hyprland, GTK3/GTK4, Qt6ct, Waybar, Kitty, Mako, Fuzzel and Starship. Dynamic red/purple/blue/white/black accents (with violet as a purple variant) are preferred and sampled from decoded image pixels, then contrast-adjusted against #090b12. Green is allowed; yellow, orange and brown are excluded. Other hues such as pink are not exclusion classes. Fimbulwinter Glass is a reversible 60% compositor-level mode with protected fullscreen/game/media/lock windows.
+Fenrir writes a shared token set for Hyprland, GTK3/GTK4, Qt6ct, the Quickshell/QML shell, Waybar fallback, Kitty, Mako, Fuzzel and Starship. Dynamic red/purple/blue/white/black accents (with violet as a purple variant) are preferred and sampled from decoded image pixels, then contrast-adjusted against #090b12. Green is allowed; yellow, orange and brown are excluded. Other hues such as pink are not exclusion classes. Fimbulwinter Glass is a reversible 60% compositor-level mode with protected fullscreen/game/media/lock windows.
