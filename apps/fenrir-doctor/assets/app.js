@@ -1,7 +1,7 @@
 'use strict';
 
 const $ = (id) => document.getElementById(id);
-const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperTarget: 20000, wallpaperSchedule: null, wallpaperSyncPlan: null, publicLibraryPlan: null };
+const state = { view: 'chat', conversationId: null, models: [], chats: [], sending: false, weather: null, wallpaperSchedule: null, wallpaperSyncPlan: null, publicLibraryPlan: null, publicLibraryAudit: null };
 const views = ['chat', 'weather', 'system', 'doctor', 'wallpapers', 'history', 'settings'];
 
 async function api(path, options = {}) {
@@ -347,8 +347,6 @@ async function loadWallpapers(showError = false) {
       const help = document.createElement('small'); help.textContent = detail;
       card.append(label, number, help); metrics.append(card);
     });
-    state.wallpaperTarget = data.target_count || state.wallpaperTarget;
-    $('wallpaper-target').value = String(state.wallpaperTarget);
 
     const publicLibrary = data.public_library || {};
     const publicRunning = publicLibrary.running === true;
@@ -384,33 +382,27 @@ async function loadWallpapers(showError = false) {
     profileRows.replaceChildren();
     if (portfolio.available && portfolio.report) {
       const report = portfolio.report;
-      const forecast = report.forecast || {};
-      const eta = forecast.estimated_days_at_recent_acceptance_rate;
-      portfolioSummary.textContent = forecast.forecast_status === 'historical_trend'
-        ? 'Trend uses the last ' + Number(forecast.history_days).toLocaleString()
-          + ' days of quality-eligible human acceptances. This estimate is not acquisition or synchronization authorization.'
-        : 'Insufficient human-acceptance history for a reliable ETA. Campaign and collection counts remain available.';
+      const inventory = report.collection_status || {};
+      portfolioSummary.textContent = inventory.status === 'observed_trend'
+        ? 'Observed accepted-asset activity over the last ' + Number(inventory.history_days).toLocaleString()
+          + ' days. This is inventory history, not a target or completion forecast.'
+        : 'Insufficient recent human-acceptance history for a trend. Current inventory and campaign activity are shown without a size goal.';
       if (!portfolio.attribution_count_is_exact) {
-        portfolioSummary.textContent += ' Attribution sidecar is missing; accepted-but-local assets cannot yet be reconciled exactly.';
+        portfolioSummary.textContent += ' Local Catalog attribution sidecar is unavailable; local-copy reconciliation remains unknown.';
       }
       [
-        ['Collection projection', Number(forecast.projected_progress_percent).toFixed(1) + '%',
-          Number(forecast.projected_total_if_current_accepted_assets_are_synced).toLocaleString()
-          + ' / ' + Number(forecast.target_count).toLocaleString() + ' after eligible accepted assets.'],
-        ['Accepted and quality eligible', Number(forecast.accepted_quality_eligible_count).toLocaleString(),
-          'Human acceptance, valid stored checks, landscape dimensions and Fenrir palette policy.'],
-        ['Eligible not yet attributed locally', portfolio.attribution_count_is_exact
-          ? Number(forecast.estimated_accepted_not_yet_local).toLocaleString() : 'Unknown',
-          portfolio.attribution_count_is_exact
-            ? 'Estimate based on the local Catalog attribution sidecar.'
-            : 'A missing attribution sidecar prevents exact reconciliation.'],
-        ['Recent human acceptance pace', Number(forecast.recent_acceptance_rate_per_day).toFixed(2) + ' / day',
-          Number(forecast.recent_accepted_count).toLocaleString() + ' quality-eligible acceptances in '
-          + Number(forecast.history_days).toLocaleString() + ' days.'],
-        ['Estimated time remaining', eta === null ? 'Not available' : Number(eta).toLocaleString() + ' days',
-          eta === null ? 'At least five recent quality-eligible acceptances are required.'
-            : 'Assumes the recent human-acceptance pace continues.'],
-        ['New discovery records', Number((report.providers || []).reduce(
+        ['Qualifying local wallpapers', Number(inventory.local_qualifying_count || 0).toLocaleString(),
+          'Readable landscape images meeting Fenrir resolution and palette rules.'],
+        ['Accepted and quality eligible', Number(inventory.accepted_quality_eligible_count || 0).toLocaleString(),
+          'Human acceptance, rights checks, valid stored image and the Fenrir palette policy.'],
+        ['Accepted assets not attributed locally', inventory.estimated_accepted_not_yet_local === null
+          || inventory.estimated_accepted_not_yet_local === undefined ? 'Unknown'
+          : Number(inventory.estimated_accepted_not_yet_local).toLocaleString(),
+          inventory.attribution_note || 'Observed from the local Catalog attribution sidecar.'],
+        ['Recent human acceptance pace', Number(inventory.recent_acceptance_rate_per_day || 0).toFixed(2) + ' / day',
+          Number(inventory.recent_accepted_count || 0).toLocaleString() + ' quality-eligible acceptances in '
+          + Number(inventory.history_days || 0).toLocaleString() + ' days.'],
+        ['New discovery metadata', Number((report.providers || []).reduce(
           (sum, item) => sum + Number(item.new_assets || 0), 0
         )).toLocaleString(),
           'Metadata records only; not downloads, rights approvals or accepted images.']
@@ -456,17 +448,16 @@ async function loadWallpapers(showError = false) {
         row.append(name, detail); profileRows.append(row);
       });
     } else {
-      portfolioSummary.textContent = portfolio.detail || 'The local Catalog portfolio report is unavailable.';
+      portfolioSummary.textContent = portfolio.detail || 'The local Catalog inventory report is unavailable.';
     }
     const sync = data.sync || {};
     const syncPlan = state.wallpaperSyncPlan;
     const syncAvailable = data.catalog_available && data.sync_destination_allowed && !sync.running;
     $('wallpaper-sync-plan-button').disabled = !syncAvailable;
-    $('wallpaper-sync-button').disabled = !syncAvailable || !syncPlan
-      || syncPlan.target_count !== state.wallpaperTarget || !syncPlan.sync_allowed;
+    $('wallpaper-sync-button').disabled = !syncAvailable || !syncPlan || !syncPlan.sync_allowed;
     $('wallpaper-sync-button').textContent = sync.running ? 'Synchronization running…' : 'Sync accepted wallpapers';
-    $('wallpaper-sync-status').textContent = sync.running ? 'Copying verified local assets…' : (sync.returncode === 0 ? 'Last synchronization completed.' : (sync.returncode ? 'Synchronization stopped (exit ' + sync.returncode + ').' : 'Ready'));
-    if (!syncPlan || syncPlan.target_count !== state.wallpaperTarget) {
+    $('wallpaper-sync-status').textContent = sync.running ? 'Copying verified accepted assets…' : (sync.returncode === 0 ? 'Last synchronization completed.' : (sync.returncode ? 'Synchronization stopped (exit ' + sync.returncode + ').' : 'Ready'));
+    if (!syncPlan) {
       $('wallpaper-sync-plan-status').textContent = 'Run a fresh read-only preflight before synchronization.';
     } else if (syncPlan.sync_allowed) {
       $('wallpaper-sync-plan-status').textContent = 'Preflight ready: '
@@ -537,7 +528,7 @@ async function loadWallpapers(showError = false) {
       && Number(schedule.queue_total || 0) > Number(schedule.queue_index || 0);
     scheduleButton.textContent = schedule.enabled
       ? 'Pause collection run'
-      : (resumableQueue ? 'Resume collection run' : 'Start 20,000-image collection run');
+      : (resumableQueue ? 'Resume discovery run' : 'Start metadata discovery');
     scheduleButton.disabled = !schedule.enabled && !data.catalog_available;
     const currentQueueItem = schedule.queue_current || null;
     const currentQueueLabel = currentQueueItem
@@ -750,9 +741,7 @@ async function loadSettings() {
     $('weather-location').value = data.weather.location || '';
     $('weather-latitude').value = data.weather.latitude ?? '';
     $('weather-longitude').value = data.weather.longitude ?? '';
-    state.wallpaperTarget = data.wallpaper_target_count || 20000;
-    if ($('wallpaper-target')) $('wallpaper-target').value = String(state.wallpaperTarget);
-  } catch (error) { toast(error.message); }
+      } catch (error) { toast(error.message); }
 }
 
 $('settings-form').addEventListener('submit', async (event) => {
@@ -762,7 +751,6 @@ $('settings-form').addEventListener('submit', async (event) => {
     location: $('weather-location').value,
     latitude: $('weather-latitude').value,
     longitude: $('weather-longitude').value,
-    wallpaper_target_count: state.wallpaperTarget,
   };
   try {
     await api('/api/settings', { method: 'POST', body: JSON.stringify(payload) });
@@ -780,24 +768,6 @@ $('upgrade-button').addEventListener('click', async () => {
     $('update-status').textContent = result.message;
     toast('Fenrir updater opened in a terminal');
   } catch (error) { $('update-status').textContent = error.message; toast(error.message); }
-});
-
-$('wallpaper-target').addEventListener('change', async () => {
-  state.wallpaperTarget = Number($('wallpaper-target').value);
-  state.wallpaperSyncPlan = null;
-  $('wallpaper-sync-plan-status').textContent = 'Target changed. Run a fresh read-only preflight.';
-  try {
-    const settings = await api('/api/settings');
-    await api('/api/settings', { method: 'POST', body: JSON.stringify({
-      default_model: settings.default_model || '',
-      location: settings.weather.location || '',
-      latitude: settings.weather.latitude,
-      longitude: settings.weather.longitude,
-      wallpaper_target_count: state.wallpaperTarget
-    })});
-    toast('Wallpaper target saved');
-    loadWallpapers();
-  } catch (error) { toast(error.message); }
 });
 
 function updateCommonsContactVisibility() {
@@ -991,6 +961,43 @@ $('wallpaper-schedule-button').addEventListener('click', async () => {
   }
 });
 
+$('wallpaper-public-library-audit-button').addEventListener('click', async () => {
+  const button = $('wallpaper-public-library-audit-button');
+  button.disabled = true;
+  $('wallpaper-public-library-audit-status').textContent = 'Reading the public registry and committed manifests…';
+  $('wallpaper-public-library-audit-summary').textContent = 'No image files are downloaded or changed during this audit.';
+  try {
+    const report = await api('/api/doctor/wallpapers/public-library-audit', {
+      method: 'POST', body: JSON.stringify({})
+    });
+    state.publicLibraryAudit = report;
+    const categories = Object.entries(report.category_counts || {})
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([name, count]) => name.replaceAll('-', ' ') + ': ' + Number(count).toLocaleString())
+      .join(' · ');
+    const volumes = (report.volumes || []).map((volume) =>
+      volume.id + ': ' + Number(volume.image_count).toLocaleString()
+    ).join(' · ');
+    $('wallpaper-public-library-audit-summary').textContent =
+      Number(report.unique_images).toLocaleString() + ' unique images across '
+      + Number(report.active_volume_count).toLocaleString() + ' active volumes. '
+      + 'Population state: ' + report.population_state + '. '
+      + 'Duplicates: ' + Number(report.duplicate_records).toLocaleString()
+      + '; hash/path mismatches: ' + Number(report.hash_path_mismatches).toLocaleString()
+      + '; invalid dimensions: ' + Number(report.invalid_dimensions).toLocaleString()
+      + '. ' + volumes + '. Categories: ' + categories + '. '
+      + 'Manifest only; local folder and image bytes not inspected.';
+    $('wallpaper-public-library-audit-status').textContent =
+      report.audit_status === 'clean' && report.population_state === 'closed'
+        ? 'Audit complete: structurally clean; population closed.'
+        : 'Audit complete: ' + report.audit_status + '; population ' + report.population_state + '.';
+    toast('Public wallpaper library audit complete');
+  } catch (error) {
+    $('wallpaper-public-library-audit-status').textContent = error.message;
+    toast(error.message);
+  } finally { button.disabled = false; }
+});
+
 $('wallpaper-public-library-plan-button').addEventListener('click', async () => {
   const button = $('wallpaper-public-library-plan-button');
   button.disabled = true;
@@ -1083,51 +1090,43 @@ $('wallpaper-public-library-sync-button').addEventListener('click', async () => 
 $('wallpaper-sync-plan-button').addEventListener('click', async () => {
   const button = $('wallpaper-sync-plan-button');
   button.disabled = true;
-  $('wallpaper-sync-plan-status').textContent = 'Inspecting accepted assets and local filename conflicts…';
+  $('wallpaper-sync-plan-status').textContent = 'Inspecting all eligible accepted metadata and local filename conflicts…';
   state.wallpaperSyncPlan = null;
   $('wallpaper-sync-button').disabled = true;
   try {
     const plan = await api('/api/doctor/wallpapers/sync-plan', {
-      method: 'POST',
-      body: JSON.stringify({ target_count: state.wallpaperTarget })
+      method: 'POST', body: JSON.stringify({})
     });
     state.wallpaperSyncPlan = plan;
     $('wallpaper-sync-plan-status').textContent = plan.sync_allowed
       ? 'Preflight ready: ' + Number(plan.planned_new_copies).toLocaleString()
-        + ' new accepted assets; projected total '
-        + Number(plan.projected_total_count).toLocaleString() + ' / '
-        + Number(plan.target_count).toLocaleString() + '.'
+        + ' accepted assets ready to copy; complete metadata scan.'
       : (!plan.plan_complete
-        ? 'Preflight incomplete. More accepted metadata must be inspected; synchronization is blocked.'
-        : (plan.remaining_slots === 0
-          ? 'The selected local wallpaper target is already reached.'
-          : 'No new accepted assets are ready. Review the Catalog blockers.'));
+        ? 'Preflight incomplete: the technical metadata scan ceiling was reached. Synchronization is blocked.'
+        : 'No new accepted assets are ready. Review the Catalog blockers.');
     toast(plan.sync_allowed ? 'Wallpaper sync preflight passed' : 'Wallpaper sync preflight blocked');
     loadWallpapers();
   } catch (error) {
     $('wallpaper-sync-plan-status').textContent = error.message;
     toast(error.message);
-  } finally {
-    button.disabled = false;
-  }
+  } finally { button.disabled = false; }
 });
 
 $('wallpaper-sync-button').addEventListener('click', async () => {
   const plan = state.wallpaperSyncPlan;
-  if (!plan || !plan.sync_allowed || plan.target_count !== state.wallpaperTarget) {
+  if (!plan || !plan.sync_allowed) {
     toast('Run a fresh read-only preflight before synchronization.');
     return;
   }
-  const confirmText = 'Copy up to ' + Number(plan.planned_new_copies).toLocaleString()
-    + ' already accepted, rights-approved and verified wallpapers? The current preflight projects '
-    + Number(plan.projected_total_count).toLocaleString() + ' / '
-    + Number(plan.target_count).toLocaleString()
-    + '. The Catalog will revalidate every quarantine file before copying; no provider downloads or rights decisions are performed.';
+  const confirmText = 'Copy all ' + Number(plan.planned_new_copies).toLocaleString()
+    + ' currently eligible, accepted, rights-approved and verified assets? '
+    + 'The Catalog will revalidate each quarantine file before copying. '
+    + 'No provider downloads, rights decisions or acceptance decisions are performed.';
   if (!window.confirm(confirmText)) return;
   try {
-    await api('/api/doctor/wallpapers/sync', { method: 'POST', body: JSON.stringify({ target_count: state.wallpaperTarget }) });
+    await api('/api/doctor/wallpapers/sync', { method: 'POST', body: JSON.stringify({}) });
     state.wallpaperSyncPlan = null;
-    $('wallpaper-sync-plan-status').textContent = 'Synchronization started. Run another preflight after it finishes.';
+    $('wallpaper-sync-plan-status').textContent = 'Synchronization started. Refresh the inventory after it finishes.';
     toast('Wallpaper synchronization started');
     loadWallpapers();
     window.setTimeout(loadWallpapers, 1500);
@@ -1161,7 +1160,7 @@ $('new-chat').addEventListener('click', () => { state.conversationId = null; app
 $('model-select').addEventListener('change', async () => {
   try {
     const settings = await api('/api/settings');
-    await api('/api/settings', { method: 'POST', body: JSON.stringify({ default_model: $('model-select').value, location: settings.weather.location || '', latitude: settings.weather.latitude, longitude: settings.weather.longitude, wallpaper_target_count: state.wallpaperTarget }) });
+    await api('/api/settings', { method: 'POST', body: JSON.stringify({ default_model: $('model-select').value, location: settings.weather.location || '', latitude: settings.weather.latitude, longitude: settings.weather.longitude }) });
   } catch (error) { toast(error.message); }
 });
 
