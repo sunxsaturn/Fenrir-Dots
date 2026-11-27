@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -321,6 +322,25 @@ class FenrirSettings(Gtk.Application):
         studio_intro.add_css_class("dim-label")
         studio_box.append(studio_intro)
         self.button(studio_box, "Open Wallpaper Studio", self.open_wallpaper_studio, True)
+        public_box = self.group(page, "Public multi-volume wallpaper library")
+        public_intro = Gtk.Label(
+            label="Preview or synchronize the public Fenrir-Wallpapers hub and every active registered volume. This is separate from the private Catalog and only adds hash-verified images; it never overwrites or deletes existing files.",
+            xalign=0,
+            wrap=True,
+        )
+        public_intro.add_css_class("dim-label")
+        public_box.append(public_intro)
+        self.button(
+            public_box,
+            "Preview public volumes in terminal",
+            lambda *_: self.open_public_library_terminal(dry_run=True),
+        )
+        self.button(
+            public_box,
+            "Synchronize all public volumes",
+            self.confirm_public_library_sync,
+            True,
+        )
         status_box = self.group(page, "Library status")
         self._wallpaper_status_box = Gtk.Label(label="Use Refresh to inspect the actual qualifying image count.", xalign=0, wrap=True)
         status_box.append(self._wallpaper_status_box)
@@ -340,6 +360,58 @@ class FenrirSettings(Gtk.Application):
             self.set_status("Wallpaper Studio is opening in your browser. New accepted collection additions sync into rotation automatically.")
         except OSError as exc:
             self.set_status(str(exc), True)
+
+    def open_public_library_terminal(self, *, dry_run: bool):
+        terminal = shutil.which("kitty")
+        command = ["fenrir-wallpaper", "sync-library"]
+        if dry_run:
+            command.append("--dry-run")
+        if not terminal:
+            self.set_status("Kitty terminal is unavailable; run: " + " ".join(command), True)
+            return
+        try:
+            subprocess.Popen(
+                [
+                    terminal,
+                    "--title", "Fenrir Public Wallpaper Library",
+                    "--hold",
+                    *command,
+                ],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                start_new_session=True,
+                close_fds=True,
+            )
+            self.set_status(
+                "Read-only public-library preview opened in a terminal."
+                if dry_run else "Public multi-volume wallpaper synchronization opened in a terminal."
+            )
+        except OSError as exc:
+            self.set_status(f"Could not open the wallpaper-library terminal: {exc}", True)
+
+    def confirm_public_library_sync(self, *_):
+        dialog = Gtk.MessageDialog(
+            transient_for=self.window,
+            modal=True,
+            message_type=Gtk.MessageType.WARNING,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text="Synchronize every active public wallpaper volume?",
+        )
+        dialog.format_secondary_text(
+            "This can download a large collection into the configured wallpaper folder. "
+            "Preview the volumes first. Every image is hash-verified; existing files are never overwritten or deleted. "
+            "The private Catalog database is not accessed."
+        )
+        dialog.connect(
+            "response",
+            lambda window, response: (
+                self.open_public_library_terminal(dry_run=False)
+                if response == Gtk.ResponseType.OK else None,
+                window.destroy(),
+            ),
+        )
+        dialog.present()
 
     def refresh_wallpaper_status(self, *_):
         box = self._wallpaper_status_box
