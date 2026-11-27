@@ -1777,7 +1777,7 @@ class PublicWallpaperLibraryTests(unittest.TestCase):
             server.subprocess, "Popen"
         ) as process:
             with self.assertRaisesRegex(ValueError, "Explicit confirmation"):
-                server.start_public_library_sync(False)
+                server.start_public_library_sync(False, 0, 0)
         preview.assert_not_called()
         process.assert_not_called()
 
@@ -1789,7 +1789,7 @@ class PublicWallpaperLibraryTests(unittest.TestCase):
             server, "public_library_preview"
         ) as preview, patch.object(server.subprocess, "Popen") as process:
             with self.assertRaisesRegex(ValueError, "private Catalog synchronization is running"):
-                server.start_public_library_sync(True)
+                server.start_public_library_sync(True, 12, 12345)
         preview.assert_not_called()
         process.assert_not_called()
 
@@ -1820,7 +1820,7 @@ class PublicWallpaperLibraryTests(unittest.TestCase):
                 patch.object(server, "public_library_preview", return_value=preview) as plan,
                 patch.object(server.subprocess, "Popen", return_value=fake_process) as popen,
             ):
-                result = server.start_public_library_sync(True)
+                result = server.start_public_library_sync(True, 12, 12_345)
 
             self.assertTrue(result["started"])
             self.assertEqual(result["pid"], 4567)
@@ -1834,16 +1834,32 @@ class PublicWallpaperLibraryTests(unittest.TestCase):
             self.assertIs(popen.call_args.kwargs["stderr"], server.subprocess.STDOUT)
             plan.assert_called_once()
 
-    def test_public_library_sync_returns_without_starting_when_everything_is_present(self):
+    def test_public_library_sync_rejects_changed_registry_totals_since_preview(self):
         from unittest.mock import patch
 
-        preview = {"selected_downloads": 0, "message": "all present"}
+        preview = {
+            "selected_downloads": 13,
+            "selected_download_bytes": 13_000,
+        }
         with patch.object(server, "PUBLIC_LIBRARY_SYNC", None), patch.object(
             server, "WALLPAPER_SYNC", None
         ), patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"), patch.object(
             server, "public_library_preview", return_value=preview
         ), patch.object(server.subprocess, "Popen") as process:
-            result = server.start_public_library_sync(True)
+            with self.assertRaisesRegex(ValueError, "changed after preview"):
+                server.start_public_library_sync(True, 12, 12_000)
+        process.assert_not_called()
+
+    def test_public_library_sync_returns_without_starting_when_everything_is_present(self):
+        from unittest.mock import patch
+
+        preview = {"selected_downloads": 0, "selected_download_bytes": 0, "message": "all present"}
+        with patch.object(server, "PUBLIC_LIBRARY_SYNC", None), patch.object(
+            server, "WALLPAPER_SYNC", None
+        ), patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"), patch.object(
+            server, "public_library_preview", return_value=preview
+        ), patch.object(server.subprocess, "Popen") as process:
+            result = server.start_public_library_sync(True, 0, 0)
         self.assertFalse(result["started"])
         process.assert_not_called()
 
