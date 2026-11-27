@@ -143,7 +143,7 @@ def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
     (output / "qt.qss").write_text(
         f"QWidget {{ color: {palette['foreground']}; background-color: {palette['background']}; }}\n"
         f"QPushButton {{ border: 1px solid {palette['border']}; border-radius: 8px; padding: 6px 12px; }}\n"
-        f"QPushButton:hover {{ background-color: {palette['surface_alt']}; }}\n",
+        f"QPushButton:hover {{ background-color: {palette.get('surface_alt', palette['surface'])}; }}\n",
         encoding="utf-8",
     )
     return output
