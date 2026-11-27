@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+"""Development-tree entrypoint for wallpaper-derived Fenrir theme updates."""
+from fenrir_dots.theme import main
+
+raise SystemExit(main())
