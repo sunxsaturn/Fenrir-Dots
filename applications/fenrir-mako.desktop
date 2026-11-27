@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Notifications
+Exec=mako
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
