@@ -23,6 +23,14 @@ Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the
 - A cached local wallpaper index reports qualifying files, excluded palettes and invalid images using the same quality/color rules as desktop sync.
 - A shared cached palette index: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed.
 
+## Public multi-volume wallpaper library
+
+Fenrir Doctor exposes the separately published GitHub wallpaper mirror under **Wallpapers → Public multi-volume library**. Run a read-only preview to inspect the active registry volumes, globally unique image count, already-present files, missing images and estimated transfer size. Starting a download is a separate explicit confirmation. Doctor keeps independent process status and a log for this operation.
+
+This public mirror is not the private Catalog workflow. It does not read the Catalog database or quarantine, create rights decisions, authorize acquisition, approve publication or change Catalog acceptance. It only synchronizes already-committed public manifest assets through `fenrir-wallpaper sync-library`, preserving attribution in its own sidecar.
+
+Fenrir Settings exposes the same preview and confirmation-gated command in its Wallpapers page. See the [complete public library guide](../../docs/WALLPAPER-LIBRARY.md).
+
 ## Automatic discovery policy
 
 The scheduler is disabled by default and must be explicitly enabled in Wallpaper Intelligence. Select one or more of the four metadata sources (Openverse, Wikimedia Commons, SFW Wallhaven or Cleveland Museum of Art Open Access) and one or more of the eight visual profiles to build a finite queue of up to 32 unique combinations. Continuous mode immediately starts the next bounded turn after the previous provider slice finishes; scheduled mode preserves the interval-based cadence. Each unfinished source/profile combination receives one bounded provider-balanced turn before the queue rotates. Every entry has its own saved Catalog campaign ID and query cursor, so it resumes at that exact position on its next round. The Catalog defines the provider budgets (at most four API requests per turn): Openverse and SFW Wallhaven use two queries by two pages, while Commons uses one query by two pages because each result page expands into two API requests. The default mode is continuous, avoiding multi-hour waits between turns. Scheduled mode remains available with a one-hour minimum interval. Wikimedia Commons queue items require a contact identifier. Queue state is stored with restrictive local file permissions; legacy schema v1/v2/v3 state migrates safely and malformed or symlinked state fails closed. Pausing preserves all cursors. Exhausting the queue stops with a human-review status; provider/catalog errors stop scheduling rather than retrying aggressively.
