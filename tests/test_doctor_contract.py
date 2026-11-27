@@ -7,6 +7,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DoctorContractTests(unittest.TestCase):
+    def test_openverse_review_requires_and_records_original_host_terms_url(self):
+        source = (ROOT / "src" / "fenrir_dots" / "doctor.py").read_text(encoding="utf-8")
+        self.assertIn("source_terms_url.startswith(\"https://\")", source)
+        self.assertIn('args.extend(["--terms-evidence-url", source_terms_url])', source)
+        self.assertIn("not is_openverse or source_terms_url.startswith", source)
+        self.assertIn("required for Openverse", source)
+
     def test_provider_terms_links_cover_all_discovery_sources(self):
         source = (ROOT / "src" / "fenrir_dots" / "doctor.py").read_text(encoding="utf-8")
         tree = ast.parse(source)
