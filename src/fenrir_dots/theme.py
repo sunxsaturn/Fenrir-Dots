@@ -146,4 +146,44 @@ def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
         f"QPushButton:hover {{ background-color: {palette.get('surface_alt', palette['surface'])}; }}\n",
         encoding="utf-8",
     )
+    (output / "mako.conf").write_text(
+        f"background-color={palette['surface']}cc\ntext-color={palette['foreground']}\n"
+        f"border-color={palette['border']}\n",
+        encoding="utf-8",
+    )
+    (output / "fuzzel.ini").write_text(
+        "[colors]\n"
+        f"background={palette['background'][1:]}cc\ntext={palette['foreground'][1:]}ff\n"
+        f"match={palette['accent'][1:]}ff\nselection={palette['accent_soft'][1:]}ff\n"
+        f"selection-text={palette['selection_foreground'][1:]}ff\n"
+        f"border={palette['border'][1:]}aa\n",
+        encoding="utf-8",
+    )
+
+    # Propagate the same generated tokens to each supported application.
+    home = Path.home()
+    destinations = {
+        "waybar.css": home / ".config/waybar/fenrir-theme.css",
+        "gtk.css": home / ".config/gtk-3.0/fenrir-theme.css",
+    }
+    for source_name, destination in destinations.items():
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(destination.name + ".tmp")
+        temporary.write_bytes((output / source_name).read_bytes())
+        temporary.replace(destination)
+
+    gtk4 = home / ".config/gtk-4.0"
+    gtk4.mkdir(parents=True, exist_ok=True)
+    (gtk4 / "fenrir-theme.css").write_bytes((output / "gtk.css").read_bytes())
+
+    for source_name, relative in (
+        ("kitty.conf", ".config/kitty/fenrir-theme.conf"),
+        ("mako.conf", ".config/mako/fenrir-theme.conf"),
+        ("fuzzel.ini", ".config/fuzzel/fenrir-theme.ini"),
+    ):
+        destination = home / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_name(destination.name + ".tmp")
+        temporary.write_bytes((output / source_name).read_bytes())
+        temporary.replace(destination)
     return output
