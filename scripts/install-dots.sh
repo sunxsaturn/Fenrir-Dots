@@ -35,7 +35,7 @@ version="$(tr -d '\r\n' < "$DOTS_DIR/VERSION")"
 
 python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --disable-pip-version-check "$DOTS_DIR"
-for command_name in fenrir-wallpaper fenrir-theme fenrir-glass; do
+for command_name in fenrir-wallpaper fenrir-theme fenrir-glass fenrir-doctor; do
   [[ -x "$VENV/bin/$command_name" ]] || die "Missing installed command: $command_name"
   ln -sfn "$VENV/bin/$command_name" "$HOME/.local/bin/$command_name"
 done
@@ -65,6 +65,7 @@ for desktop in fenrir-wallpaper-timer.desktop fenrir-waybar.desktop fenrir-mako.
   install -Dm644 "$DOTS_DIR/applications/$desktop" "$HOME/.config/autostart/$desktop"
 done
 sudo install -Dm644 "$DOTS_DIR/applications/fenrir.desktop" /usr/share/wayland-sessions/fenrir.desktop
+install -Dm644 "$DOTS_DIR/applications/fenrir-doctor.desktop" "$HOME/.local/share/applications/fenrir-doctor.desktop"
 
 mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/.local/state/fenrir"
 if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]]; then
