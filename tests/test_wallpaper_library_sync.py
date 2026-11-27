@@ -177,6 +177,63 @@ class PublicLibrarySyncTests(unittest.TestCase):
         with self.assertRaises(library.LibrarySyncError):
             library._validate_registry(registry)
 
+    def test_all_three_registered_volumes_are_scanned_and_deduplicated_together(self):
+        registry = make_registry()
+        first = registry["volumes"][0]
+        second = dict(first)
+        second.update({
+            "id": "volume-02",
+            "repository": "sunxsaturn/Fenrir-Wallpapers-02",
+            "manifest_url": (
+                "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers-02/"
+                "main/manifest/index.json"
+            ),
+        })
+        third = dict(first)
+        third.update({
+            "id": "volume-03",
+            "repository": "sunxsaturn/Fenrir-Wallpapers-03",
+            "manifest_url": (
+                "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers-03/"
+                "main/manifest/index.json"
+            ),
+        })
+        registry["volumes"] = [first, second, third]
+        self.network.registry = registry
+        self.network.manifest = {
+            "schema": library.MANIFEST_SCHEMA,
+            "count": 1,
+            "items": [self.network.item],
+        }
+        self.destination.mkdir(parents=True)
+        result = library.sync_public_library(
+            destination=self.destination,
+            opener=self.network,
+        )
+
+        manifest_requests = [
+            url for url, _headers in self.network.calls
+            if url.endswith("/manifest/index.json")
+        ]
+        image_requests = [
+            url for url, _headers in self.network.calls
+            if "/nordic-mythology-fantasy/" in url
+        ]
+        self.assertEqual(result["active_volumes"], ["volume-01", "volume-02", "volume-03"])
+        self.assertEqual(len(manifest_requests), 3)
+        self.assertEqual(result["manifest_records"], 3)
+        self.assertEqual(result["unique_images"], 1)
+        self.assertEqual(result["downloaded"], 1)
+        self.assertEqual(len(image_requests), 1)
+        sidecar = json.loads(
+            (self.destination / ".fenrir-public-library-attribution.json").read_text()
+        )
+        provenance = sidecar["items"][self.network.item["sha256"]]["provenance"]
+        self.assertEqual(
+            {entry["volume_id"] for entry in provenance},
+            {"volume-01", "volume-02", "volume-03"},
+        )
+
     def test_image_path_traversal_is_rejected(self):
         volume = library._validate_registry(make_registry())[0]
         item = make_item(self.payload)
