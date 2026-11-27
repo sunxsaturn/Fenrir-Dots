@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Fenrir Desktop
+Comment=Fimbulwinter Hyprland session
+Exec=Hyprland
+Type=Application
+DesktopNames=Hyprland;Fenrir;
