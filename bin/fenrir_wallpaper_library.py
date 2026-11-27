@@ -561,7 +561,7 @@ def _license_classification(value: object) -> str:
         return "missing"
     normalized = value.casefold().replace("_", " ").replace("-", " ")
     if (
-        re.search(r"\\b(?:nc|nd)\\b", normalized)
+        re.search(r"\b(?:nc|nd)\b", normalized)
         or "noncommercial" in normalized
         or "non commercial" in normalized
         or "no derivative" in normalized
