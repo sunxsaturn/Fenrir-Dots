@@ -9,6 +9,7 @@ from pathlib import Path
 from .glass import DEFAULT_OPACITY, reload_hyprland, set_glass
 from .theme import extract_palette, write_theme
 from .wallpaper_library import WallpaperSyncError, build_plan, sync_public_library
+from .rotation import apply_next_wallpaper
 
 
 def _default_wallpaper_dir() -> Path:
@@ -22,12 +23,17 @@ def _state_dir() -> Path:
 def wallpaper_main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="fenrir-wallpaper")
     sub = parser.add_subparsers(dest="action", required=True)
+    sub.add_parser("next", help="choose and apply the next local wallpaper")
     plan = sub.add_parser("sync-public-plan")
     plan.add_argument("--destination", type=Path, default=_default_wallpaper_dir())
     sync = sub.add_parser("sync-public")
     sync.add_argument("--destination", type=Path, default=_default_wallpaper_dir())
     args = parser.parse_args(argv)
     try:
+        if args.action == "next":
+            chosen = apply_next_wallpaper(_default_wallpaper_dir())
+            print(json.dumps({"wallpaper": str(chosen), "applied": True}))
+            return 0
         report = (
             build_plan(args.destination, _state_dir())
             if args.action == "sync-public-plan"
