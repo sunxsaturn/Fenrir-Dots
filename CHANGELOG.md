@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.0 — 2026-11-27
+
+- Integrated complete, registry-driven public wallpaper synchronization into the single Fenrir-Arch system installation path.
+- Added destination and resumable-cache free-space preflight; full synchronization refuses to start when required storage is unavailable.
+- Kept public download implementation inside Fenrir Dots and exposed the same verified command to the system installer; no separate downloader is used.
+- Documented complete 1,871-image installation, reconciliation and recovery behavior.
+- Advanced Doctor release metadata to Fenrir-Arch 1.0.0, Dots 0.16.0 and Catalog 0.38.0.
+
+
 ## 0.15.0 — 2026-11-27
 
 - Removed fixed wallpaper-count goals from rotation, Settings, Doctor, Catalog synchronization and portfolio reporting.
