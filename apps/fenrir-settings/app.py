@@ -235,7 +235,7 @@ class FenrirSettings(Gtk.Application):
             data = core.wallpaper_status()
             lines.append(
                 f"Wallpaper library: {data['valid_count']:,} qualifying / {data['file_count']:,} files; "
-                f"{data['rejected_count']:,} rejected; target {data['minimum_count']:,}."
+                f"{data['rejected_count']:,} rejected."
             )
             lines.append(
                 f"Rotation: {data.get('interval_minutes', 15)} min; "
@@ -284,7 +284,7 @@ class FenrirSettings(Gtk.Application):
         self.button(page, "Apply appearance", apply, True)
 
     def page_wallpaper(self, page):
-        self.heading(page, "Wallpapers", "Rotation runs every 15 minutes by default. The default collection goal is 20,000 qualifying landscape images (5,000 or 10,000 are also selectable). Only readable images at least 2560×1440 count; rotation uses qualifying images already present and never waits for the goal.")
+        self.heading(page, "Wallpapers", "Rotation runs every 15 minutes by default and uses every qualifying wallpaper already in the selected folder. Only readable landscape images at least 2560×1440 count; there is no collection-size target.")
         box = self.group(page, "Library")
         directory = Gtk.Entry(text=str(self.settings["wallpaper"].get("directory", "~/Pictures/Wallpapers")))
         directory.set_hexpand(True)
@@ -417,7 +417,7 @@ class FenrirSettings(Gtk.Application):
         box = self._wallpaper_status_box
         try:
             data = core.wallpaper_status()
-            box.set_text(f"{data['valid_count']:,} valid / {data['file_count']:,} files; {data['rejected_count']:,} rejected. Target: {data['minimum_count']:,}. Requirement {'MET' if data['requirement_met'] else 'NOT MET'}.")
+            box.set_text(f"{data['valid_count']:,} valid / {data['file_count']:,} files; {data['rejected_count']:,} rejected. No collection-size target is applied.")
             self.set_status("Wallpaper validation refreshed.")
         except Exception as exc: box.set_text(str(exc)); self.set_status(str(exc), True)
 
