@@ -2474,10 +2474,21 @@ def public_library_sync_snapshot() -> dict[str, Any]:
     }
 
 
-def start_public_library_sync(confirmed: Any) -> dict[str, Any]:
+def start_public_library_sync(
+    confirmed: Any,
+    expected_downloads: Any,
+    expected_bytes: Any,
+) -> dict[str, Any]:
     global PUBLIC_LIBRARY_SYNC
     if confirmed is not True:
         raise ValueError("Explicit confirmation is required before public-library downloads.")
+    if (
+        isinstance(expected_downloads, bool) or not isinstance(expected_downloads, int)
+        or expected_downloads < 0
+        or isinstance(expected_bytes, bool) or not isinstance(expected_bytes, int)
+        or expected_bytes < 0
+    ):
+        raise ValueError("A valid preview count and byte total are required.")
     if PUBLIC_LIBRARY_SYNC is not None and PUBLIC_LIBRARY_SYNC.poll() is None:
         raise ValueError("Public wallpaper library synchronization is already running.")
     if WALLPAPER_SYNC is not None and WALLPAPER_SYNC.poll() is None:
@@ -2486,6 +2497,11 @@ def start_public_library_sync(confirmed: Any) -> dict[str, Any]:
     if not executable:
         raise ValueError("Fenrir's wallpaper command is not installed.")
     preview = public_library_preview()
+    if (
+        preview["selected_downloads"] != expected_downloads
+        or preview["selected_download_bytes"] != expected_bytes
+    ):
+        raise ValueError("The public library changed after preview. Run a new preview before confirming synchronization.")
     if preview["selected_downloads"] == 0:
         return {"started": False, "message": "All active public-library images are already present.", "preview": preview}
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -2765,7 +2781,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/doctor/wallpapers/public-library-sync":
             try:
-                return self.send_bytes(202, start_public_library_sync(obj.get("confirm")))
+                return self.send_bytes(202, start_public_library_sync(
+                    obj.get("confirm"), obj.get("expected_downloads"), obj.get("expected_bytes")
+                ))
             except (OSError, ValueError, subprocess.SubprocessError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:300]})
 
