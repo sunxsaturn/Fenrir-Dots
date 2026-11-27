@@ -29,7 +29,7 @@ class QuickshellShellTests(unittest.TestCase):
     def test_installer_requires_official_quickshell_and_version_019(self):
         installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
         self.assertIn('command -v quickshell', installer)
-        self.assertIn('== "0.19.0"', installer)
+        self.assertIn('== "0.19.1"', installer)
         self.assertIn('quickshell-config', installer)
 
     def test_quickshell_consumes_live_dwte_palette_with_fallback(self):
@@ -88,7 +88,7 @@ class QuickshellShellTests(unittest.TestCase):
     def test_installer_uses_versioned_managed_quickshell_directory(self):
         installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
         self.assertIn('== "0.19.0"', installer)
-        self.assertIn("fenrir-system-v0-19", installer)
+        self.assertIn("fenrir-system-v0-19-1", installer)
 
     def test_shell_launches_only_fixed_application_commands(self):
         source = SHELL.read_text(encoding="utf-8")
