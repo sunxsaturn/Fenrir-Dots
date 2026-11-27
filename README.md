@@ -1,6 +1,6 @@
 # Fenrir Dots
 
-**Version:** 0.15.0
+**Version:** 0.16.0
 
 **Documentation:** [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Project map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md) · [Version policy](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/VERSIONING.md)
 
@@ -18,7 +18,7 @@ cd ~/Fenrir
 
 Do not use Fenrir-Dots as a standalone system installer. It expects the Arch packages and system integration provided by Fenrir-Arch.
 
-The current installer pin remains the previously released Fenrir-Dots version until the corresponding Fenrir-Arch integration update is merged and validated.
+Fenrir-Arch 1.0.0 pins this release by exact commit SHA and deploys it as part of the full system installation.
 
 ## What is included
 
@@ -54,21 +54,19 @@ Fenrir keeps two wallpaper ingestion paths separate.
 
 ### Public multi-volume library
 
-The public library is hosted by [Fenrir-Wallpapers](https://github.com/sunxsaturn/Fenrir-Wallpapers). Population is closed at the existing 1,871 published images; all three registered volumes remain active for desktop sync. Run `fenrir-wallpaper audit-library --json` for the read-only manifest and metadata audit. The volume registry remains authoritative.
+The public library is hosted by [Fenrir-Wallpapers](https://github.com/sunxsaturn/Fenrir-Wallpapers). Population is closed at the existing 1,871 published images; all three registered volumes remain active for desktop synchronization.
 
-Preview a sync without writing files:
+**New installations download the complete public library as part of the single Fenrir-Arch command** (`git clone … && ./install.sh`). After deploying the pinned Dots source, the installer runs the registry-driven `fenrir-wallpaper sync-library` operation without a batch limit, checks that enough space exists, verifies every downloaded image and confirms that no manifest-listed image remains missing. There is no separate wallpaper download step.
 
-```bash
-fenrir-wallpaper sync-library --dry-run
-```
-
-Synchronize eligible files:
+For an already installed system or to resume/reconcile a later transfer, use the same command supplied by Fenrir Dots:
 
 ```bash
+fenrir-wallpaper audit-library --json
+fenrir-wallpaper sync-library --dry-run --json
 fenrir-wallpaper sync-library
 ```
 
-The command validates manifests, deduplicates content by SHA-256, resumes interrupted transfers, checks image quality/palette, preserves public attribution and never overwrites or deletes existing wallpaper files. Use `--limit 10` for a small first batch. See the [public library guide](docs/WALLPAPER-LIBRARY.md).
+The sync validates all active manifests, deduplicates content by SHA-256, resumes interrupted transfers, checks image quality/palette, preserves public attribution and never overwrites or deletes existing wallpaper files. Use `--limit` only for an intentionally staged maintenance transfer; the system installer never uses it. See the [public library guide](docs/WALLPAPER-LIBRARY.md).
 
 ### Private Catalog collections
 

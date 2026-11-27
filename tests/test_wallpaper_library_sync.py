@@ -201,6 +201,60 @@ class PublicLibrarySyncTests(unittest.TestCase):
         self.assertFalse(self.destination.exists())
         self.assertFalse((self.root / "state").exists())
 
+    def test_dry_run_reports_complete_inventory_storage_requirements(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": 10**12})()
+            result = library.sync_public_library(
+                destination=self.destination,
+                dry_run=True,
+                opener=self.network,
+            )
+        storage = result["storage_preflight"]
+        self.assertTrue(storage["sufficient"])
+        self.assertEqual(storage["destination_required_bytes"], 2 * len(self.payload))
+        self.assertEqual(storage["state_required_bytes"], len(self.payload))
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root / "state").exists())
+
+    def test_storage_preflight_combines_space_when_destination_and_cache_share_filesystem(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": 10**12})()
+            result = library.sync_public_library(
+                destination=self.destination,
+                dry_run=True,
+                opener=self.network,
+            )
+        storage = result["storage_preflight"]
+        self.assertTrue(storage["same_filesystem"])
+        self.assertEqual(
+            storage["same_filesystem_required_bytes"],
+            storage["destination_required_bytes"] + storage["state_required_bytes"],
+        )
+        self.assertTrue(storage["sufficient"])
+
+    def test_same_filesystem_preflight_detects_combined_space_shortfall(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": len(self.payload) * 2})()
+            with self.assertRaisesRegex(library.LibrarySyncError, "Insufficient free space"):
+                library.sync_public_library(
+                    destination=self.destination,
+                    opener=self.network,
+                )
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root / "state").exists())
+
+    def test_sync_refuses_before_download_when_storage_is_insufficient(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": 1})()
+            with self.assertRaisesRegex(library.LibrarySyncError, "Insufficient free space"):
+                library.sync_public_library(
+                    destination=self.destination,
+                    opener=self.network,
+                )
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root / "state").exists())
+        self.assertFalse(any("/nordic-mythology-fantasy/" in url for url, _headers in self.network.calls))
+
     def test_sync_downloads_verified_image_and_writes_separate_attribution(self):
         result = library.sync_public_library(
             destination=self.destination,

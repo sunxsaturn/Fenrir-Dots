@@ -80,13 +80,13 @@ class SettingsTests(unittest.TestCase):
 
 class DoctorUtilityTests(unittest.TestCase):
     def test_release_fallbacks_match_current_component_versions(self):
-        self.assertEqual(server.APP_VERSION, "0.15.0")
+        self.assertEqual(server.APP_VERSION, "0.16.0")
         self.assertEqual(
             server.LOCAL_RELEASES,
             {
-                "Fenrir-Arch": "0.9.5",
-                "Fenrir-Dots": "0.15.0",
-                "Fenrir-Wallpaper-Catalog": "0.37.0",
+                "Fenrir-Arch": "1.0.0",
+                "Fenrir-Dots": "0.16.0",
+                "Fenrir-Wallpaper-Catalog": "0.38.0",
             },
         )
 
@@ -98,7 +98,7 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.37.0\ndef456\trefs/tags/v0.38.0\n",
+                stdout="abc123\trefs/tags/v0.38.0\ndef456\trefs/tags/v0.39.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
@@ -107,10 +107,10 @@ class DoctorUtilityTests(unittest.TestCase):
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.38.0")
+            self.assertEqual(result["latest"], "0.39.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.38.0", result["url"])
+            self.assertIn("/releases/tag/v0.39.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
