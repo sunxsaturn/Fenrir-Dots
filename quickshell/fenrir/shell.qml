@@ -15,7 +15,61 @@ Scope {
     id: root
 
     property bool controlCenterOpen: false
+    property bool launcherOpen: false
+    property string launcherQuery: ""
+    property string launcherCategory: "All"
     property string clockText: "--:--"
+    property var applications: []
+    property var filteredApplications: {
+        const query = launcherQuery.trim().toLowerCase();
+        return applications.filter(app => {
+            const categoryMatch = launcherCategory === "All"
+                || (launcherCategory === "Favorites" ? app.favorite
+                    : app.categories.indexOf(launcherCategory) >= 0);
+            return categoryMatch && (!query || app.search_text.indexOf(query) >= 0);
+        }).slice(0, 300);
+    }
+
+    function openLauncher() {
+        root.launcherOpen = true;
+        root.launcherQuery = "";
+        root.launcherCategory = "All";
+        applicationsProcess.running = true;
+    }
+
+    function toggleLauncher() {
+        if (root.launcherOpen)
+            root.launcherOpen = false;
+        else
+            root.openLauncher();
+    }
+
+    function setApplications(source) {
+        try {
+            const parsed = JSON.parse(source);
+            if (!Array.isArray(parsed))
+                throw new Error("application index is not an array");
+            root.applications = parsed;
+        } catch (error) {
+            console.warn("Fenrir launcher: could not load the XDG application index.", error);
+            root.applications = [];
+        }
+    }
+
+    function launchApplication(app) {
+        if (!app || !app.desktop_id)
+            return;
+        launchAppProcess.desktopId = app.desktop_id;
+        launchAppProcess.running = true;
+        root.launcherOpen = false;
+    }
+
+    function toggleFavorite(app) {
+        if (!app || !app.desktop_id)
+            return;
+        favoriteAppProcess.desktopId = app.desktop_id;
+        favoriteAppProcess.running = true;
+    }
     property var palette: ({
         background: "#090b12",
         surface: "#151a28",
@@ -61,6 +115,13 @@ Scope {
         onFileChanged: reload()
     }
 
+    IpcHandler {
+        target: "fenrir"
+        function toggleLauncher(): void { root.toggleLauncher(); }
+        function openLauncher(): void { root.openLauncher(); }
+        function closeLauncher(): void { root.launcherOpen = false; }
+    }
+
     NotificationServer {
         id: notificationServer
         actionsSupported: true
@@ -89,6 +150,24 @@ Scope {
         onTriggered: clockProcess.running = true
     }
 
+    Process {
+        id: applicationsProcess
+        command: ["fenrir-applications", "list", "--json"]
+        stdout: StdioCollector {
+            onStreamFinished: root.setApplications(this.text)
+        }
+    }
+    Process {
+        id: launchAppProcess
+        property string desktopId: ""
+        command: ["gtk-launch", desktopId]
+    }
+    Process {
+        id: favoriteAppProcess
+        property string desktopId: ""
+        command: ["fenrir-applications", "favorite", "toggle", desktopId]
+        onExited: applicationsProcess.running = true
+    }
     Process { id: launcherProcess; command: ["fuzzel"] }
     Process { id: terminalProcess; command: ["kitty"] }
     Process { id: filesProcess; command: ["thunar"] }
@@ -340,7 +419,7 @@ Scope {
                                     onEntered: parent.color = root.tint("accent", 0.30)
                                     onExited: parent.color = root.tint("surfaceAlt", 0.14)
                                     onClicked: {
-                                        if (modelData.action === 0) root.launcherProcess.running = true;
+                                        if (modelData.action === 0) root.openLauncher();
                                         else if (modelData.action === 1) root.terminalProcess.running = true;
                                         else if (modelData.action === 2) root.filesProcess.running = true;
                                         else if (modelData.action === 3) root.browserProcess.running = true;
@@ -995,4 +1074,198 @@ Scope {
             }
         }
     }
+    FloatingWindow {
+        id: applicationLauncher
+        visible: root.launcherOpen
+        title: "Fenrir Application Launcher"
+        width: 760
+        height: 680
+        color: root.palette.background
+        onVisibleChanged: {
+            if (visible) {
+                if (root.applications.length === 0)
+                    applicationsProcess.running = true;
+                launcherSearch.forceActiveFocus();
+            }
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            color: root.palette.background
+            border.width: 1
+            border.color: root.tint("accent", 0.55)
+            radius: 16
+
+            Column {
+                anchors.fill: parent
+                anchors.margins: 22
+                spacing: 14
+
+                Row {
+                    width: parent.width
+                    spacing: 12
+
+                    Column {
+                        width: parent.width - 50
+                        spacing: 3
+                        Text {
+                            text: "FENRIR"
+                            color: root.palette.accent
+                            font.family: "Inter"
+                            font.pixelSize: 10
+                            font.weight: Font.DemiBold
+                        }
+                        Text {
+                            text: "Application launcher"
+                            color: root.palette.foreground
+                            font.family: "Inter"
+                            font.pixelSize: 22
+                            font.weight: Font.DemiBold
+                        }
+                    }
+
+                    Controls.Button {
+                        text: "×"
+                        onClicked: root.launcherOpen = false
+                    }
+                }
+
+                Controls.TextField {
+                    id: launcherSearch
+                    width: parent.width
+                    placeholderText: "Search applications, categories and descriptions…"
+                    text: root.launcherQuery
+                    onTextChanged: root.launcherQuery = text
+                    onAccepted: {
+                        if (root.filteredApplications.length > 0)
+                            root.launchApplication(root.filteredApplications[0]);
+                    }
+                }
+
+                Row {
+                    width: parent.width
+                    spacing: 10
+
+                    Controls.ComboBox {
+                        width: 190
+                        model: ["All", "Favorites", "AudioVideo", "Development", "Game", "Graphics",
+                                "Network", "Office", "Settings", "System", "Utility"]
+                        currentIndex: Math.max(0, model.indexOf(root.launcherCategory))
+                        onActivated: root.launcherCategory = currentText
+                    }
+
+                    Text {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: root.filteredApplications.length + " applications"
+                        color: root.palette.muted
+                        font.pixelSize: 11
+                    }
+
+                    Item { width: 1; height: 1 }
+                    Controls.Button {
+                        text: "Refresh"
+                        onClicked: applicationsProcess.running = true
+                    }
+                }
+
+                Rectangle {
+                    width: parent.width
+                    height: 1
+                    color: root.tint("accent", 0.35)
+                }
+
+                ListView {
+                    id: applicationList
+                    width: parent.width
+                    height: parent.height - 154
+                    clip: true
+                    spacing: 5
+                    model: root.filteredApplications
+
+                    delegate: Rectangle {
+                        required property var modelData
+                        width: applicationList.width
+                        height: 64
+                        radius: 10
+                        color: root.tint("surface", 0.78)
+                        border.width: 1
+                        border.color: root.tint("accent", 0.16)
+
+                        Row {
+                            anchors.fill: parent
+                            anchors.margins: 8
+                            spacing: 10
+
+                            Rectangle {
+                                width: 46
+                                height: 46
+                                radius: 10
+                                color: root.tint("accent", 0.25)
+                                anchors.verticalCenter: parent.verticalCenter
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: modelData.name.length ? modelData.name.charAt(0).toUpperCase() : "•"
+                                    color: root.palette.foreground
+                                    font.pixelSize: 20
+                                    font.weight: Font.DemiBold
+                                }
+                            }
+
+                            Controls.Button {
+                                width: parent.width - 124
+                                height: 46
+                                anchors.verticalCenter: parent.verticalCenter
+                                flat: true
+                                onClicked: root.launchApplication(modelData)
+                                background: Rectangle { color: "transparent" }
+                                contentItem: Column {
+                                    spacing: 3
+                                    Text {
+                                        text: modelData.name
+                                        color: root.palette.foreground
+                                        font.pixelSize: 13
+                                        font.weight: Font.DemiBold
+                                        elide: Text.ElideRight
+                                    }
+                                    Text {
+                                        text: modelData.comment || modelData.categories.join(" · ")
+                                        color: root.palette.muted
+                                        font.pixelSize: 10
+                                        elide: Text.ElideRight
+                                    }
+                                }
+                            }
+
+                            Controls.Button {
+                                width: 42
+                                height: 42
+                                anchors.verticalCenter: parent.verticalCenter
+                                text: modelData.favorite ? "★" : "☆"
+                                onClicked: root.toggleFavorite(modelData)
+                            }
+                        }
+                    }
+
+                    Text {
+                        anchors.centerIn: parent
+                        visible: root.filteredApplications.length === 0
+                        text: root.applications.length === 0
+                              ? "Loading installed applications…"
+                              : "No applications match this search."
+                        color: root.palette.muted
+                        font.pixelSize: 12
+                    }
+                }
+
+                Text {
+                    width: parent.width
+                    text: "Super + Space to toggle · Enter to launch · ☆ to save favorites"
+                    color: root.palette.muted
+                    font.pixelSize: 10
+                    horizontalAlignment: Text.AlignHCenter
+                }
+            }
+        }
+    }
+
 }

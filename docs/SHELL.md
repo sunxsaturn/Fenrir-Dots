@@ -49,6 +49,14 @@ unreadable token file leaves the previous palette in place; a clean start withou
 generated theme uses the bundled obsidian/violet fallback. Glass opacity remains a
 separate profile setting and the base background always stays dark.
 
+## Native application launcher (0.20.0)
+
+Super+Space invokes the shell's Quickshell IPC handler to toggle a Fenrir-owned QML launcher. It indexes visible XDG `.desktop` entries through `fenrir-applications`, supports name/description search, XDG category filters and persistent favorites, and launches selected entries using a fixed `gtk-launch` argument plus the desktop ID. The indexer never executes or evaluates a desktop entry's `Exec` string. A Fuzzel shortcut remains available as a fallback with Super+Alt+Space.
+
+## Native application launcher (0.20.0)
+
+Super+Space invokes the `fenrir` Quickshell IPC handler to toggle a Fenrir-owned QML launcher. It indexes visible XDG `.desktop` entries through `fenrir-applications`, supports name/description search, XDG category filters and persistent favorites, and launches selected entries through a fixed `gtk-launch` argument plus the desktop ID. The indexer never executes or evaluates the desktop entry's `Exec` string. A Fuzzel fallback remains available with Super+Alt+Space.
+
 ## Remaining acceptance boundary
 
 This increment does not yet include a PAM-backed lockscreen/greeter, a full power profile/device inventory surface, an advanced Bluetooth pairing workflow, tray DBus submenu rendering, notification action buttons/inline replies, or per-application audio routing. These are explicitly not represented as complete features.
