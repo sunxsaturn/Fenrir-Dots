@@ -18,6 +18,9 @@ PROVIDER_TERMS_URLS = {
     "cleveland": "https://www.clevelandart.org/terms-and-conditions",
     "met": "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access-policy",
     "wikimedia": "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use",
+    "aic": "https://www.artic.edu/open-access/open-access-images",
+    "openverse": "https://docs.openverse.org/terms_of_service",
+    "smk": "https://www.smk.dk/en/article/free-download-of-images/",
 }
 
 
