@@ -461,13 +461,9 @@ async function loadWallpapers(showError = false) {
       $('wallpaper-sync-plan-status').textContent = 'Run a fresh read-only preflight before synchronization.';
     } else if (syncPlan.sync_allowed) {
       $('wallpaper-sync-plan-status').textContent = 'Preflight ready: '
-        + Number(syncPlan.planned_new_copies).toLocaleString() + ' new accepted assets; projected total '
-        + Number(syncPlan.projected_total_count).toLocaleString() + ' / '
-        + Number(syncPlan.target_count).toLocaleString() + '.';
+        + Number(syncPlan.planned_new_copies).toLocaleString() + ' new accepted assets; all eligible metadata inspected.';
     } else if (!syncPlan.plan_complete) {
-      $('wallpaper-sync-plan-status').textContent = 'Preflight incomplete: the bounded scan could not verify enough candidates. Synchronization is blocked.';
-    } else if (syncPlan.remaining_slots === 0) {
-      $('wallpaper-sync-plan-status').textContent = 'The selected local wallpaper target is already reached.';
+      $('wallpaper-sync-plan-status').textContent = 'Preflight incomplete: the technical metadata scan ceiling was reached. Synchronization is blocked.';
     } else {
       $('wallpaper-sync-plan-status').textContent = 'No new accepted assets are currently ready for synchronization. Review the blockers in the Catalog.';
     }
@@ -527,7 +523,7 @@ async function loadWallpapers(showError = false) {
     const resumableQueue = schedule.last_status === 'paused'
       && Number(schedule.queue_total || 0) > Number(schedule.queue_index || 0);
     scheduleButton.textContent = schedule.enabled
-      ? 'Pause collection run'
+      ? 'Pause metadata discovery'
       : (resumableQueue ? 'Resume discovery run' : 'Start metadata discovery');
     scheduleButton.disabled = !schedule.enabled && !data.catalog_available;
     const currentQueueItem = schedule.queue_current || null;
@@ -541,7 +537,7 @@ async function loadWallpapers(showError = false) {
       : '';
     if (schedule.enabled) {
       if (schedule.run_mode === 'continuous') {
-        $('wallpaper-schedule-status').textContent = 'Continuous collection run active' + queueProgress + ' · next bounded slice starts automatically';
+        $('wallpaper-schedule-status').textContent = 'Continuous metadata discovery active' + queueProgress + ' · next bounded slice starts automatically';
       } else {
         const next = schedule.next_run_at
           ? new Date(schedule.next_run_at * 1000).toLocaleString()
