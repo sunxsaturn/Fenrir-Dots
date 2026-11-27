@@ -970,18 +970,37 @@ $('wallpaper-public-library-audit-button').addEventListener('click', async () =>
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([name, count]) => name.replaceAll('-', ' ') + ': ' + Number(count).toLocaleString())
       .join(' · ');
-    const volumes = (report.volumes || []).map((volume) =>
-      volume.id + ': ' + Number(volume.image_count).toLocaleString()
-    ).join(' · ');
+    const palette = report.palette || {};
+    const licenses = report.license_counts || {};
+    const storage = (report.volumes || []).map((volume) => {
+      const status = volume.storage || {};
+      const size = status.api_reported_size_bytes === null || status.api_reported_size_bytes === undefined
+        ? 'storage unknown'
+        : (Number(status.api_reported_size_bytes) / (1024 ** 3)).toFixed(2) + ' GiB';
+      return volume.id + ': ' + Number(volume.image_count).toLocaleString()
+        + ' images · ' + size + ' · ' + status.status;
+    }).join(' | ');
+    const categoryBalance = report.category_balance || {};
     $('wallpaper-public-library-audit-summary').textContent =
-      Number(report.unique_images).toLocaleString() + ' unique images across '
+      Number(report.manifest_records).toLocaleString() + ' manifest records / '
+      + Number(report.unique_images).toLocaleString() + ' unique SHA-256 identifiers across '
       + Number(report.active_volume_count).toLocaleString() + ' active volumes. '
-      + 'Population state: ' + report.population_state + '. '
+      + 'Population: ' + report.population_state + '. No image-count target. '
       + 'Duplicates: ' + Number(report.duplicate_records).toLocaleString()
       + '; hash/path mismatches: ' + Number(report.hash_path_mismatches).toLocaleString()
       + '; invalid dimensions: ' + Number(report.invalid_dimensions).toLocaleString()
-      + '. ' + volumes + '. Categories: ' + categories + '. '
-      + 'Manifest only; local folder and image bytes not inspected.';
+      + '; below desktop resolution: ' + Number(report.below_desktop_resolution).toLocaleString()
+      + '; missing metadata fields: ' + (report.metadata_fields_with_gaps || []).join(', ')
+      + '; invalid source pages: ' + Number(report.source_page_invalid).toLocaleString()
+      + '; license review/exclusion: ' + Number(report.license_review_or_exclusion).toLocaleString()
+      + '; palette missing/excluded: ' + Number(palette.missing_records || 0).toLocaleString()
+      + '/' + Number(palette.excluded_yellow_orange_brown_records || 0).toLocaleString()
+      + '. License classes: ' + Object.entries(licenses).map(([name,count]) => name + ' ' + Number(count).toLocaleString()).join(', ')
+      + '. Category range: ' + Number(categoryBalance.minimum_images || 0).toLocaleString()
+      + '–' + Number(categoryBalance.maximum_images || 0).toLocaleString()
+      + ' (observed spread ' + Number(categoryBalance.spread || 0).toLocaleString() + '). '
+      + 'Storage: ' + storage + '. Categories: ' + categories + '. '
+      + 'Metadata only: local folder and image bytes are not inspected.';
     $('wallpaper-public-library-audit-status').textContent =
       report.audit_status === 'clean' && report.population_state === 'closed'
         ? 'Audit complete: structurally clean; population closed.'
