@@ -181,6 +181,12 @@ class FenrirDoctor(Gtk.Application):
         self.terms_reviewed = Gtk.CheckButton(label="I reviewed the provider's current terms for this use.")
         self.terms_reviewed.connect("toggled", lambda *_: self._button_states())
         right.append(self.terms_reviewed)
+        right.append(Gtk.Label(label="Original media-host terms URL (required for Openverse)"))
+        self.source_terms_url = Gtk.Entry()
+        self.source_terms_url.set_placeholder_text("https://original-host.example/terms")
+        self.source_terms_url.connect("changed", lambda *_: self._button_states())
+        self.source_terms_url.set_sensitive(False)
+        right.append(self.source_terms_url)
 
         action_grid = Gtk.Grid(column_spacing=8, row_spacing=8)
         self.review_button = Gtk.Button(label="Approve rights + source terms")
@@ -231,12 +237,24 @@ class FenrirDoctor(Gtk.Application):
         item = self.selected or {}
         state = item.get("state")
         self.open_button.set_sensitive(bool(item.get("source_page")))
-        self.terms_button.set_sensitive(item.get("provider") in PROVIDER_TERMS_URLS)
+        provider = item.get("provider")
+        is_openverse = provider == "openverse"
+        self.terms_button.set_sensitive(provider in PROVIDER_TERMS_URLS)
+        self.terms_button.set_label(
+            "Open supplied source-host terms" if is_openverse and self.source_terms_url.get_text().strip()
+            else ("Open Openverse API terms" if is_openverse else "Open provider terms")
+        )
+        self.source_terms_url.set_sensitive(is_openverse)
+        source_terms_url = self.source_terms_url.get_text().strip()
+        source_terms_url_valid = (
+            not is_openverse or source_terms_url.startswith("https://")
+        )
         self.preview_button.set_sensitive(state in {"quarantined", "duplicate-review", "accepted"} and bool(item.get("validated_asset")))
         self.review_button.set_sensitive(
             state in {"discovered", "rights-review", "deferred"}
             and self.source_reviewed.get_active()
             and self.terms_reviewed.get_active()
+            and source_terms_url_valid
         )
         self.acquire_button.set_sensitive(state == "rights-review")
         self.accept_button.set_sensitive(state == "quarantined")
@@ -314,6 +332,13 @@ class FenrirDoctor(Gtk.Application):
         self.selected = self.candidates[index]
         self.source_reviewed.set_active(False)
         self.terms_reviewed.set_active(False)
+        self.source_terms_url.set_text("")
+        self.terms_reviewed.set_label(
+            "I reviewed the original media host's current terms for this use."
+            if self.selected.get("provider") == "openverse"
+            else "I reviewed the provider's current terms for this use."
+        )
+        self._button_states()
         try:
             detail = catalog_json("candidate-show", self.selected["asset_id"])
             self.selected = {**self.selected, **detail}
@@ -349,7 +374,8 @@ class FenrirDoctor(Gtk.Application):
 
     def open_provider_terms(self):
         provider = (self.selected or {}).get("provider")
-        url = PROVIDER_TERMS_URLS.get(provider)
+        supplied = self.source_terms_url.get_text().strip()
+        url = supplied if provider == "openverse" and supplied.startswith("https://") else PROVIDER_TERMS_URLS.get(provider)
         if url:
             subprocess.Popen(["xdg-open", url])
 
@@ -371,11 +397,17 @@ class FenrirDoctor(Gtk.Application):
             if not self.source_reviewed.get_active() or not self.terms_reviewed.get_active():
                 raise RuntimeError("Open and inspect both the original item and official provider terms before approving.")
             asset_id, rationale = self._selected_id(), self._rationale()
-            self._run_action([
+            args = [
                 "rights-review", asset_id, "--reviewer", self._user(),
                 "--license-decision", "approved", "--terms-decision", "approved",
                 "--rationale", rationale,
-            ])
+            ]
+            if (self.selected or {}).get("provider") == "openverse":
+                source_terms_url = self.source_terms_url.get_text().strip()
+                if not source_terms_url.startswith("https://"):
+                    raise RuntimeError("Enter the original media host's HTTPS terms URL before reviewing Openverse rights.")
+                args.extend(["--terms-evidence-url", source_terms_url])
+            self._run_action(args)
         except Exception as exc:
             self._set_action(str(exc), True)
 
