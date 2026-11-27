@@ -161,6 +161,8 @@ def _validate_registry(registry: dict) -> list[dict]:
             "images_path": images_path,
             "manifest_path": manifest_path,
             "manifest_url": manifest_url,
+            "acquisition_enabled": volume.get("acquisition_enabled") is True,
+            "status": str(volume.get("status", "unknown")),
         })
     if not active:
         raise LibrarySyncError("The volume registry has no active image volumes")
@@ -505,6 +507,148 @@ def _download_image(
     _install_without_overwrite(partial, target)
     partial.unlink(missing_ok=True)
     return target, "downloaded"
+
+
+def audit_public_library(
+    *,
+    registry_url: str = REGISTRY_URL,
+    opener: Callable | None = None,
+    timeout: int = 45,
+) -> dict:
+    """Audit every active public volume using manifests only; never fetch image bytes."""
+    if type(timeout) is not int or not 5 <= timeout <= 300:
+        raise LibrarySyncError("Network timeout must be between 5 and 300 seconds")
+    opener = opener or urllib.request.urlopen
+    registry = _fetch_json(
+        registry_url, timeout=timeout, opener=opener, label="Fenrir volume registry"
+    )
+    volumes = _validate_registry(registry)
+    all_records: list[dict] = []
+    volume_reports: list[dict] = []
+    category_counts: dict[str, int] = {}
+    metadata_gaps = {
+        field: 0 for field in (
+            "title", "creator", "credit", "attribution",
+            "source", "source_page", "license_identifier", "license_url",
+        )
+    }
+    seen_hashes: dict[str, dict] = {}
+    duplicate_records = []
+    hash_path_mismatches = 0
+    below_desktop_resolution = 0
+    invalid_dimensions = 0
+    manifested_bytes = 0
+
+    for volume in volumes:
+        manifest = _fetch_json(
+            volume["manifest_url"], timeout=timeout, opener=opener,
+            label=f"volume {volume['id']} manifest",
+        )
+        images = _validate_manifest(manifest, volume)
+        volume_categories: dict[str, int] = {}
+        volume_bytes = 0
+        for image in images:
+            record = image["record"]
+            digest = image["sha256"]
+            volume_bytes += image["size"]
+            manifested_bytes += image["size"]
+            category = image["relative_path"].split("/", 1)[0]
+            category_counts[category] = category_counts.get(category, 0) + 1
+            volume_categories[category] = volume_categories.get(category, 0) + 1
+
+            filename = PurePosixPath(image["relative_path"]).name
+            if PurePosixPath(filename).stem != digest:
+                hash_path_mismatches += 1
+
+            width, height = record.get("width"), record.get("height")
+            if (
+                isinstance(width, bool) or not isinstance(width, int)
+                or isinstance(height, bool) or not isinstance(height, int)
+                or width < 1 or height < 1
+            ):
+                invalid_dimensions += 1
+            elif width < MIN_WIDTH or height < MIN_HEIGHT or width <= height:
+                below_desktop_resolution += 1
+
+            for field in metadata_gaps:
+                value = record.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    metadata_gaps[field] += 1
+
+            previous = seen_hashes.get(digest)
+            if previous is not None:
+                duplicate = {
+                    "sha256": digest,
+                    "first_volume": previous["volume_id"],
+                    "duplicate_volume": volume["id"],
+                    "path": image["relative_path"],
+                }
+                if len(duplicate_records) < 100:
+                    duplicate_records.append(duplicate)
+            else:
+                seen_hashes[digest] = {
+                    "volume_id": volume["id"],
+                    "size": image["size"],
+                    "mime_type": image["mime_type"],
+                }
+            all_records.append(image)
+
+        volume_reports.append({
+            "id": volume["id"],
+            "repository": volume["repository"],
+            "status": volume["status"],
+            "acquisition_enabled": volume["acquisition_enabled"],
+            "image_count": len(images),
+            "manifest_updated_at": manifest.get("updated_at"),
+            "manifested_image_bytes": volume_bytes,
+            "category_counts": dict(sorted(volume_categories.items())),
+        })
+
+    registered = registry.get("volumes", [])
+    registered_count = len(registered) if isinstance(registered, list) else len(volumes)
+    acquisition_enabled = any(
+        item["acquisition_enabled"] for item in volumes
+    )
+    all_registered_active = registered_count == len(volumes)
+    duplicate_count = len(all_records) - len(seen_hashes)
+    population_closed = (
+        not acquisition_enabled
+        and all_registered_active
+        and registry.get("population", {}).get("state") == "closed"
+    )
+    structural_issues = duplicate_count + hash_path_mismatches + invalid_dimensions
+    return {
+        "report": "org.fenrir.public-wallpaper-library-audit",
+        "report_version": 1,
+        "population_state": "closed" if population_closed else "open",
+        "audit_status": "clean" if structural_issues == 0 else "review_required",
+        "no_fixed_image_target": registry.get("population", {}).get("fixed_image_count_target") is None,
+        "fixed_image_count_target": None,
+        "registered_volume_count": registered_count,
+        "active_volume_count": len(volumes),
+        "acquisition_enabled": acquisition_enabled,
+        "volumes": volume_reports,
+        "manifest_records": len(all_records),
+        "unique_images": len(seen_hashes),
+        "duplicate_records": duplicate_count,
+        "duplicate_samples": duplicate_records,
+        "hash_path_mismatches": hash_path_mismatches,
+        "invalid_dimensions": invalid_dimensions,
+        "below_desktop_resolution": below_desktop_resolution,
+        "manifested_image_bytes": manifested_bytes,
+        "category_counts": dict(sorted(category_counts.items())),
+        "metadata_missing_counts": metadata_gaps,
+        "metadata_gap_records": sum(1 for value in metadata_gaps.values() if value),
+        "read_only": True,
+        "downloads_started": 0,
+        "image_bytes_fetched": 0,
+        "files_modified": False,
+        "local_files_inspected": False,
+        "note": (
+            "Audit uses the live registry and committed manifests only. It does not fetch image bytes "
+            "or inspect the local wallpaper directory; image bytes are SHA-256 verified during sync."
+        ),
+    }
 
 
 def sync_public_library(
