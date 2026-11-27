@@ -26,6 +26,12 @@ class QuickshellShellTests(unittest.TestCase):
         self.assertIn("Norse Cinematic", source)
         self.assertIn("Norse Performance", source)
 
+    def test_installer_requires_official_quickshell_and_version_018(self):
+        installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
+        self.assertIn('command -v quickshell', installer)
+        self.assertIn('== "0.18.0"', installer)
+        self.assertIn('quickshell-config', installer)
+
     def test_shell_launches_only_fixed_application_commands(self):
         source = SHELL.read_text(encoding="utf-8")
         for command in ('["fuzzel"]', '["kitty"]', '["thunar"]',
