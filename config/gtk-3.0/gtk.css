@@ -1,0 +1,21 @@
+/* Fenrir Fimbulwinter — GTK3 surface theme. */
+@define-color fenrir_base rgba(9, 11, 18, 0.80);
+@define-color fenrir_elevated rgba(20, 23, 36, 0.88);
+@define-color fenrir_accent #9b87f5;
+@define-color fenrir_text #e8e9f2;
+
+window, dialog, .background {
+  background-color: @fenrir_base;
+  color: @fenrir_text;
+}
+
+popover, menu, tooltip {
+  background-color: @fenrir_elevated;
+  color: @fenrir_text;
+  border: 1px solid alpha(@fenrir_accent, 0.42);
+  border-radius: 12px;
+}
+
+*:focus {
+  outline-color: @fenrir_accent;
+}

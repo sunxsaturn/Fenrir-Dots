@@ -1,0 +1,18 @@
+{
+  "schema": "org.fenrir.desktop-appearance.v1",
+  "theme": "fimbulwinter-obsidian",
+  "accent_source": "current-wallpaper",
+  "glass": {
+    "enabled": false,
+    "surface_opacity": 0.8,
+    "blur_px": 24
+  },
+  "accessibility": {
+    "minimum_text_contrast": 4.5,
+    "high_contrast_fallback": true
+  },
+  "performance": {
+    "gaming_blur_suppression": true,
+    "max_blur_passes": 2
+  }
+}

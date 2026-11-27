@@ -1,0 +1,30 @@
+/* Fenrir Fimbulwinter — accent variables are generated from the active wallpaper. */
+@define-color base rgba(9, 11, 18, 0.80);
+@define-color elevated rgba(20, 23, 36, 0.80);
+@define-color accent #9b87f5;
+@define-color foreground #e8e9f2;
+@define-color muted #9699ab;
+
+* {
+  font-family: "Inter", "Noto Sans", sans-serif;
+  font-size: 13px;
+  color: @foreground;
+}
+
+window#waybar {
+  background: transparent;
+}
+
+#workspaces, #clock, #network, #pulseaudio, #battery, #tray {
+  background-color: @base;
+  border: 1px solid alpha(@accent, 0.42);
+  border-radius: 12px;
+  padding: 3px 10px;
+  margin: 4px 3px;
+}
+
+#workspaces button.focused {
+  background-color: alpha(@accent, 0.30);
+  color: @foreground;
+  border-radius: 8px;
+}
