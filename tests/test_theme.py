@@ -14,7 +14,9 @@ class ThemePaletteTests(unittest.TestCase):
         self.assertEqual(classify_rgb(0, 128, 0), "green")
 
     def test_preferred_colors_win_over_green(self):
-        self.assertEqual(choose_accent(["#008000", "#0000ff"]), "#0000ff")
+        accent = choose_accent(["#008000", "#0000ff"])
+        self.assertEqual(classify_rgb(*(int(accent[i:i + 2], 16) for i in (1, 3, 5))), "blue")
+        self.assertGreaterEqual(contrast_ratio(accent, "#090b12"), 3.0)
 
     def test_excluded_colors_are_not_selected(self):
         self.assertNotEqual(choose_accent(["#ffff00", "#ff7800", "#ff69b4"]), "#ffff00")
