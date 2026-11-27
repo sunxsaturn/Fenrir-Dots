@@ -11,7 +11,7 @@ Fenrir Dots is the Hyprland desktop layer for Fenrir Arch. It owns the session, 
 - Frosted-glass mode is user-toggleable. Its surface background target is 80% opaque (20% transparent), with compositor blur where the application exposes a transparent surface.
 - Wallpaper changes update accent colors without reducing text contrast.
 - Yellow, brown, orange and pink dominant wallpapers are excluded; green is allowed.
-- Glass mode is opt-in by default; opacity is not applied to text or whole-window content.
+- Glass mode is enabled by default; opacity is not applied to text or whole-window content.
 
 ## Desktop features
 
