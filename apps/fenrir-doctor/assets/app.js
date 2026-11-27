@@ -1056,7 +1056,11 @@ $('wallpaper-public-library-sync-button').addEventListener('click', async () => 
   try {
     const result = await api('/api/doctor/wallpapers/public-library-sync', {
       method: 'POST',
-      body: JSON.stringify({ confirm: true })
+      body: JSON.stringify({
+        confirm: true,
+        expected_downloads: plan.selected_downloads,
+        expected_bytes: plan.selected_download_bytes
+      })
     });
     state.publicLibraryPlan = null;
     if (result.started) {
