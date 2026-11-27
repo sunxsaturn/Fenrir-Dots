@@ -218,7 +218,7 @@ class PublicLibrarySyncTests(unittest.TestCase):
 
     def test_storage_preflight_combines_space_when_destination_and_cache_share_filesystem(self):
         with patch.object(library.shutil, "disk_usage") as disk_usage:
-            disk_usage.return_value = type("Usage", (), {"free": 1000})()
+            disk_usage.return_value = type("Usage", (), {"free": 10**12})()
             result = library.sync_public_library(
                 destination=self.destination,
                 dry_run=True,
