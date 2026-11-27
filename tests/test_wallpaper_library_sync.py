@@ -241,3 +241,42 @@ class PublicLibrarySyncTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PublicLibraryCliTests(unittest.TestCase):
+    def test_cli_routes_sync_library_dry_run_and_json_output(self):
+        import contextlib
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        wallpaper_spec = importlib.util.spec_from_file_location(
+            "fenrir_wallpaper_cli", ROOT / "bin" / "fenrir-wallpaper"
+        )
+        wallpaper_cli = importlib.util.module_from_spec(wallpaper_spec)
+        wallpaper_spec.loader.exec_module(wallpaper_cli)
+        report = {
+            "active_volumes": ["volume-01", "volume-02"],
+            "unique_images": 7,
+            "already_present": 2,
+            "selected_downloads": 5,
+            "selected_download_bytes": 1024,
+            "remaining_after_limit": 3,
+            "downloaded": 0,
+            "failed": 0,
+            "dry_run": True,
+        }
+        sync = Mock(return_value=report)
+        fake_module = SimpleNamespace(sync_public_library=sync)
+        output = io.StringIO()
+        with patch.dict(sys.modules, {"fenrir_wallpaper_library": fake_module}), patch.object(
+            sys, "argv", [
+                "fenrir-wallpaper", "sync-library", "--dry-run", "--limit", "5", "--json"
+            ]
+        ), contextlib.redirect_stdout(output):
+            self.assertEqual(wallpaper_cli.main(), 0)
+        sync.assert_called_once()
+        kwargs = sync.call_args.kwargs
+        self.assertTrue(kwargs["dry_run"])
+        self.assertEqual(kwargs["limit"], 5)
+        self.assertEqual(json.loads(output.getvalue())["active_volumes"], ["volume-01", "volume-02"])
