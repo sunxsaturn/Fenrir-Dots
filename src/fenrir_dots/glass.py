@@ -4,7 +4,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 
-DEFAULT_OPACITY = 0.80
+DEFAULT_OPACITY = 0.60
 GLASS_APPS = ("kitty", "firefox", "firefox-nightly", "thunar", "fuzzel", "waybar", "mako")
 PROTECTED_CLASSES = ("^(steam|steam_app_.*|gamescope|mpv|vlc|hyprlock|polkit-.*)$")
 
