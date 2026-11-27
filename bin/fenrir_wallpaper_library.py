@@ -534,6 +534,7 @@ def audit_public_library(
     }
     seen_hashes: dict[str, dict] = {}
     duplicate_records = []
+    hash_metadata_conflicts = 0
     hash_path_mismatches = 0
     below_desktop_resolution = 0
     invalid_dimensions = 0
@@ -577,6 +578,8 @@ def audit_public_library(
 
             previous = seen_hashes.get(digest)
             if previous is not None:
+                if previous["size"] != image["size"] or previous["mime_type"] != image["mime_type"]:
+                    hash_metadata_conflicts += 1
                 duplicate = {
                     "sha256": digest,
                     "first_volume": previous["volume_id"],
@@ -611,18 +614,20 @@ def audit_public_library(
     )
     all_registered_active = registered_count == len(volumes)
     duplicate_count = len(all_records) - len(seen_hashes)
+    population = registry.get("population")
+    population = population if isinstance(population, dict) else {}
     population_closed = (
         not acquisition_enabled
         and all_registered_active
-        and registry.get("population", {}).get("state") == "closed"
+        and population.get("state") == "closed"
     )
-    structural_issues = duplicate_count + hash_path_mismatches + invalid_dimensions
+    structural_issues = duplicate_count + hash_metadata_conflicts + hash_path_mismatches + invalid_dimensions
     return {
         "report": "org.fenrir.public-wallpaper-library-audit",
         "report_version": 1,
         "population_state": "closed" if population_closed else "open",
         "audit_status": "clean" if structural_issues == 0 else "review_required",
-        "no_fixed_image_target": registry.get("population", {}).get("fixed_image_count_target") is None,
+        "no_fixed_image_target": population.get("fixed_image_count_target") is None,
         "fixed_image_count_target": None,
         "registered_volume_count": registered_count,
         "active_volume_count": len(volumes),
@@ -631,6 +636,7 @@ def audit_public_library(
         "manifest_records": len(all_records),
         "unique_images": len(seen_hashes),
         "duplicate_records": duplicate_count,
+        "hash_metadata_conflicts": hash_metadata_conflicts,
         "duplicate_samples": duplicate_records,
         "hash_path_mismatches": hash_path_mismatches,
         "invalid_dimensions": invalid_dimensions,
@@ -638,7 +644,7 @@ def audit_public_library(
         "manifested_image_bytes": manifested_bytes,
         "category_counts": dict(sorted(category_counts.items())),
         "metadata_missing_counts": metadata_gaps,
-        "metadata_gap_records": sum(1 for value in metadata_gaps.values() if value),
+        "metadata_fields_with_gaps": [field for field, value in metadata_gaps.items() if value],
         "read_only": True,
         "downloads_started": 0,
         "image_bytes_fetched": 0,
