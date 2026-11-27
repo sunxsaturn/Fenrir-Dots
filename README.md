@@ -1,6 +1,6 @@
 # Fenrir Dots
 
-**Version:** 0.14.0
+**Version:** 0.14.1
 
 **Documentation:** [Project index](docs/README.md) · [Public wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Complete ecosystem map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md)
 
@@ -24,6 +24,7 @@ Do not install this repository as a complete system installer. It expects Arch p
 - Fimbulwinter Glass: obsidian foundation, moderate blur, 60% frosted-surface opacity and wallpaper-derived dynamic accents
 - Waybar, Kitty, Fuzzel, Mako, GTK and Fenrir-Obsidian icon theme
 - Validated random wallpaper engine and palette synchronization
+- Registry-driven public multi-volume wallpaper sync, available from Fenrir Settings and Fenrir Doctor with read-only preflight, explicit confirmation, integrity verification, resumable transfers and preserved public attribution
 - Explicit, collection-scoped Fenrir Catalog synchronization into the configured wallpaper directory, with integrity/rights checks retained and rotation index refresh
 - Manual screen recording toggle (`Super+Shift+F9`), screenshots and clipboard workflow
 - Fenrir Doctor local assistant, system diagnostics, GitHub release tracking, configuration recovery and rights-aware wallpaper intelligence; Ollama models remain opt-in

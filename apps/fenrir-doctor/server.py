@@ -76,6 +76,8 @@ def installed_release_versions() -> dict[str, str]:
     return versions
 WALLPAPER_SYNC: subprocess.Popen | None = None
 WALLPAPER_SYNC_LOG = STATE / "wallpaper-sync.log"
+PUBLIC_LIBRARY_SYNC: subprocess.Popen | None = None
+PUBLIC_LIBRARY_SYNC_LOG = STATE / "public-library-sync.log"
 DISCOVERY_PROCESS: subprocess.Popen | None = None
 DISCOVERY_LOG = STATE / "wallpaper-discovery.log"
 DISCOVERY_STATE = STATE / "wallpaper-discovery.json"
@@ -2399,6 +2401,133 @@ def wallpaper_snapshot() -> dict[str, Any]:
         "target_reached": local_count >= target_count,
         "detail": detail,
         "sync": sync,
+        "public_library": public_library_sync_snapshot(),
+    }
+
+
+def public_library_preview() -> dict[str, Any]:
+    """Run the public mirror's read-only registry and manifest preflight."""
+    executable = shutil.which("fenrir-wallpaper")
+    if not executable:
+        raise ValueError("Fenrir's wallpaper command is not installed.")
+    result = subprocess.run(
+        [executable, "sync-library", "--dry-run", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "Public-library preview failed.").strip()
+        raise ValueError(detail[:300])
+    payload = strict_json(result.stdout.encode("utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("dry_run") is not True
+        or not isinstance(payload.get("active_volumes"), list)
+        or not payload["active_volumes"]
+        or any(not isinstance(item, str) or not re.fullmatch(r"[a-z0-9][a-z0-9-]{0,63}", item)
+               for item in payload["active_volumes"])
+    ):
+        raise ValueError("Fenrir returned an invalid public-library preview.")
+    counts = (
+        "manifest_records", "unique_images", "already_present",
+        "planned_downloads", "selected_downloads", "selected_download_bytes",
+        "remaining_after_limit",
+    )
+    normalized = {}
+    for field in counts:
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Fenrir returned an invalid public-library preview count: {field}.")
+        normalized[field] = value
+    if normalized["selected_downloads"] > normalized["planned_downloads"]:
+        raise ValueError("Fenrir returned inconsistent public-library download counts.")
+    if normalized["unique_images"] > normalized["manifest_records"]:
+        raise ValueError("Fenrir returned inconsistent public-library manifest counts.")
+    return {
+        "available": True,
+        "read_only": True,
+        "active_volumes": payload["active_volumes"],
+        **normalized,
+        "destination": str(current_wallpaper_directory()),
+    }
+
+
+def public_library_sync_snapshot() -> dict[str, Any]:
+    global PUBLIC_LIBRARY_SYNC
+    process = PUBLIC_LIBRARY_SYNC
+    code = process.poll() if process is not None else None
+    log_tail = ""
+    try:
+        if PUBLIC_LIBRARY_SYNC_LOG.is_file() and not PUBLIC_LIBRARY_SYNC_LOG.is_symlink():
+            log_tail = PUBLIC_LIBRARY_SYNC_LOG.read_text(encoding="utf-8", errors="replace")[-5000:]
+    except OSError:
+        pass
+    if process is not None and code is not None:
+        PUBLIC_LIBRARY_SYNC = None
+    return {
+        "available": shutil.which("fenrir-wallpaper") is not None,
+        "running": process is not None and code is None,
+        "returncode": code,
+        "log": log_tail,
+    }
+
+
+def start_public_library_sync(
+    confirmed: Any,
+    expected_downloads: Any,
+    expected_bytes: Any,
+) -> dict[str, Any]:
+    global PUBLIC_LIBRARY_SYNC
+    if confirmed is not True:
+        raise ValueError("Explicit confirmation is required before public-library downloads.")
+    if (
+        isinstance(expected_downloads, bool) or not isinstance(expected_downloads, int)
+        or expected_downloads < 0
+        or isinstance(expected_bytes, bool) or not isinstance(expected_bytes, int)
+        or expected_bytes < 0
+    ):
+        raise ValueError("A valid preview count and byte total are required.")
+    if PUBLIC_LIBRARY_SYNC is not None and PUBLIC_LIBRARY_SYNC.poll() is None:
+        raise ValueError("Public wallpaper library synchronization is already running.")
+    if WALLPAPER_SYNC is not None and WALLPAPER_SYNC.poll() is None:
+        raise ValueError("The private Catalog synchronization is running. Finish it before syncing the public library.")
+    executable = shutil.which("fenrir-wallpaper")
+    if not executable:
+        raise ValueError("Fenrir's wallpaper command is not installed.")
+    preview = public_library_preview()
+    if (
+        preview["selected_downloads"] != expected_downloads
+        or preview["selected_download_bytes"] != expected_bytes
+    ):
+        raise ValueError("The public library changed after preview. Run a new preview before confirming synchronization.")
+    if preview["selected_downloads"] == 0:
+        return {"started": False, "message": "All active public-library images are already present.", "preview": preview}
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
+    if STATE.is_symlink() or PUBLIC_LIBRARY_SYNC_LOG.is_symlink():
+        raise ValueError("Refusing an unsafe public-library synchronization log path.")
+    log = PUBLIC_LIBRARY_SYNC_LOG.open("w", encoding="utf-8")
+    try:
+        PUBLIC_LIBRARY_SYNC = subprocess.Popen(
+            [executable, "sync-library", "--json"],
+            stdin=subprocess.DEVNULL,
+            stdout=log,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+            close_fds=True,
+        )
+    except OSError:
+        log.close()
+        raise
+    log.close()
+    return {
+        "started": True,
+        "pid": PUBLIC_LIBRARY_SYNC.pid,
+        "active_volumes": preview["active_volumes"],
+        "selected_downloads": preview["selected_downloads"],
+        "selected_download_bytes": preview["selected_download_bytes"],
+        "destination": preview["destination"],
     }
 
 
@@ -2643,6 +2772,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_bytes(200, start_wallpaper_rights_review_studio())
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                 return self.send_bytes(503, {"error": str(exc)[:300]})
+
+        if path == "/api/doctor/wallpapers/public-library-plan":
+            try:
+                return self.send_bytes(200, public_library_preview())
+            except (OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
+
+        if path == "/api/doctor/wallpapers/public-library-sync":
+            try:
+                return self.send_bytes(202, start_public_library_sync(
+                    obj.get("confirm"), obj.get("expected_downloads"), obj.get("expected_bytes")
+                ))
+            except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
 
         if path == "/api/doctor/wallpapers/sync-plan":
             try:

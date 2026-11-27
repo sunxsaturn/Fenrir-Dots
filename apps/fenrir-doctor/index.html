@@ -115,6 +115,21 @@
               <h4 class="subheading">Profile coverage</h4>
               <div class="portfolio-profile-list" id="wallpaper-portfolio-profiles"></div>
             </section>
+            <section class="settings-section doctor-section" id="wallpaper-public-library">
+              <div class="eyebrow">PUBLIC MULTI-VOLUME LIBRARY</div><h3>Synchronize the Fenrir wallpaper volumes</h3>
+              <p class="field-help">This is the public GitHub mirror, separate from the private Catalog below. Fenrir reads the live hub registry, checks every active volume manifest, deduplicates by SHA-256, and verifies each downloaded image before adding it to the configured wallpaper folder. It never changes existing local files or Catalog records.</p>
+              <div id="wallpaper-public-library-summary" class="loading-card">Preview the active volumes and missing image count before downloading.</div>
+              <div class="system-grid" id="wallpaper-public-library-metrics"></div>
+              <div class="settings-actions">
+                <span id="wallpaper-public-library-plan-status" role="status">Read-only preview has not been run.</span>
+                <button class="secondary-button" id="wallpaper-public-library-plan-button" type="button">Preview public library</button>
+              </div>
+              <div class="settings-actions">
+                <span id="wallpaper-public-library-status" role="status">No public-library sync has been started.</span>
+                <button class="primary-button" id="wallpaper-public-library-sync-button" type="button" disabled>Synchronize public volumes</button>
+              </div>
+              <pre id="wallpaper-public-library-log" class="doctor-log" aria-live="polite"></pre>
+            </section>
             <section class="settings-section doctor-section">
               <div class="eyebrow">DISCOVER CANDIDATES</div><h3>Search wallpaper sources</h3>
               <label for="wallpaper-source">Metadata source</label>

@@ -24,6 +24,12 @@ fenrir-wallpaper sync-library --limit 10
 
 Use `--json` with any command for a machine-readable report. The command uses the existing `wallpaper.directory` setting (default: `~/Pictures/Wallpapers`).
 
+## Use Fenrir Settings and Doctor
+
+- **Fenrir Settings → Wallpapers → Public multi-volume wallpaper library** provides a read-only preview in a terminal and a separate, confirmation-gated synchronization action.
+- **Fenrir Doctor → Wallpapers → Public multi-volume library** shows active volumes, unique image counts, already-present images and estimated transfer size. Preview is read-only; synchronization requires a separate explicit confirmation. Its status and log refresh with the normal Wallpaper Intelligence refresh cycle.
+- The public mirror controls are independent of the private Catalog's accepted-wallpaper sync and acquisition scheduler.
+
 ## How it works
 
 1. Fetches the fixed public registry at `Fenrir-Wallpapers/manifest/volumes.json`.
