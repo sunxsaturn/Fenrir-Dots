@@ -1,0 +1,14 @@
+{
+  "layer": "top",
+  "position": "top",
+  "height": 34,
+  "spacing": 8,
+  "modules-left": ["hyprland/workspaces", "hyprland/window"],
+  "modules-center": ["clock"],
+  "modules-right": ["wireplumber", "network", "battery", "tray"],
+  "clock": {"format": "{:%a %d %b  %H:%M}", "tooltip": true},
+  "network": {"format-wifi": "WIFI {signalStrength}%", "format-ethernet": "LAN", "format-disconnected": "OFFLINE"},
+  "wireplumber": {"format": "VOL {volume}%", "format-muted": "MUTED"},
+  "battery": {"format": "{capacity}%", "states": {"warning": 25, "critical": 10}},
+  "tray": {"spacing": 8}
+}
