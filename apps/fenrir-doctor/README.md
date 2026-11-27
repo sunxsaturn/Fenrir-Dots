@@ -1,8 +1,10 @@
 # Fenrir Doctor
 
-Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the former Sun AI local assistant with read-only system diagnostics, GitHub release tracking, safe backup restoration and rights-aware wallpaper library synchronization.
+Fenrir Doctor is the local desktop companion for Fenrir Desktop. It provides read-only system diagnostics, GitHub release tracking, safe configuration-backup restoration and rights-aware wallpaper intelligence. An optional local Ollama assistant provides chat and weather; Ollama starts on demand and does not download model weights automatically.
 
 ## Features
+
+Doctor is the desktop control surface, not the Catalog's rights authority. It reads Catalog status and launches the separate loopback-only Rights & Acquisition Studio for explicit, confirmation-gated decisions. The Catalog owns persistent rights, authorization, acquisition, duplicate-review and acceptance records.
 
 - Local Ollama chat, weather and private conversation history.
 - Diagnostics for Arch Linux, Hyprland, Vulkan, PipeWire, NetworkManager, wallpaper services, local catalog readiness and home-disk capacity.
