@@ -1,6 +1,7 @@
 /* Fenrir Fimbulwinter — GTK4 surface theme. */
-@define-color fenrir_base rgba(9, 11, 18, 0.80);
-@define-color fenrir_elevated rgba(20, 23, 36, 0.88);
+@import "fenrir-glass.css";
+@define-color fenrir_base @fenrir_surface;
+@define-color fenrir_elevated @fenrir_elevated;
 @define-color fenrir_accent #9b87f5;
 @define-color fenrir_text #e8e9f2;
 
