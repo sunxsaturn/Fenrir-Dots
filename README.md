@@ -1,12 +1,12 @@
 # Fenrir-Dots
 
-**Version:** 0.19.1
+**Version:** 0.20.0
 
 Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, an original Quickshell/Qt Quick/QML shell, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
 
 ## Native shell
 
-Fenrir launches its own Quickshell configuration from `~/.config/quickshell`. The shell includes a multi-monitor top panel, Hyprland workspace controls, app dock, and a native system center for media, PipeWire audio, tray icons, Wi-Fi, Bluetooth, open windows and notification history. It is not based on a preconfigured third-party shell. The shell source is in `quickshell/fenrir/shell.qml`; see [Shell implementation](docs/SHELL.md) for the implemented surface and remaining work.
+Fenrir launches its own Quickshell configuration from `~/.config/quickshell`. The shell includes a multi-monitor top panel, Hyprland workspace controls, app dock, and a native searchable application launcher with XDG categories and favorites, plus a system center for media, PipeWire audio, tray icons, Wi-Fi, Bluetooth, open windows and notification history. It is not based on a preconfigured third-party shell. The shell source is in `quickshell/fenrir/shell.qml`; see [Shell implementation](docs/SHELL.md) for the implemented surface and remaining work.
 
 ## Design direction
 
@@ -29,6 +29,8 @@ The public library is not the private Catalog. Local private assets are never pu
 The deployment profile includes Steam/Proton, GameMode, MangoHud, Gamescope, RPCS3 and Heroic, plus PipeWire, EasyEffects, QPWGraph, QjackCtl, Guitarix, Calf and REAPER/ReaPack where supported by the official Arch repositories.
 
 ## Native shell services
+
+Super+Space opens Fenrir's own QML application launcher. It indexes visible XDG desktop entries, launches by desktop ID through `gtk-launch`, and stores favorites in the user state directory.
 
 Quickshell provides the system tray, MPRIS, notifications, PipeWire audio, NetworkManager Wi-Fi and BlueZ Bluetooth integrations. It also watches DWTE's validated `theme.json` tokens and updates the shell palette live, with a safe obsidian fallback. Mako is not launched alongside the native notification server.
 
