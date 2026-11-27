@@ -435,6 +435,18 @@ def _download_image(
     if offset > image["size"]:
         partial.unlink()
         offset = 0
+    if offset == image["size"]:
+        _verify_image(partial, image["mime_type"], image["size"], image["sha256"])
+        target = destination / PurePosixPath(image["relative_path"])
+        _assert_no_symlink_components(target)
+        if target.exists():
+            if target.is_file() and not target.is_symlink() and target.stat().st_size == image["size"] and _sha256_file(target) == image["sha256"]:
+                partial.unlink(missing_ok=True)
+                return target, "already_present"
+            raise LibrarySyncError(f"Refusing to overwrite an existing file: {target}")
+        _install_without_overwrite(partial, target)
+        partial.unlink(missing_ok=True)
+        return target, "downloaded"
 
     request = urllib.request.Request(
         image["url"],
