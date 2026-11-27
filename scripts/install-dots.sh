@@ -31,7 +31,7 @@ git -C "$DOTS_DIR" checkout --detach "$DOTS_COMMIT"
 actual="$(git -C "$DOTS_DIR" rev-parse HEAD)"
 [[ "$actual" == "$DOTS_COMMIT" ]] || die "Pinned Dots checkout mismatch."
 version="$(tr -d '\r\n' < "$DOTS_DIR/VERSION")"
-[[ "$version" == "0.18.0" ]] || die "Expected Dots 0.18.0, found $version."
+[[ "$version" == "0.19.0" ]] || die "Expected Dots 0.19.0, found $version."
 [[ -f "$DOTS_DIR/pyproject.toml" && -f "$DOTS_DIR/config/hypr/hyprland.lua" ]] || die "Pinned Dots source tree is incomplete."
 
 python3 -m venv "$VENV"
@@ -61,7 +61,7 @@ copy_config "$DOTS_DIR/config/fuzzel/fuzzel.ini" "$HOME/.config/fuzzel/fuzzel.in
 copy_config "$DOTS_DIR/config/fenrir/appearance.json" "$HOME/.config/fenrir/appearance.json"
 
 QS_CONFIG_NAME=""
-for candidate in fenrir-system fenrir-system-default fenrir-system-v0-18; do
+for candidate in fenrir-system fenrir-system-default fenrir-system-v0-18 fenrir-system-v0-19; do
   candidate_dir="$HOME/.config/quickshell/$candidate"
   if [[ ! -e "$candidate_dir/shell.qml" ]] || cmp -s "$DOTS_DIR/quickshell/fenrir/shell.qml" "$candidate_dir/shell.qml"; then
     QS_CONFIG_NAME="$candidate"
@@ -76,7 +76,44 @@ printf '%s\n' "$QS_CONFIG_NAME" > "$HOME/.config/fenrir/quickshell-config"
 for unit in fenrir-wallpaper.service fenrir-wallpaper.timer; do
   install -Dm644 "$DOTS_DIR/systemd/user/$unit" "$HOME/.config/systemd/user/$unit"
 done
-for desktop in fenrir-wallpaper-timer.desktop fenrir-mako.desktop fenrir-hyprpaper.desktop fenrir-initial-wallpaper.desktop; do
+# Quickshell now owns the desktop notification D-Bus name. Remove only
+# Fenrir's old Mako launch line from the managed Hyprland start block.
+migrate_legacy_mako(){
+  local config="$HOME/.config/hypr/hyprland.lua"
+  if [[ -f "$config" ]]; then
+    python3 - "$config" <<'PY'
+from pathlib import Path
+import sys
+
+path = Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+lines = text.splitlines(keepends=True)
+inside_start = False
+matches = []
+for index, line in enumerate(lines):
+    if 'hl.on("hyprland.start", function()' in line:
+        inside_start = True
+    elif inside_start and line.strip() == "end)":
+        inside_start = False
+    elif inside_start and line.strip() in {
+        'hl.exec_cmd("mako")',
+        "hl.exec_cmd('mako')",
+    }:
+        matches.append(index)
+
+if len(matches) == 1:
+    del lines[matches[0]]
+    path.write_text("".join(lines), encoding="utf-8")
+    print("[Fenrir Dots] Migrated the managed notification launcher from Mako to Quickshell.")
+elif len(matches) > 1:
+    raise SystemExit("[Fenrir Dots] Multiple Mako launch lines detected; refusing automatic migration.")
+PY
+  fi
+  rm -f "$HOME/.config/autostart/fenrir-mako.desktop"
+}
+migrate_legacy_mako
+
+for desktop in fenrir-wallpaper-timer.desktop fenrir-hyprpaper.desktop fenrir-initial-wallpaper.desktop; do
   install -Dm644 "$DOTS_DIR/applications/$desktop" "$HOME/.config/autostart/$desktop"
 done
 sudo install -Dm644 "$DOTS_DIR/applications/fenrir.desktop" /usr/share/wayland-sessions/fenrir.desktop
