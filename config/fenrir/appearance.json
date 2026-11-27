@@ -1,11 +1,22 @@
 {
   "schema": "org.fenrir.desktop.appearance.v1",
   "theme": "fimbulwinter",
-  "glass": {"enabled": true, "opacity": 0.8, "blur": true,
-    "exceptions": ["steam", "gamescope", "hyprlock", "polkit"]},
-  "wallpaper": {"directory": "~/Pictures/Wallpapers",
-    "minimum_width": 2560, "minimum_height": 1440,
-    "rotation_minutes": 15, "adaptive_accent": true},
-  "palette": {"preferred": ["blue", "red", "purple", "black", "violet"],
-    "tolerated": ["green"], "excluded": ["yellow", "brown", "orange", "pink"]}
+  "glass": {
+    "enabled": true,
+    "opacity": 0.6,
+    "blur": true,
+    "exceptions": ["steam", "gamescope", "hyprlock", "polkit"]
+  },
+  "wallpaper": {
+    "directory": "~/Pictures/Wallpapers",
+    "minimum_width": 2560,
+    "minimum_height": 1440,
+    "rotation_minutes": 15,
+    "adaptive_accent": true
+  },
+  "palette": {
+    "preferred": ["red", "purple", "blue", "white", "black", "violet"],
+    "tolerated": ["green", "neutral", "pink"],
+    "excluded": ["yellow", "orange", "brown"]
+  }
 }
