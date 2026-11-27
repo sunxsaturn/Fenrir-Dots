@@ -1,121 +1,110 @@
 # Fenrir Dots
 
-**Version:** 0.14.1
+**Version:** 0.14.2
 
-**Documentation:** [Topic index](docs/README.md) · [Public wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Versioning policy](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/VERSIONING.md) · [Complete ecosystem map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md)
+**Documentation:** [Documentation index](docs/README.md) · [Changelog](CHANGELOG.md) · [Wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Project map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md) · [Version policy](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/VERSIONING.md)
 
-Fenrir Dots is the visual and user-session layer of **Fenrir Desktop**, an original Arch Linux + Hyprland environment. The system installer lives in [Fenrir-Arch](https://github.com/sunxsaturn/Fenrir-Arch); this repository supplies the desktop configuration, applications and services.
+Fenrir Dots is the desktop and user-session layer of **Fenrir Desktop**, an original Arch Linux + Hyprland environment. [Fenrir-Arch](https://github.com/sunxsaturn/Fenrir-Arch) owns the system installer, package integration and privileged setup. This repository owns the desktop configuration, user applications and session services.
 
-## Installation
+## Install
 
-Use the single-command Arch installer, which clones Fenrir Dots automatically:
-
-```bash
-git clone --depth=1 https://github.com/sunxsaturn/Fenrir-Arch.git ~/Fenrir && cd ~/Fenrir && ./install.sh
-```
-
-Do not install this repository as a complete system installer. It expects Arch package and system integration from Fenrir-Arch.
-
-## Components
-
-- Hyprland 0.57+ Lua configuration, monitor detection and generated workspace/keybind modules
-- Fenrir Settings GTK4 application with persistent, validated controls, atomic writes and backups
-- Searchable, persistent Fenrir Welcome & Tutorial
-- Fimbulwinter Glass: obsidian foundation, moderate blur, 60% frosted-surface opacity and wallpaper-derived dynamic accents
-- Waybar, Kitty, Fuzzel, Mako, GTK and Fenrir-Obsidian icon theme
-- Validated random wallpaper engine and palette synchronization
-- Registry-driven public multi-volume wallpaper sync, available from Fenrir Settings and Fenrir Doctor with read-only preflight, explicit confirmation, integrity verification, resumable transfers and preserved public attribution
-- Explicit, collection-scoped Fenrir Catalog synchronization into the configured wallpaper directory, with integrity/rights checks retained and rotation index refresh
-- Manual screen recording toggle (`Super+Shift+F9`), screenshots and clipboard workflow
-- Fenrir Doctor local assistant, system diagnostics, GitHub release tracking, configuration recovery and rights-aware wallpaper intelligence; Ollama models remain opt-in
-  - Cleveland Museum of Art Open Access discovery is included in the supervised scheduler; only individually marked CC0 artworks with qualifying landscape images are kept in metadata discovery.
-  - Supervised provider-balanced wallpaper metadata scheduler: continuous or interval-based round-robin slices across up to 32 source/profile combinations, independent resumable campaign cursors, and Catalog-defined four-request budgets per turn; safe pause on errors and an explicit human-review boundary.
-  - Read-only collection portfolio dashboard: provider/profile yield, accepted quality-eligible inventory, local collection projection and human-acceptance trend; no guessed ETA without sufficient history.
-  - `fenrir-doctor` provides the integrated local UI; `fenrir-upgrade` fetches the latest tagged Fenrir-Arch release and starts the interactive installer.
-  - Complete source map: [apps/fenrir-doctor/README.md](apps/fenrir-doctor/README.md) (server, web assets, CLI, user service, desktop entry, icon and tests are all versioned in this repository)
-- Keep-awake session inhibitor; no automatic lock, display-off or idle-suspend timers. Manual lock remains `Super+L`.
-
-## Wallpaper policy
-
-Wallpapers are user-owned files under `~/Pictures/Wallpapers` by default. Qualifying images must be readable landscape images at least 2560×1440; 3840×2160 or higher is preferred. Rotation uses the currently acquired qualifying images every 15 minutes. The **20,000-image target is the recommended collection goal, not a rotation prerequisite**; status does not report it as met until 20,000 actual files pass validation.
-
-No bulk image collection is bundled or fabricated. Do not download copyrighted images without permission. The separate Fenrir Wallpaper Catalog owns source discovery, rights review, acquisition authorization, deduplication and acceptance provenance. See [Fenrir-Arch's wallpaper-pack contract](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/WALLPAPER-PACK.md).
-
-## Settings and tutorial
-
-Open **Fenrir Settings** from the launcher to change appearance, wallpapers, display mode/scaling, Hyprland layout/workspaces, keybinds, Waybar, audio devices, startup applications, gaming tools, keyboard and session power policy. Unsupported display modes are left unchanged. Configuration writes are validated and backed up.
-
-Open **Fenrir Welcome & Tutorial** to search first-login guidance, shortcuts, workspaces, captures, wallpapers, visual customization, audio, gaming, recovery and troubleshooting.
-
-## Development checks
+Use the Fenrir-Arch installer. It checks out a pinned Fenrir-Dots commit and validates the complete required source set:
 
 ```bash
-python3 -m compileall -q bin apps scripts tests
-python3 -m unittest discover -s tests -v
-bash -n bin/fenrir-settings bin/fenrir-welcome bin/fenrir-monitor bin/fenrir-record bin/fenrir-doctor
+git clone --depth=1 https://github.com/sunxsaturn/Fenrir-Arch.git ~/Fenrir
+cd ~/Fenrir
+./install.sh
 ```
 
-The software license has not yet been selected. Publication does not grant redistribution rights to third-party artwork, applications or assets.
+Do not use Fenrir-Dots as a standalone system installer. It expects the Arch packages and system integration provided by Fenrir-Arch.
 
+The current stable Fenrir-Arch installer pin is **Fenrir-Dots 0.14.1**. This repository's 0.14.2 maintenance release does not silently change that integration pin; the pin moves only in a separate tested Fenrir-Arch update.
 
-## Sync a curated Catalog collection into wallpaper rotation
+## What is included
 
-Fenrir Desktop can stage one explicitly curated collection from the private
-Fenrir Wallpaper Catalog into the wallpaper directory configured in
-`~/.config/fenrir/settings.toml`:
+### Desktop and appearance
 
-    fenrir-wallpaper sync-catalog --collection-id COLLECTION_ID
+- Hyprland 0.57+ with Lua configuration, monitor detection, generated workspace and keybinding modules.
+- Waybar, Fuzzel, Kitty, Mako, GTK styling and the Fenrir-Obsidian icon theme.
+- Fimbulwinter Glass: an obsidian foundation, moderate blur, frosted surfaces and wallpaper-derived dynamic accents.
+- Wallpaper validation and rotation every 15 minutes, with palette synchronization.
 
-The command uses the installed `fenrir-catalog` companion and the default
-private database/quarantine paths under
-`~/.local/share/fenrir/catalog`. Optional `--database` and
-`--quarantine-root` arguments support an explicitly selected local Catalog.
-Use `--target-count 5000|10000|20000` to choose the destination target; the
-default is 20000. The Catalog command only copies assets which are already
-human-accepted, rights-approved, license-approved, sufficiently high
-resolution, palette-eligible, and verified against quarantine SHA-256/size
-evidence. Collection membership alone never grants rights approval or
-acceptance.
+### Settings and onboarding
 
-The wallpaper index is refreshed after a successful sync. The normal Fenrir
-rotation service picks up new qualifying files on its next cycle; the sync
-command does not switch the active wallpaper immediately. The destination
-must be a safe local directory outside `/mnt/storage`.
+- **Fenrir Settings:** GTK4 control center for appearance, display/scaling, wallpapers, Hyprland layout/workspaces, keybindings, Waybar, audio devices, startup applications, gaming tools, keyboard and session power behavior. Writes are validated, atomic and backed up.
+- **Fenrir Welcome & Tutorial:** searchable first-login help for shortcuts, workspaces, screenshots, wallpapers, visual customization, audio, gaming, recovery and troubleshooting.
 
+### Fenrir Doctor
 
-## Fenrir Wallpaper Studio
+Fenrir Doctor combines read-only system diagnostics, release tracking, configuration recovery and wallpaper intelligence. An optional local Ollama assistant provides chat and weather; the service starts on demand and does not download model weights automatically.
 
-Launch the loopback-only visual workbench from the terminal with `fenrir-wallpaper studio`, or use **Open Wallpaper Studio** in Fenrir Settings → Wallpapers. The Studio browses accepted Catalog assets, inspects rights/provenance, builds ordered collections, reviews possible duplicates and previews 16:9, 16:10, 21:9 and 32:9 scaling without modifying source images.
+Wallpaper Intelligence includes:
 
-Adding an accepted image or batch to a collection automatically stages the updated collection through the existing rights- and integrity-checked Catalog sync and refreshes the wallpaper rotation index. New qualifying images become eligible immediately for the next scheduled or manual wallpaper change; the active wallpaper is not forcibly replaced. Existing collections also have a manual sync control. Removal from a collection does not delete previously staged user-owned wallpaper files.
+- Opt-in, resumable metadata discovery across Openverse, Wikimedia Commons, SFW Wallhaven and Cleveland Museum of Art Open Access.
+- Eight visual profiles and a persisted round-robin queue of up to **32 source/profile combinations**.
+- Provider-defined scheduling slices capped at **four API requests per turn**; pause on errors or when a campaign queue reaches the human-review boundary.
+- A read-only provider/profile portfolio and collection projection based on local yield and recorded human-acceptance history. It withholds an ETA when there is not enough history.
+- A read-only acquisition runway and launchers for the Catalog's loopback-only Rights & Acquisition Studio. Rights decisions, acquisition authorization, downloads, duplicate review, acceptance and sync remain separate operations.
 
-## GitHub wallpaper library
+Doctor is the desktop control surface; rights and acquisition policy remains in the private Catalog.
 
-The public wallpaper files are hosted separately at [sunxsaturn/Fenrir-Wallpapers](https://github.com/sunxsaturn/Fenrir-Wallpapers), inside its `Fenrir Wallpapers/` directory. Clone it locally:
+## Wallpaper library
 
-```bash
-git clone --depth=1 https://github.com/sunxsaturn/Fenrir-Wallpapers.git ~/Pictures/Fenrir-Wallpapers
-```
+Fenrir keeps two wallpaper ingestion paths separate.
 
-To use that collection for rotation, set the existing `wallpaper.directory` value in `~/.config/fenrir/settings.toml` to `~/Pictures/Fenrir-Wallpapers/Fenrir Wallpapers`. Pull the repository periodically to receive new committed images. Fenrir's normal image validation and rotation rules still apply.
+### Public multi-volume library
 
-The GitHub mirror contains only assets with separate public-redistribution and provider-terms clearance. The private Catalog remains the source of truth for discovery, evidence, acquisition, validation and human acceptance; local Catalog acceptance alone does not authorize publication.
+The public library is hosted by [Fenrir-Wallpapers](https://github.com/sunxsaturn/Fenrir-Wallpapers). Its volume registry is authoritative; Fenrir does not hard-code the number of active volumes.
 
-## Multi-volume wallpaper library
-
-Fenrir reads the canonical [volume registry](https://github.com/sunxsaturn/Fenrir-Wallpapers/blob/main/manifest/volumes.json), not a hard-coded volume list. Run a read-only preview first:
+Preview a sync without writing files:
 
 ```bash
 fenrir-wallpaper sync-library --dry-run
 ```
 
-Synchronize every active registered volume into the configured wallpaper directory:
+Synchronize eligible files:
 
 ```bash
 fenrir-wallpaper sync-library
 ```
 
-Use `--limit 10` for a small first batch, or `--json` for a machine-readable report. The command validates manifests, globally deduplicates SHA-256 content, resumes interrupted downloads, verifies image bytes and Fenrir's decoded-image quality/palette rules, preserves attribution in `.fenrir-public-library-attribution.json`, and never overwrites or deletes existing files. See the [complete sync guide](docs/WALLPAPER-LIBRARY.md).
+The command validates manifests, deduplicates content by SHA-256, resumes interrupted transfers, checks image quality/palette, preserves public attribution and never overwrites or deletes existing wallpaper files. Use `--limit 10` for a small first batch. See the [public library guide](docs/WALLPAPER-LIBRARY.md).
 
-This public-library mirror is separate from `fenrir-wallpaper sync-catalog`, which copies explicitly curated, rights-approved and human-accepted assets from the private Catalog.
+### Private Catalog collections
 
+Sync one explicitly curated Catalog collection into the configured rotation directory:
+
+```bash
+fenrir-wallpaper sync-catalog --collection-id COLLECTION_ID
+```
+
+The default target is 20,000 qualifying local images; 5,000 and 10,000 remain selectable. Sync copies only assets that have passed the Catalog's current rights, license, authorization, human-acceptance, integrity, resolution and palette checks. Collection membership alone does not grant permission. The private database and quarantine remain local and are never published by this command.
+
+### Wallpaper Studio
+
+Open **Wallpaper Studio** from Fenrir Settings → Wallpapers or run:
+
+```bash
+fenrir-wallpaper studio
+```
+
+The loopback-only workbench browses accepted Catalog assets, inspects rights and provenance, curates ordered collections, reviews duplicate candidates, and previews 16:9, 16:10, 21:9 and 32:9 display fits without modifying originals. Adding accepted assets can trigger the existing guarded Catalog-to-rotation sync; sync is additive and never deletes a previously staged wallpaper.
+
+## Wallpaper quality policy
+
+The rotation target is a quality goal, not an installation prerequisite or a claim that a 20,000-image corpus is bundled. Qualifying images must be readable landscape files at least 2560×1440; 3840×2160 or higher is preferred.
+
+The enforced dominant-palette policy excludes yellow, orange and brown; red, purple, blue, white and black are preferred; green and neutral grey are allowed. The desktop validates decoded image pixels rather than trusting titles or provider tags.
+
+## Development checks
+
+Run from the repository root:
+
+```bash
+python3 -m compileall -q bin apps scripts tests
+python3 -m unittest discover -s tests -v
+bash -n bin/fenrir-settings bin/fenrir-welcome bin/fenrir-monitor bin/fenrir-record bin/fenrir-doctor
+node --check apps/fenrir-doctor/assets/app.js
+```
+
+No software license has been selected yet. Publishing the source does not grant redistribution rights to third-party applications, artwork or assets.

@@ -1,8 +1,10 @@
 # Fenrir Doctor
 
-Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the former Sun AI local assistant with read-only system diagnostics, GitHub release tracking, safe backup restoration and rights-aware wallpaper library synchronization.
+Fenrir Doctor is the local desktop companion for Fenrir Desktop. It provides read-only system diagnostics, GitHub release tracking, safe configuration-backup restoration and rights-aware wallpaper intelligence. An optional local Ollama assistant provides chat and weather; Ollama starts on demand and does not download model weights automatically.
 
 ## Features
+
+Doctor is the desktop control surface, not the Catalog's rights authority. It reads Catalog status and launches the separate loopback-only Rights & Acquisition Studio for explicit, confirmation-gated decisions. The Catalog owns persistent rights, authorization, acquisition, duplicate-review and acceptance records.
 
 - Local Ollama chat, weather and private conversation history.
 - Diagnostics for Arch Linux, Hyprland, Vulkan, PipeWire, NetworkManager, wallpaper services, local catalog readiness and home-disk capacity.
@@ -19,7 +21,7 @@ Fenrir Doctor is the local desktop companion for Fenrir Desktop. It combines the
 - A read-only campaign acquisition runway in Wallpaper Intelligence showing blocked candidates, assets ready for separate explicit authorization, currently authorized batch-ready assets, stale authorizations, unresolved transfers and quarantined assets awaiting duplicate review and human acceptance. The panel omits provider download URLs and cannot authorize or download assets.
 - A sanitized rights-review queue overview and one-click launcher for the Catalog's loopback-only Rights & Acquisition Studio. The Studio provides evidence packets, independent reviewer assignments, immutable assignment events, explicit human rights decisions, disagreement reporting, per-asset acquisition-readiness assessments, separately confirmed append-only acquisition authorizations, read-only provider-specific batch preflight, verified quarantine previews, explicit pair-by-pair duplicate adjudication and separate human acceptance/rejection/deferral controls. Doctor itself remains read-only; the Studio's session-token and same-origin protections remain in force.
 - Completed campaigns automatically pause with a human-review status. Rights decisions, acquisition authorization, quarantine/downloads, explicit acceptance and desktop sync remain independent, user-controlled workflows. Pausing scheduling does not interrupt a provider slice already in progress.
-- Dominant-pixel palette policy: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed. A shared cached local index applies the same rules to counting, diagnostics and desktop sync.
+- Dominant-pixel palette policy: yellow, orange and brown are excluded; red, purple, blue, white and black are preferred; green and neutral grey are allowed. A shared cached local index applies the same rules to diagnostics, counting and desktop sync.
 
 ## Public multi-volume wallpaper library
 
