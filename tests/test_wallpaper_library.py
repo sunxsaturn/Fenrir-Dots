@@ -35,13 +35,14 @@ class WallpaperLibraryTests(unittest.TestCase):
         self.assertTrue({"red", "purple", "blue", "white", "black"} <= PREFERRED)
         self.assertIn("green", TOLERATED)
         self.assertNotIn("pink", EXCLUDED)
-    def registry(self, state="published", legacy_reused=0):
+    def registry(self, state="published", legacy_reused=0, unique_sha256_count=5000):
         return {
             "schema": "org.fenrir.wallpaper-library-volumes.v2",
             "library_id": LIBRARY_ID,
             "population": {
                 "state": state, "target_unique_images": 5000,
-                "published_unique_images": 5000, "legacy_images_reused": legacy_reused,
+                "published_unique_images": 5000, "unique_sha256_count": unique_sha256_count,
+                "legacy_images_reused": legacy_reused,
             },
             "categories": [
                 {"id": category, "target_count": 455 if index < 6 else 454}
@@ -164,6 +165,10 @@ class WallpaperLibraryTests(unittest.TestCase):
         self.assertEqual(len(_validate_registry(self.registry())), 1)
         with self.assertRaises(WallpaperSyncError):
             _validate_registry(self.registry(state="building"))
+
+    def test_registry_rejects_incorrect_unique_sha256_claim(self):
+        with self.assertRaises(WallpaperSyncError):
+            _validate_registry(self.registry(unique_sha256_count=4999))
 
     def test_registry_rejects_legacy_image_reuse(self):
         with self.assertRaises(WallpaperSyncError):
