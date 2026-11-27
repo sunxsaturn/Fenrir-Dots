@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fenrir-dots"
+version = "0.17.0"
+description = "Fenrir Hyprland desktop, wallpaper theme and session services"
+requires-python = ">=3.13"
+dependencies = []
+
+[project.optional-dependencies]
+images = ["Pillow>=11.0"]
+test = []
+
+[project.scripts]
+fenrir-glass = "fenrir_dots.glass:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
