@@ -245,9 +245,9 @@ def _fetch_all(registry_url: str, opener: Callable) -> tuple[list[dict], dict]:
     category_counts = {category: 0 for category in CATEGORY_IDS}
     for item in all_items:
         category_counts[item["category"]] += 1
-    expected = {category: 455 if index < 6 else 454 for index, category in enumerate(sorted(CATEGORY_IDS))}
+    expected = {entry["id"]: entry["target_count"] for entry in registry["categories"]}
     if category_counts != expected:
-        raise WallpaperSyncError("Published manifest category counts do not match the balanced target")
+        raise WallpaperSyncError("Published manifest category counts do not match the registry quotas")
     return all_items, registry
 
 
