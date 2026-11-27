@@ -2,6 +2,7 @@ import contextlib
 import io
 import tempfile
 import unittest
+import tomllib
 from pathlib import Path
 from unittest.mock import patch
 
@@ -11,6 +12,15 @@ from fenrir_dots.cli import glass_main, theme_main
 
 
 class DesktopCliTests(unittest.TestCase):
+    def test_version_metadata_is_aligned_and_decimal_canonical(self):
+        root = Path(__file__).resolve().parents[1]
+        from fenrir_dots import __version__
+        pyproject = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))
+        version = (root / "VERSION").read_text(encoding="utf-8").strip()
+        self.assertRegex(version, r"^[0-9]\.[0-9]\.[0-9]$")
+        self.assertEqual(version, __version__)
+        self.assertEqual(pyproject["project"]["version"], __version__)
+
     def test_installer_glass_command_accepts_opacity_option(self):
         with tempfile.TemporaryDirectory() as tmp:
             output = io.StringIO()

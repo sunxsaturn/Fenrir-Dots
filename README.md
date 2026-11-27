@@ -1,6 +1,6 @@
 # Fenrir-Dots
 
-**Version:** 0.20.0
+**Version:** 2.0.0
 
 Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, an original Quickshell/Qt Quick/QML shell, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
 
@@ -48,4 +48,4 @@ Quickshell provides the system tray, MPRIS, notifications, PipeWire audio, Netwo
 
 ## Release policy
 
-Canonical versions use three numeric components. Historical tags are never renumbered.
+Canonical versions use three single-digit decimal components; when a component reaches ten, carry into the component to its left and reset the overflowing component to zero (for example, 0.9 → 1.0 and 0.0.9 → 0.1.0). The current desktop version normalizes 0.20.0 to 2.0.0. Historical Git tags remain immutable; all current metadata, pins and future releases use normalized versions.
