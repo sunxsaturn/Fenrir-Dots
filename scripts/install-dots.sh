@@ -51,6 +51,8 @@ copy_config(){
 copy_config "$DOTS_DIR/config/hypr/hyprland.lua" "$HOME/.config/hypr/hyprland.lua"
 copy_config "$DOTS_DIR/config/hypr/hyprpaper.conf" "$HOME/.config/hypr/hyprpaper.conf"
 copy_config "$DOTS_DIR/config/kitty/kitty.conf" "$HOME/.config/kitty/kitty.conf"
+copy_config "$DOTS_DIR/config/gtk-3.0/gtk.css" "$HOME/.config/gtk-3.0/gtk.css"
+copy_config "$DOTS_DIR/config/gtk-4.0/gtk.css" "$HOME/.config/gtk-4.0/gtk.css"
 copy_config "$DOTS_DIR/config/waybar/config.jsonc" "$HOME/.config/waybar/config.jsonc"
 copy_config "$DOTS_DIR/config/waybar/style.css" "$HOME/.config/waybar/style.css"
 copy_config "$DOTS_DIR/config/mako/config" "$HOME/.config/mako/config"
