@@ -31,7 +31,7 @@ git -C "$DOTS_DIR" checkout --detach "$DOTS_COMMIT"
 actual="$(git -C "$DOTS_DIR" rev-parse HEAD)"
 [[ "$actual" == "$DOTS_COMMIT" ]] || die "Pinned Dots checkout mismatch."
 version="$(tr -d '\r\n' < "$DOTS_DIR/VERSION")"
-[[ "$version" == "0.19.0" ]] || die "Expected Dots 0.19.0, found $version."
+[[ "$version" == "0.19.1" ]] || die "Expected Dots 0.19.1, found $version."
 [[ -f "$DOTS_DIR/pyproject.toml" && -f "$DOTS_DIR/config/hypr/hyprland.lua" ]] || die "Pinned Dots source tree is incomplete."
 
 python3 -m venv "$VENV"
@@ -61,7 +61,7 @@ copy_config "$DOTS_DIR/config/fuzzel/fuzzel.ini" "$HOME/.config/fuzzel/fuzzel.in
 copy_config "$DOTS_DIR/config/fenrir/appearance.json" "$HOME/.config/fenrir/appearance.json"
 
 QS_CONFIG_NAME=""
-for candidate in fenrir-system fenrir-system-default fenrir-system-v0-18 fenrir-system-v0-19; do
+for candidate in fenrir-system fenrir-system-default fenrir-system-v0-18 fenrir-system-v0-19 fenrir-system-v0-19-1; do
   candidate_dir="$HOME/.config/quickshell/$candidate"
   if [[ ! -e "$candidate_dir/shell.qml" ]] || cmp -s "$DOTS_DIR/quickshell/fenrir/shell.qml" "$candidate_dir/shell.qml"; then
     QS_CONFIG_NAME="$candidate"

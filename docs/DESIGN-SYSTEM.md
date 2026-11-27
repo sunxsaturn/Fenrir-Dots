@@ -12,7 +12,7 @@ Fimbulwinter is the common Fenrir design system: obsidian surfaces, subtle borde
 - Glass surface opacity: 0.60 (toggleable)
 - Blur: compositor-backed, with two passes by default
 
-The theme command generates CSS/QSS/terminal tokens. The initial configuration includes conservative defaults; token propagation to each supported application is implemented by the theme installer.
+The theme command generates CSS/QSS/terminal tokens and writes the canonical `~/.config/fenrir/theme/theme.json` document. Hyprland Lua, GTK, Qt6ct, Waybar, Kitty, Fuzzel and Starship receive generated adapters. Quickshell reads the same semantic JSON through a watched `FileView`, validates six-digit color values and updates its surfaces in place; if the document is missing or invalid it keeps the last valid palette or the built-in obsidian/violet fallback.
 
 ## Glass behavior
 

@@ -16,6 +16,50 @@ Scope {
 
     property bool controlCenterOpen: false
     property string clockText: "--:--"
+    property var palette: ({
+        background: "#090b12",
+        surface: "#151a28",
+        surfaceAlt: "#1d2434",
+        foreground: "#edf0fa",
+        muted: "#a8afc4",
+        accent: "#8b5cf6",
+        selectionForeground: "#ffffff"
+    })
+
+    function refreshTheme() {
+        if (!themeFile.loaded)
+            return;
+        try {
+            const values = JSON.parse(themeFile.text());
+            const validHex = value => typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value);
+            root.palette = {
+                background: validHex(values.background) ? values.background : root.palette.background,
+                surface: validHex(values.surface) ? values.surface : "#151a28",
+                surfaceAlt: validHex(values.surface_alt) ? values.surface_alt : "#1d2434",
+                foreground: validHex(values.foreground) ? values.foreground : root.palette.foreground,
+                muted: validHex(values.muted) ? values.muted : root.palette.muted,
+                accent: validHex(values.accent) ? values.accent : root.palette.accent,
+                selectionForeground: validHex(values.selection_foreground)
+                                     ? values.selection_foreground : root.palette.selectionForeground
+            };
+        } catch (error) {
+            console.warn("Fenrir: invalid theme.json; keeping the last valid palette.", error);
+        }
+    }
+
+    function tint(token, opacity) {
+        const base = Qt.color(root.palette[token] || root.palette.background);
+        return Qt.rgba(base.r, base.g, base.b, opacity);
+    }
+
+    FileView {
+        id: themeFile
+        path: (Quickshell.env("HOME") || "") + "/.config/fenrir/theme/theme.json"
+        watchChanges: true
+        printErrors: false
+        onLoaded: root.refreshTheme()
+        onFileChanged: reload()
+    }
 
     NotificationServer {
         id: notificationServer
@@ -75,9 +119,9 @@ Scope {
 
                 Rectangle {
                     anchors.fill: parent
-                    color: "#99090b12"
+                    color: root.tint("background", 0.60)
                     border.width: 1
-                    border.color: "#33ffffff"
+                    border.color: root.tint("foreground", 0.20)
 
                     Row {
                         anchors.left: parent.left
@@ -87,7 +131,7 @@ Scope {
 
                         Text {
                             text: "ᚠ  FENRIR"
-                            color: "#edf0fa"
+                            color: root.palette.foreground
                             font.family: "Inter"
                             font.pixelSize: 13
                             font.weight: Font.DemiBold
@@ -96,7 +140,7 @@ Scope {
                         Rectangle {
                             width: 1
                             height: 20
-                            color: "#334a526b"
+                            color: root.tint("accent", 0.22)
                         }
 
                         Row {
@@ -109,15 +153,15 @@ Scope {
                                     height: 27
                                     radius: 7
                                     color: (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id === index + 1)
-                                           ? "#8b5cf6" : "#331e293b"
+                                           ? root.palette.accent : root.tint("surfaceAlt", 0.20)
                                     border.width: 1
                                     border.color: (Hyprland.focusedWorkspace && Hyprland.focusedWorkspace.id === index + 1)
-                                                  ? "#bba7ff" : "#334a526b"
+                                                  ? root.palette.accent : root.tint("accent", 0.22)
 
                                     Text {
                                         anchors.centerIn: parent
                                         text: String(index + 1)
-                                        color: "#f4f2ff"
+                                        color: root.palette.selectionForeground
                                         font.family: "JetBrainsMono Nerd Font"
                                         font.pixelSize: 12
                                     }
@@ -146,7 +190,7 @@ Scope {
                             width: 170
                             height: 30
                             radius: 8
-                            color: "#221e293b"
+                            color: root.tint("surfaceAlt", 0.13)
                             clip: true
 
                             Row {
@@ -188,21 +232,21 @@ Scope {
                         Rectangle {
                             width: 1
                             height: 20
-                            color: "#334a526b"
+                            color: root.tint("accent", 0.22)
                         }
 
                         Text {
                             text: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio
                                   ? Math.round(Pipewire.defaultAudioSink.audio.volume * 100) + "%"
                                   : "AUDIO"
-                            color: "#a8afc4"
+                            color: root.palette.muted
                             font.family: "Inter"
                             font.pixelSize: 11
                         }
 
                         Text {
                             text: root.clockText
-                            color: "#edf0fa"
+                            color: root.palette.foreground
                             font.family: "Inter"
                             font.pixelSize: 12
                         }
@@ -211,14 +255,14 @@ Scope {
                             width: 34
                             height: 29
                             radius: 7
-                            color: root.controlCenterOpen ? "#8b5cf6" : "#331e293b"
+                            color: root.controlCenterOpen ? root.palette.accent : root.tint("surfaceAlt", 0.20)
 
                             Text {
                                 anchors.centerIn: parent
                                 text: notificationServer.trackedNotifications.count > 0
                                       ? "◉ " + notificationServer.trackedNotifications.count
                                       : "☰"
-                                color: "#f4f2ff"
+                                color: root.palette.selectionForeground
                                 font.pixelSize: 13
                             }
 
@@ -256,9 +300,9 @@ Scope {
                     width: 390
                     height: 56
                     radius: 17
-                    color: "#99090b12"
+                    color: root.tint("background", 0.60)
                     border.width: 1
-                    border.color: "#40ffffff"
+                    border.color: root.tint("foreground", 0.25)
 
                     Row {
                         anchors.centerIn: parent
@@ -279,22 +323,22 @@ Scope {
                                 width: 43
                                 height: 42
                                 radius: 11
-                                color: "#241e293b"
+                                color: root.tint("surfaceAlt", 0.14)
                                 border.width: 1
-                                border.color: "#223b4259"
+                                border.color: root.tint("accent", 0.13)
 
                                 Text {
                                     anchors.centerIn: parent
                                     text: modelData.label
-                                    color: "#e7e9f3"
+                                    color: root.palette.foreground
                                     font.pixelSize: 20
                                 }
 
                                 MouseArea {
                                     anchors.fill: parent
                                     hoverEnabled: true
-                                    onEntered: parent.color = "#553b3157"
-                                    onExited: parent.color = "#241e293b"
+                                    onEntered: parent.color = root.tint("accent", 0.30)
+                                    onExited: parent.color = root.tint("surfaceAlt", 0.14)
                                     onClicked: {
                                         if (modelData.action === 0) root.launcherProcess.running = true;
                                         else if (modelData.action === 1) root.terminalProcess.running = true;
@@ -317,13 +361,13 @@ Scope {
         title: "Fenrir Control Center"
         width: 570
         height: 760
-        color: "#090b12"
+        color: root.palette.background
 
         Rectangle {
             anchors.fill: parent
-            color: "#090b12"
+            color: root.palette.background
             border.width: 1
-            border.color: "#665c4b85"
+            border.color: root.tint("accent", 0.40)
             radius: 16
 
             ScrollView {
@@ -341,7 +385,7 @@ Scope {
 
                         Text {
                             text: "FIMBULWINTER"
-                            color: "#edf0fa"
+                            color: root.palette.foreground
                             font.family: "Inter"
                             font.pixelSize: 17
                             font.weight: Font.DemiBold
@@ -351,7 +395,7 @@ Scope {
 
                         Text {
                             text: "SYSTEM CENTER"
-                            color: "#777f98"
+                            color: root.palette.muted
                             font.family: "Inter"
                             font.pixelSize: 10
                             anchors.verticalCenter: parent.verticalCenter
@@ -361,12 +405,12 @@ Scope {
                             width: 30
                             height: 28
                             radius: 7
-                            color: "#1a2230"
+                            color: root.palette.surfaceAlt
 
                             Text {
                                 anchors.centerIn: parent
                                 text: "×"
-                                color: "#a8afc4"
+                                color: root.palette.muted
                                 font.pixelSize: 20
                             }
 
@@ -377,11 +421,11 @@ Scope {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: "#293244" }
+                    Rectangle { width: parent.width; height: 1; color: root.tint("accent", 0.35) }
 
                     Text {
                         text: "APPEARANCE PROFILES"
-                        color: "#a8afc4"
+                        color: root.palette.muted
                         font.family: "Inter"
                         font.pixelSize: 11
                     }
@@ -394,13 +438,13 @@ Scope {
                             width: (parent.width - 8) / 2
                             height: 46
                             radius: 10
-                            color: "#31234a"
-                            border.color: "#8b5cf6"
+                            color: root.tint("accent", 0.26)
+                            border.color: root.palette.accent
 
                             Text {
                                 anchors.centerIn: parent
                                 text: "Norse Cinematic · 60%"
-                                color: "#f4f2ff"
+                                color: root.palette.selectionForeground
                                 font.pixelSize: 12
                             }
 
@@ -414,13 +458,13 @@ Scope {
                             width: (parent.width - 8) / 2
                             height: 46
                             radius: 10
-                            color: "#1a2230"
-                            border.color: "#46546a"
+                            color: root.palette.surfaceAlt
+                            border.color: root.tint("accent", 0.45)
 
                             Text {
                                 anchors.centerIn: parent
                                 text: "Norse Performance"
-                                color: "#edf0fa"
+                                color: root.palette.foreground
                                 font.pixelSize: 12
                             }
 
@@ -431,13 +475,13 @@ Scope {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: "#293244" }
+                    Rectangle { width: parent.width; height: 1; color: root.tint("accent", 0.35) }
 
                     Row {
                         width: parent.width
                         Text {
                             text: "AUDIO"
-                            color: "#a8afc4"
+                            color: root.palette.muted
                             font.family: "Inter"
                             font.pixelSize: 11
                         }
@@ -446,7 +490,7 @@ Scope {
                             text: Pipewire.defaultAudioSink
                                   ? Pipewire.defaultAudioSink.description
                                   : "No output device"
-                            color: "#8e9ab4"
+                            color: root.palette.muted
                             font.pixelSize: 10
                             elide: Text.ElideRight
                             width: 260
@@ -463,7 +507,7 @@ Scope {
                             text: Pipewire.defaultAudioSink && Pipewire.defaultAudioSink.audio
                                   ? (Pipewire.defaultAudioSink.audio.muted ? "Muted" : "Output")
                                   : "Output"
-                            color: "#edf0fa"
+                            color: root.palette.foreground
                             font.pixelSize: 12
                             anchors.verticalCenter: parent.verticalCenter
                         }
@@ -485,7 +529,7 @@ Scope {
                         Text {
                             width: 60
                             text: Math.round(outputVolume.value * 100) + "%"
-                            color: "#c5cbe0"
+                            color: root.palette.foreground
                             font.family: "JetBrainsMono Nerd Font"
                             font.pixelSize: 11
                             anchors.verticalCenter: parent.verticalCenter
@@ -520,14 +564,14 @@ Scope {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: "#293244" }
+                    Rectangle { width: parent.width; height: 1; color: root.tint("accent", 0.35) }
 
                     Row {
                         width: parent.width
 
                         Text {
                             text: "MEDIA"
-                            color: "#a8afc4"
+                            color: root.palette.muted
                             font.family: "Inter"
                             font.pixelSize: 11
                         }
@@ -536,7 +580,7 @@ Scope {
 
                         Text {
                             text: Mpris.players.count > 0 ? Mpris.players.count + " player(s)" : "No active player"
-                            color: "#8e9ab4"
+                            color: root.palette.muted
                             font.pixelSize: 10
                         }
                     }
@@ -549,9 +593,9 @@ Scope {
                             width: parent.width
                             height: 82
                             radius: 10
-                            color: "#141b29"
+                            color: root.palette.surface
                             border.width: 1
-                            border.color: "#293244"
+                            border.color: root.tint("accent", 0.35)
 
                             Row {
                                 anchors.fill: parent
@@ -575,7 +619,7 @@ Scope {
                                     Text {
                                         width: parent.width
                                         text: modelData.trackTitle || modelData.identity || "Unknown track"
-                                        color: "#edf0fa"
+                                        color: root.palette.foreground
                                         font.pixelSize: 12
                                         elide: Text.ElideRight
                                     }
@@ -583,7 +627,7 @@ Scope {
                                     Text {
                                         width: parent.width
                                         text: (modelData.trackArtist || "Unknown artist") + " · " + modelData.identity
-                                        color: "#8e9ab4"
+                                        color: root.palette.muted
                                         font.pixelSize: 10
                                         elide: Text.ElideRight
                                     }
@@ -597,11 +641,11 @@ Scope {
                                         width: 30
                                         height: 30
                                         radius: 7
-                                        color: "#222c40"
+                                        color: root.palette.surfaceAlt
                                         Text {
                                             anchors.centerIn: parent
                                             text: "◀"
-                                            color: "#edf0fa"
+                                            color: root.palette.foreground
                                             font.pixelSize: 12
                                         }
                                         MouseArea {
@@ -614,11 +658,11 @@ Scope {
                                         width: 34
                                         height: 34
                                         radius: 8
-                                        color: "#523b79"
+                                        color: root.tint("accent", 0.65)
                                         Text {
                                             anchors.centerIn: parent
                                             text: modelData.isPlaying ? "Ⅱ" : "▶"
-                                            color: "#ffffff"
+                                            color: root.palette.selectionForeground
                                             font.pixelSize: 15
                                         }
                                         MouseArea {
@@ -631,11 +675,11 @@ Scope {
                                         width: 30
                                         height: 30
                                         radius: 7
-                                        color: "#222c40"
+                                        color: root.palette.surfaceAlt
                                         Text {
                                             anchors.centerIn: parent
                                             text: "▶"
-                                            color: "#edf0fa"
+                                            color: root.palette.foreground
                                             font.pixelSize: 12
                                         }
                                         MouseArea {
@@ -648,11 +692,11 @@ Scope {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: "#293244" }
+                    Rectangle { width: parent.width; height: 1; color: root.tint("accent", 0.35) }
 
                     Text {
                         text: "CONNECTIVITY"
-                        color: "#a8afc4"
+                        color: root.palette.muted
                         font.family: "Inter"
                         font.pixelSize: 11
                     }
@@ -687,11 +731,11 @@ Scope {
                             width: (parent.width - 8) / 2
                             height: 38
                             radius: 8
-                            color: "#1a2230"
+                            color: root.palette.surfaceAlt
                             Text {
                                 anchors.centerIn: parent
                                 text: "Network settings"
-                                color: "#edf0fa"
+                                color: root.palette.foreground
                                 font.pixelSize: 11
                             }
                             MouseArea {
@@ -704,11 +748,11 @@ Scope {
                             width: (parent.width - 8) / 2
                             height: 38
                             radius: 8
-                            color: "#1a2230"
+                            color: root.palette.surfaceAlt
                             Text {
                                 anchors.centerIn: parent
                                 text: "Audio patchbay"
-                                color: "#edf0fa"
+                                color: root.palette.foreground
                                 font.pixelSize: 11
                             }
                             MouseArea {
@@ -724,7 +768,7 @@ Scope {
                             required property var modelData
                             width: parent.width
                             text: modelData.name + (modelData.connected ? " · Connected" : " · Disconnected")
-                            color: "#8e9ab4"
+                            color: root.palette.muted
                             font.pixelSize: 10
                         }
                     }
@@ -733,18 +777,18 @@ Scope {
                         text: Bluetooth.defaultAdapter
                               ? Bluetooth.defaultAdapter.name + (Bluetooth.defaultAdapter.enabled ? " · Bluetooth ready" : " · Bluetooth off")
                               : "No Bluetooth adapter detected"
-                        color: "#8e9ab4"
+                        color: root.palette.muted
                         font.pixelSize: 10
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: "#293244" }
+                    Rectangle { width: parent.width; height: 1; color: root.tint("accent", 0.35) }
 
                     Row {
                         width: parent.width
 
                         Text {
                             text: "OPEN WINDOWS"
-                            color: "#a8afc4"
+                            color: root.palette.muted
                             font.family: "Inter"
                             font.pixelSize: 11
                         }
@@ -753,7 +797,7 @@ Scope {
 
                         Text {
                             text: Hyprland.toplevels.count + " window(s)"
-                            color: "#8e9ab4"
+                            color: root.palette.muted
                             font.pixelSize: 10
                         }
                     }
@@ -766,9 +810,9 @@ Scope {
                             width: parent.width
                             height: 38
                             radius: 8
-                            color: modelData.activated ? "#302848" : "#141b29"
+                            color: modelData.activated ? root.tint("accent", 0.35) : root.palette.surface
                             border.width: 1
-                            border.color: modelData.activated ? "#665c91" : "#293244"
+                            border.color: modelData.activated ? root.tint("accent", 0.55) : root.tint("accent", 0.35)
 
                             Text {
                                 anchors.fill: parent
@@ -776,7 +820,7 @@ Scope {
                                 anchors.rightMargin: 12
                                 verticalAlignment: Text.AlignVCenter
                                 text: modelData.title || "Untitled window"
-                                color: "#edf0fa"
+                                color: root.palette.foreground
                                 font.pixelSize: 11
                                 elide: Text.ElideRight
                             }
@@ -791,14 +835,14 @@ Scope {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: "#293244" }
+                    Rectangle { width: parent.width; height: 1; color: root.tint("accent", 0.35) }
 
                     Row {
                         width: parent.width
 
                         Text {
                             text: "NOTIFICATIONS"
-                            color: "#a8afc4"
+                            color: root.palette.muted
                             font.family: "Inter"
                             font.pixelSize: 11
                         }
@@ -807,7 +851,7 @@ Scope {
 
                         Text {
                             text: notificationServer.trackedNotifications.count + " stored"
-                            color: "#8e9ab4"
+                            color: root.palette.muted
                             font.pixelSize: 10
                         }
 
@@ -815,11 +859,11 @@ Scope {
                             width: 62
                             height: 26
                             radius: 7
-                            color: "#31234a"
+                            color: root.tint("accent", 0.26)
                             Text {
                                 anchors.centerIn: parent
                                 text: "Clear all"
-                                color: "#f4f2ff"
+                                color: root.palette.selectionForeground
                                 font.pixelSize: 10
                             }
                             MouseArea {
@@ -840,9 +884,9 @@ Scope {
                             width: parent.width
                             height: notificationBody.implicitHeight + 54
                             radius: 9
-                            color: "#141b29"
+                            color: root.palette.surface
                             border.width: 1
-                            border.color: modelData.urgency === 2 ? "#87505e" : "#293244"
+                            border.color: modelData.urgency === 2 ? "#87505e" : root.tint("accent", 0.35)
 
                             Column {
                                 anchors.fill: parent
@@ -855,7 +899,7 @@ Scope {
                                     Text {
                                         width: parent.width - 72
                                         text: modelData.appName || "Notification"
-                                        color: "#9b87f5"
+                                        color: root.palette.accent
                                         font.pixelSize: 10
                                         elide: Text.ElideRight
                                     }
@@ -864,11 +908,11 @@ Scope {
                                         width: 62
                                         height: 22
                                         radius: 6
-                                        color: "#222c40"
+                                        color: root.palette.surfaceAlt
                                         Text {
                                             anchors.centerIn: parent
                                             text: "Dismiss"
-                                            color: "#c5cbe0"
+                                            color: root.palette.foreground
                                             font.pixelSize: 9
                                         }
                                         MouseArea {
@@ -880,7 +924,7 @@ Scope {
 
                                 Text {
                                     text: modelData.summary || "Notification"
-                                    color: "#edf0fa"
+                                    color: root.palette.foreground
                                     font.pixelSize: 12
                                     font.weight: Font.DemiBold
                                     wrapMode: Text.WordWrap
@@ -891,7 +935,7 @@ Scope {
                                     width: parent.width
                                     text: modelData.body || ""
                                     textFormat: Text.PlainText
-                                    color: "#a8afc4"
+                                    color: root.palette.muted
                                     font.pixelSize: 10
                                     wrapMode: Text.WordWrap
                                 }
@@ -899,7 +943,7 @@ Scope {
                         }
                     }
 
-                    Rectangle { width: parent.width; height: 1; color: "#293244" }
+                    Rectangle { width: parent.width; height: 1; color: root.tint("accent", 0.35) }
 
                     Row {
                         width: parent.width
@@ -909,11 +953,11 @@ Scope {
                             width: (parent.width - 8) / 2
                             height: 42
                             radius: 9
-                            color: "#1a2230"
+                            color: root.palette.surfaceAlt
                             Text {
                                 anchors.centerIn: parent
                                 text: "Next wallpaper"
-                                color: "#edf0fa"
+                                color: root.palette.foreground
                                 font.pixelSize: 11
                             }
                             MouseArea {
@@ -926,11 +970,11 @@ Scope {
                             width: (parent.width - 8) / 2
                             height: 42
                             radius: 9
-                            color: "#1a2230"
+                            color: root.palette.surfaceAlt
                             Text {
                                 anchors.centerIn: parent
                                 text: "Fenrir Doctor"
-                                color: "#edf0fa"
+                                color: root.palette.foreground
                                 font.pixelSize: 11
                             }
                             MouseArea {
@@ -943,7 +987,7 @@ Scope {
                     Text {
                         width: parent.width
                         text: "Hyprland · Quickshell · PipeWire · NetworkManager · BlueZ"
-                        color: "#707d96"
+                        color: root.palette.muted
                         font.pixelSize: 10
                         horizontalAlignment: Text.AlignHCenter
                     }
