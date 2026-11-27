@@ -873,21 +873,30 @@ def _storage_preflight(destination: Path, state_root: Path, pending: list[dict])
     state_probe = _nearest_existing_directory(state_root)
     destination_available = shutil.disk_usage(destination_probe).free
     state_available = shutil.disk_usage(state_probe).free
+    same_filesystem = destination_probe.stat().st_dev == state_probe.stat().st_dev
     # The downloader keeps one resumable partial in state and copies that one
     # image to a temporary destination file before atomic installation.
     destination_required = planned_bytes + largest_asset_bytes
     state_required = largest_asset_bytes
+    if same_filesystem:
+        same_filesystem_required = destination_required + state_required
+        sufficient = destination_available >= same_filesystem_required
+    else:
+        same_filesystem_required = None
+        sufficient = (
+            destination_available >= destination_required
+            and state_available >= state_required
+        )
     return {
         "destination_probe": str(destination_probe),
         "state_probe": str(state_probe),
+        "same_filesystem": same_filesystem,
         "destination_available_bytes": destination_available,
         "destination_required_bytes": destination_required,
         "state_available_bytes": state_available,
         "state_required_bytes": state_required,
-        "sufficient": (
-            destination_available >= destination_required
-            and state_available >= state_required
-        ),
+        "same_filesystem_required_bytes": same_filesystem_required,
+        "sufficient": sufficient,
     }
 
 
