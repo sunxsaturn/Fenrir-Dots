@@ -1,0 +1,6 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Waybar
+Exec=waybar
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
