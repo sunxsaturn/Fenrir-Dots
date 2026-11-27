@@ -1,0 +1,7 @@
+[Unit]
+Description=Apply the next Fenrir wallpaper and adapt the desktop theme
+After=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/fenrir-wallpaper next
