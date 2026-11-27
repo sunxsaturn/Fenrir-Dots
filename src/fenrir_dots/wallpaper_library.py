@@ -162,10 +162,17 @@ def _validate_registry(registry: dict) -> list[dict]:
         total += count
     if ids != CATEGORY_IDS or total != 5000 or sorted(x["target_count"] for x in categories).count(455) != 6:
         raise WallpaperSyncError("The category quotas must sum to 5000 (six 455s and five 454s)")
-    if (population.get("state") != "published"
-            or population.get("published_unique_images") != 5000
-            or population.get("legacy_images_reused") != 0):
-        raise WallpaperSyncError("The 5000-image public library is incomplete or reports legacy image reuse")
+    if (
+        population.get("state") != "published"
+        or population.get("target_unique_images") != 5000
+        or population.get("published_unique_images") != 5000
+        or population.get("unique_sha256_count") != 5000
+        or population.get("legacy_images_reused") != 0
+    ):
+        raise WallpaperSyncError(
+            "The 5000-image public library is incomplete, has non-unique SHA-256s, "
+            "or reports legacy image reuse"
+        )
     volumes = registry.get("volumes")
     if not isinstance(volumes, list) or not volumes:
         raise WallpaperSyncError("The registry has no gallery volumes")
