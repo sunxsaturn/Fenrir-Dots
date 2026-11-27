@@ -26,11 +26,45 @@ class QuickshellShellTests(unittest.TestCase):
         self.assertIn("Norse Cinematic", source)
         self.assertIn("Norse Performance", source)
 
-    def test_installer_requires_official_quickshell_and_version_018(self):
+    def test_installer_requires_official_quickshell_and_version_019(self):
         installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
         self.assertIn('command -v quickshell', installer)
-        self.assertIn('== "0.18.0"', installer)
+        self.assertIn('== "0.19.0"', installer)
         self.assertIn('quickshell-config', installer)
+
+    def test_system_center_uses_native_quickshell_services_and_controls(self):
+        source = SHELL.read_text(encoding="utf-8")
+        for required in (
+            "Quickshell.Services.Mpris",
+            "Quickshell.Services.Notifications",
+            "Quickshell.Services.Pipewire",
+            "Quickshell.Services.SystemTray",
+            "Quickshell.Networking",
+            "Quickshell.Bluetooth",
+            "NotificationServer",
+            "trackedNotifications",
+            "PwObjectTracker",
+            "Mpris.players",
+            "SystemTray.items",
+            "Networking.wifiEnabled",
+            "Bluetooth.defaultAdapter",
+            "focuswindow address:",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+
+    def test_quickshell_is_the_single_notification_server(self):
+        installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
+        hyprland = (ROOT / "config" / "hypr" / "hyprland.lua").read_text(encoding="utf-8")
+        self.assertIn("migrate_legacy_mako", installer)
+        self.assertIn('rm -f "$HOME/.config/autostart/fenrir-mako.desktop"', installer)
+        self.assertNotIn('hl.exec_cmd("mako")', hyprland)
+        self.assertNotIn("fenrir-mako.desktop", installer.split("for desktop in", 1)[1].split("done", 1)[0])
+
+    def test_installer_uses_versioned_managed_quickshell_directory(self):
+        installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
+        self.assertIn('== "0.19.0"', installer)
+        self.assertIn("fenrir-system-v0-19", installer)
 
     def test_shell_launches_only_fixed_application_commands(self):
         source = SHELL.read_text(encoding="utf-8")
