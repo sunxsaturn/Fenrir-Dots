@@ -18,7 +18,7 @@ hl.config({
     rounding = 12,
     active_opacity = 1.0,
     inactive_opacity = 1.0,
-    blur = { enabled = true, size = 6, passes = 2, xray = false },
+    blur = { enabled = false, size = 6, passes = 2, xray = false },
   },
   misc = { disable_hyprland_logo = true, vrr = 0 },
 })
