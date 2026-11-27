@@ -28,6 +28,10 @@ The public library is not the private Catalog. Local private assets are never pu
 
 The deployment profile includes Steam/Proton, GameMode, MangoHud, Gamescope, RPCS3 and Heroic, plus PipeWire, EasyEffects, QPWGraph, QjackCtl, Guitarix, Calf and REAPER/ReaPack where supported by the official Arch repositories.
 
+## Native application launcher
+
+Super+Space opens Fenrir's own searchable Quickshell launcher. It indexes visible XDG desktop entries, filters by name, description and category, and stores favorites in the user's private state directory. Launches use `gtk-launch` with the selected desktop ID; desktop-entry `Exec` text is never evaluated by the indexer. Super+Alt+Space retains Fuzzel as a fallback.
+
 ## Native shell services
 
 Super+Space opens Fenrir's own QML application launcher. It indexes visible XDG desktop entries, launches by desktop ID through `gtk-launch`, and stores favorites in the user state directory.
