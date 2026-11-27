@@ -80,6 +80,17 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(result["gpu_name"], "AMD Radeon RX 6750 XT")
 
 class DoctorUtilityTests(unittest.TestCase):
+    def test_release_fallbacks_match_current_component_versions(self):
+        self.assertEqual(server.APP_VERSION, "0.14.2")
+        self.assertEqual(
+            server.LOCAL_RELEASES,
+            {
+                "Fenrir-Arch": "0.9.4",
+                "Fenrir-Dots": "0.14.2",
+                "Fenrir-Wallpaper-Catalog": "0.35.1",
+            },
+        )
+
     def test_private_catalog_release_uses_authenticated_git_tags(self):
         import tempfile
         from unittest.mock import patch
