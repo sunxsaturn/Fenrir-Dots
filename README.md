@@ -1,6 +1,6 @@
 # Fenrir-Dots
 
-**Version:** 0.19.0
+**Version:** 0.19.1
 
 Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, an original Quickshell/Qt Quick/QML shell, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
 
@@ -30,7 +30,7 @@ The deployment profile includes Steam/Proton, GameMode, MangoHud, Gamescope, RPC
 
 ## Native shell services
 
-Quickshell provides the system tray, MPRIS, notifications, PipeWire audio, NetworkManager Wi-Fi and BlueZ Bluetooth integrations. Mako is not launched alongside the native notification server.
+Quickshell provides the system tray, MPRIS, notifications, PipeWire audio, NetworkManager Wi-Fi and BlueZ Bluetooth integrations. It also watches DWTE's validated `theme.json` tokens and updates the shell palette live, with a safe obsidian fallback. Mako is not launched alongside the native notification server.
 
 ## Command-line contracts
 
