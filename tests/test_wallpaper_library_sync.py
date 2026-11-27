@@ -250,11 +250,15 @@ class PublicLibraryCliTests(unittest.TestCase):
         from types import SimpleNamespace
         from unittest.mock import Mock
 
-        wallpaper_spec = importlib.util.spec_from_file_location(
-            "fenrir_wallpaper_cli", ROOT / "bin" / "fenrir-wallpaper"
+        from importlib.machinery import SourceFileLoader
+        wallpaper_loader = SourceFileLoader(
+            "fenrir_wallpaper_cli", str(ROOT / "bin" / "fenrir-wallpaper")
+        )
+        wallpaper_spec = importlib.util.spec_from_loader(
+            wallpaper_loader.name, wallpaper_loader
         )
         wallpaper_cli = importlib.util.module_from_spec(wallpaper_spec)
-        wallpaper_spec.loader.exec_module(wallpaper_cli)
+        wallpaper_loader.exec_module(wallpaper_cli)
         report = {
             "active_volumes": ["volume-01", "volume-02"],
             "unique_images": 7,
