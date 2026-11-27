@@ -22,8 +22,22 @@ Fenrir owns its shell UI. Quickshell is the Qt Quick/QML runtime and Wayland int
 
 The QML code does not evaluate user-provided strings or pass dynamic free-form text to a shell. Application and dispatcher invocations use fixed argument arrays.
 
-## Deliberate implementation boundary
+## System center increment (0.19.0)
 
-This is the shell foundation, not the complete blueprint UI. Notifications still use Mako as a compatibility backend. The first increment does not yet include the full notification history, task switcher, media center, system tray browser, audio mixer, network/BlueZ menus, full device profile panel, lockscreen or PAM-backed greeter. Those features require their own integration and runtime acceptance tests before being called complete.
+The native system center now integrates Quickshell's own service APIs:
 
-The shell has source-level contract tests. It still requires runtime testing on a clean Arch/Hyprland 0.57+ session, including hot-plugging monitors and checking that all panels exit cleanly.
+- System tray item discovery, icon display and primary/secondary activation.
+- MPRIS player discovery with previous, play/pause and next transport controls.
+- PipeWire default output volume and mute, plus default input mute, using bound audio nodes.
+- NetworkManager Wi-Fi power toggle and connection-state summary.
+- BlueZ adapter power toggle and adapter state summary.
+- Open-window switcher that focuses the selected Hyprland toplevel through the native dispatcher API.
+- A tracked notification center with reload retention, dismiss and clear-all actions. Quickshell owns the desktop notification service; the installer removes only Fenrir's old Mako autostart entry to prevent competing notification servers.
+
+The settings window groups these controls under Fimbulwinter styling. Network credential entry remains in NetworkManager's own connection editor; the shell does not handle or store Wi-Fi passwords.
+
+## Remaining acceptance boundary
+
+This increment does not yet include a PAM-backed lockscreen/greeter, a full power profile/device inventory surface, an advanced Bluetooth pairing workflow, tray DBus submenu rendering, notification action buttons/inline replies, or per-application audio routing. These are explicitly not represented as complete features.
+
+Source-level contracts run in CI. The desktop still requires runtime testing on a clean Arch/Hyprland 0.57+ session, especially PipeWire device hot-plug, Bluetooth adapter changes, tray menus, notification ownership, multi-monitor changes and Quickshell reload behavior.
