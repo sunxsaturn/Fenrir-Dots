@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Next Fenrir Wallpaper
-Comment=Choose a random wallpaper and refresh the accent palette
-Exec=fenrir-wallpaper next
-Icon=fenrir-wallpaper
-Terminal=false
-Categories=Utility;
