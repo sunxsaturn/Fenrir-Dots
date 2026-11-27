@@ -83,3 +83,72 @@ def glass_main(argv: list[str] | None = None) -> int:
     except (OSError, ValueError) as exc:
         print(f"fenrir-glass: {exc}", file=sys.stderr)
         return 2
+
+
+# Stable installer/Doctor contract: read-only plan followed by a full verified sync.
+def wallpaper_main() -> int:
+    import argparse
+    import json
+    from pathlib import Path
+    from .wallpaper_library import build_plan, sync_public_library
+    from .rotation import apply_next_wallpaper
+
+    destination = Path.home() / "Pictures" / "Wallpapers"
+    state_dir = Path.home() / ".local" / "state" / "fenrir" / "wallpaper-sync"
+    parser = argparse.ArgumentParser(prog="fenrir-wallpaper", description="Fenrir wallpaper rotation and public library")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("next", help="apply the next locally installed wallpaper")
+    plan = commands.add_parser("sync-public-plan", aliases=["audit-library"], help="read-only inventory and storage preflight")
+    plan.add_argument("--json", action="store_true")
+    sync = commands.add_parser("sync-public", help="download and verify every image in the published 5000-image gallery")
+    sync.add_argument("--json", action="store_true")
+    args = parser.parse_args()
+
+    if args.command == "next":
+        selected = apply_next_wallpaper(destination)
+        print(str(selected))
+        return 0
+
+    if args.command in {"sync-public-plan", "audit-library"}:
+        result = build_plan(destination, state_dir)
+        for key in ("_missing", "_registry", "_items"):
+            result.pop(key, None)
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return 0
+
+    result = sync_public_library(destination, state_dir)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
+
+
+def theme_main() -> int:
+    import argparse
+    import json
+    from pathlib import Path
+    from .theme import extract_palette, write_theme
+
+    parser = argparse.ArgumentParser(prog="fenrir-theme", description="derive the shared Fimbulwinter palette from a wallpaper")
+    parser.add_argument("image", type=Path)
+    args = parser.parse_args()
+    palette = extract_palette(args.image)
+    output = write_theme(palette, Path.home() / ".config" / "fenrir" / "theme")
+    print(json.dumps({"palette": palette, "theme_directory": str(output)}, indent=2))
+    return 0
+
+
+def glass_main() -> int:
+    import argparse
+    from .glass import set_glass, reload_hyprland
+
+    parser = argparse.ArgumentParser(prog="fenrir-glass", description="toggle Fimbulwinter Glass")
+    parser.add_argument("action", choices=("enable", "disable", "status"))
+    args = parser.parse_args()
+    if args.action == "status":
+        from pathlib import Path
+        state = Path.home() / ".config" / "hypr" / "fenrir-glass.lua"
+        print("enabled" if state.is_file() and "active_opacity = 0.80" in state.read_text(encoding="utf-8") else "disabled")
+        return 0
+    set_glass(args.action == "enable", 0.80)
+    reload_hyprland()
+    print("Fimbulwinter Glass " + ("enabled at 80%" if args.action == "enable" else "disabled"))
+    return 0
