@@ -1709,5 +1709,160 @@ class WallpaperDiscoverySchedulerTests(unittest.TestCase):
 
 
 
+
+class PublicWallpaperLibraryTests(unittest.TestCase):
+    def test_public_library_preview_uses_read_only_cli_and_validates_report(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import json
+        import tempfile
+
+        payload = {
+            "dry_run": True,
+            "active_volumes": ["volume-01", "volume-02", "volume-03"],
+            "manifest_records": 1000,
+            "unique_images": 980,
+            "already_present": 100,
+            "planned_downloads": 880,
+            "selected_downloads": 880,
+            "selected_download_bytes": 1024 * 1024 * 1024,
+            "remaining_after_limit": 0,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            destination = Path(temporary) / "Pictures" / "Wallpapers"
+            completed = SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr="")
+            with (
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"),
+                patch.object(server, "current_wallpaper_directory", return_value=destination),
+                patch.object(server.subprocess, "run", return_value=completed) as run,
+            ):
+                result = server.public_library_preview()
+
+        command = run.call_args.args[0]
+        self.assertEqual(command, ["/usr/bin/fenrir-wallpaper", "sync-library", "--dry-run", "--json"])
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["active_volumes"], ["volume-01", "volume-02", "volume-03"])
+        self.assertEqual(result["selected_downloads"], 880)
+        self.assertEqual(result["selected_download_bytes"], 1024 * 1024 * 1024)
+        self.assertFalse(destination.exists())
+        self.assertEqual(run.call_args.kwargs["timeout"], 180)
+
+    def test_public_library_preview_rejects_non_dry_run_report(self):
+        from types import SimpleNamespace
+        from unittest.mock import patch
+        import json
+
+        payload = {
+            "dry_run": False,
+            "active_volumes": ["volume-01"],
+            "manifest_records": 1,
+            "unique_images": 1,
+            "already_present": 0,
+            "planned_downloads": 1,
+            "selected_downloads": 1,
+            "selected_download_bytes": 1024,
+            "remaining_after_limit": 0,
+        }
+        with patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"), patch.object(
+            server.subprocess, "run",
+            return_value=SimpleNamespace(returncode=0, stdout=json.dumps(payload), stderr=""),
+        ):
+            with self.assertRaisesRegex(ValueError, "invalid public-library preview"):
+                server.public_library_preview()
+
+    def test_public_library_sync_requires_explicit_confirmation(self):
+        from unittest.mock import patch
+
+        with patch.object(server, "public_library_preview") as preview, patch.object(
+            server.subprocess, "Popen"
+        ) as process:
+            with self.assertRaisesRegex(ValueError, "Explicit confirmation"):
+                server.start_public_library_sync(False)
+        preview.assert_not_called()
+        process.assert_not_called()
+
+    def test_public_library_sync_refuses_to_overlap_catalog_sync(self):
+        from unittest.mock import patch
+
+        catalog_process = type("Process", (), {"poll": lambda self: None})()
+        with patch.object(server, "WALLPAPER_SYNC", catalog_process), patch.object(
+            server, "public_library_preview"
+        ) as preview, patch.object(server.subprocess, "Popen") as process:
+            with self.assertRaisesRegex(ValueError, "private Catalog synchronization is running"):
+                server.start_public_library_sync(True)
+        preview.assert_not_called()
+        process.assert_not_called()
+
+    def test_public_library_sync_rechecks_preview_and_starts_fixed_command(self):
+        import tempfile
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = root / "state"
+            log_path = state / "public-library-sync.log"
+            fake_process = SimpleNamespace(pid=4567, poll=lambda: None)
+            preview = {
+                "available": True,
+                "read_only": True,
+                "active_volumes": ["volume-01", "volume-02", "volume-03"],
+                "selected_downloads": 12,
+                "selected_download_bytes": 12_345,
+                "destination": str(root / "Pictures" / "Wallpapers"),
+            }
+            with (
+                patch.object(server, "PUBLIC_LIBRARY_SYNC", None),
+                patch.object(server, "WALLPAPER_SYNC", None),
+                patch.object(server, "STATE", state),
+                patch.object(server, "PUBLIC_LIBRARY_SYNC_LOG", log_path),
+                patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"),
+                patch.object(server, "public_library_preview", return_value=preview) as plan,
+                patch.object(server.subprocess, "Popen", return_value=fake_process) as popen,
+            ):
+                result = server.start_public_library_sync(True)
+
+            self.assertTrue(result["started"])
+            self.assertEqual(result["pid"], 4567)
+            self.assertEqual(result["selected_downloads"], 12)
+            self.assertTrue(log_path.is_file())
+            self.assertEqual(
+                popen.call_args.args[0],
+                ["/usr/bin/fenrir-wallpaper", "sync-library", "--json"],
+            )
+            self.assertIs(popen.call_args.kwargs["stdin"], server.subprocess.DEVNULL)
+            self.assertIs(popen.call_args.kwargs["stderr"], server.subprocess.STDOUT)
+            plan.assert_called_once()
+
+    def test_public_library_sync_returns_without_starting_when_everything_is_present(self):
+        from unittest.mock import patch
+
+        preview = {"selected_downloads": 0, "message": "all present"}
+        with patch.object(server, "PUBLIC_LIBRARY_SYNC", None), patch.object(
+            server, "WALLPAPER_SYNC", None
+        ), patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"), patch.object(
+            server, "public_library_preview", return_value=preview
+        ), patch.object(server.subprocess, "Popen") as process:
+            result = server.start_public_library_sync(True)
+        self.assertFalse(result["started"])
+        process.assert_not_called()
+
+    def test_public_library_status_reports_running_process_and_private_log_tail(self):
+        import tempfile
+        from unittest.mock import patch
+
+        with tempfile.TemporaryDirectory() as temporary:
+            log_path = Path(temporary) / "public-library-sync.log"
+            log_path.write_text("Verified volume-01 image 1/10\n", encoding="utf-8")
+            process = type("Process", (), {"poll": lambda self: None})()
+            with patch.object(server, "PUBLIC_LIBRARY_SYNC", process), patch.object(
+                server, "PUBLIC_LIBRARY_SYNC_LOG", log_path
+            ), patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"):
+                result = server.public_library_sync_snapshot()
+        self.assertTrue(result["available"])
+        self.assertTrue(result["running"])
+        self.assertIn("Verified volume-01", result["log"])
+
+
 if __name__ == "__main__":
     unittest.main()
