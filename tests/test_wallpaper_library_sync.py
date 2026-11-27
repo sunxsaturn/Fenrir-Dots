@@ -216,6 +216,33 @@ class PublicLibrarySyncTests(unittest.TestCase):
         self.assertFalse(self.destination.exists())
         self.assertFalse((self.root / "state").exists())
 
+    def test_storage_preflight_combines_space_when_destination_and_cache_share_filesystem(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": 1000})()
+            result = library.sync_public_library(
+                destination=self.destination,
+                dry_run=True,
+                opener=self.network,
+            )
+        storage = result["storage_preflight"]
+        self.assertTrue(storage["same_filesystem"])
+        self.assertEqual(
+            storage["same_filesystem_required_bytes"],
+            storage["destination_required_bytes"] + storage["state_required_bytes"],
+        )
+        self.assertTrue(storage["sufficient"])
+
+    def test_same_filesystem_preflight_detects_combined_space_shortfall(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": len(self.payload) * 2})()
+            with self.assertRaisesRegex(library.LibrarySyncError, "Insufficient free space"):
+                library.sync_public_library(
+                    destination=self.destination,
+                    opener=self.network,
+                )
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root / "state").exists())
+
     def test_sync_refuses_before_download_when_storage_is_insufficient(self):
         with patch.object(library.shutil, "disk_usage") as disk_usage:
             disk_usage.return_value = type("Usage", (), {"free": 1})()
