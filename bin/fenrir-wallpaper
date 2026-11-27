@@ -1,0 +1,5 @@
+#!/usr/bin/env python3
+"""Development-tree entrypoint for the public wallpaper library client."""
+from fenrir_dots.wallpaper_library import main
+
+raise SystemExit(main())
