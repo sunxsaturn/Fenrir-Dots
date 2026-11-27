@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Wallpaper Rotation Timer
+Comment=Start automatic Fenrir wallpaper rotation
+Exec=systemctl --user start fenrir-wallpaper.timer
+X-GNOME-Autostart-enabled=true
+NoDisplay=true
