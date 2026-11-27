@@ -7,14 +7,14 @@ name = "fenrir-dots"
 version = "0.17.0"
 description = "Fenrir Hyprland desktop, wallpaper theme and session services"
 requires-python = ">=3.13"
-dependencies = []
+dependencies = ["Pillow>=11.0"]
 
 [project.optional-dependencies]
 images = ["Pillow>=11.0"]
 test = []
 
 [project.scripts]
-fenrir-glass = "fenrir_dots.glass:main"
+fenrir-glass = "fenrir_dots.glass:main"\nfenrir-theme = "fenrir_dots.theme:main"\nfenrir-wallpaper = "fenrir_dots.wallpaper_library:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
