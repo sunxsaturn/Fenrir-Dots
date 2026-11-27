@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic Fenrir wallpaper rotation
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=15min
+Persistent=true
+Unit=fenrir-wallpaper.service
+
+[Install]
+WantedBy=timers.target
