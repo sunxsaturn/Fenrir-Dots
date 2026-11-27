@@ -399,6 +399,33 @@ class PublicLibrarySyncTests(unittest.TestCase):
         self.assertEqual(library._sha256_file(path), item["sha256"])
         self.assertFalse(partial.exists())
 
+    def test_conflicting_existing_target_is_never_overwritten(self):
+        volume = library._validate_registry(make_registry())[0]
+        item = library._validate_manifest(
+            {"schema": library.MANIFEST_SCHEMA, "count": 1, "items": [self.network.item]},
+            volume,
+        )[0]
+        target = self.destination / item["relative_path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        original = b"user-owned file that must remain untouched"
+        target.write_bytes(original)
+
+        with self.assertRaisesRegex(
+            library.LibrarySyncError, "Refusing to overwrite an existing file"
+        ):
+            library._download_image(
+                item,
+                state_dir=library._state_root(),
+                destination=self.destination,
+                timeout=45,
+                opener=self.network,
+            )
+
+        self.assertEqual(target.read_bytes(), original)
+        partial = library._state_root() / volume["id"] / f"{item['sha256']}.part"
+        self.assertTrue(partial.is_file())
+        self.assertEqual(partial.read_bytes(), self.payload)
+
     def test_range_download_resumes_existing_partial_file(self):
         volume = library._validate_registry(make_registry())[0]
         item = library._validate_manifest(
