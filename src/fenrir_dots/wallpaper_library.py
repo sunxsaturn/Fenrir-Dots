@@ -190,7 +190,7 @@ def _validate_manifest(manifest: dict, volume: dict) -> list[dict]:
             raise WallpaperSyncError("Wallpaper manifest dimensions must meet the 2560x1440 landscape minimum")
         if relative.stem != digest:
             raise WallpaperSyncError("Content-addressed image filename must equal its SHA-256")
-        if item.get("palette_policy") != "fenrir-wallpaper-palette-v2":
+        if item.get("palette_policy") != "fenrir-wallpaper-palette-v3":
             raise WallpaperSyncError("Image has not passed the current Fenrir wallpaper palette policy")
         seen_paths.add(path)
         seen_hashes.add(digest)
