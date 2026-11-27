@@ -158,20 +158,17 @@ class FenrirThemeTests(unittest.TestCase):
 
 
 class FenrirWallpaperTests(unittest.TestCase):
-    def test_default_collection_goal_is_20000_and_supported_overrides_remain_selectable(self):
+    def test_resolution_policy_has_no_collection_size_target(self):
         with tempfile.TemporaryDirectory() as temp:
             config = Path(temp) / "config"
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config)}, clear=False):
-                self.assertEqual(wallpaper.resolution_policy()[2], 20000)
+                self.assertEqual(wallpaper.resolution_policy(), (2560, 1440))
                 (config / "fenrir").mkdir(parents=True)
                 settings = config / "fenrir" / "settings.toml"
-                for target in (5000, 10000, 20000):
-                    settings.write_text(f"[wallpaper]\nminimum_count = {target}\n", encoding="utf-8")
-                    self.assertEqual(wallpaper.resolution_policy()[2], target)
-                settings.write_text("[wallpaper]\nminimum_count = 15000\n", encoding="utf-8")
-                self.assertEqual(wallpaper.resolution_policy()[2], 20000)
+                settings.write_text("[wallpaper]\\nminimum_count = 20000\\n", encoding="utf-8")
+                self.assertEqual(wallpaper.resolution_policy(), (2560, 1440))
 
-    def test_catalog_sync_cli_defaults_to_20000_target(self):
+    def test_catalog_sync_cli_has_no_image_count_target(self):
         result = {
             "collection_id": "fenrir-test",
             "catalog_sync": {"installed": 0, "already_present": 0, "skipped": {}},
@@ -183,7 +180,7 @@ class FenrirWallpaperTests(unittest.TestCase):
         ), patch("builtins.print"):
             self.assertEqual(wallpaper.main(), 0)
         sync.assert_called_once_with(
-            "fenrir-test", target_count=20000, database=None, quarantine_root=None
+            "fenrir-test", database=None, quarantine_root=None
         )
 
     def test_random_picker_excludes_unsupported_files_and_current_wallpaper(self):
@@ -212,7 +209,7 @@ class FenrirWallpaperTests(unittest.TestCase):
                 json.dumps({"path": str(first.resolve())}), encoding="utf-8"
             )
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False), patch.object(
-                wallpaper, "resolution_policy", return_value=(2560, 1440, 2)
+                wallpaper, "resolution_policy", return_value=(2560, 1440)
             ), patch.object(wallpaper.random, "choice", side_effect=lambda options: options[0]):
                 selected = wallpaper.next_wallpaper()
             self.assertEqual(selected.resolve(), second.resolve())
@@ -400,7 +397,6 @@ class FenrirWallpaperTests(unittest.TestCase):
             ):
                 result = wallpaper.sync_catalog_collection(
                     "collection-winter",
-                    target_count=5000,
                     database=database,
                     quarantine_root=quarantine,
                 )
