@@ -32,6 +32,30 @@ class QuickshellShellTests(unittest.TestCase):
         self.assertIn('== "0.19.0"', installer)
         self.assertIn('quickshell-config', installer)
 
+    def test_quickshell_consumes_live_dwte_palette_with_fallback(self):
+        source = SHELL.read_text(encoding="utf-8")
+        for required in (
+            "FileView",
+            'Quickshell.env("HOME")',
+            "/.config/fenrir/theme/theme.json",
+            "watchChanges: true",
+            "onFileChanged: reload()",
+            "JSON.parse(themeFile.text())",
+            "selection_foreground",
+            "root.palette.accent",
+            "root.palette.background",
+            "function tint(token, opacity)",
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+
+    def test_shell_keeps_safe_palette_fallback_when_theme_file_is_missing_or_invalid(self):
+        source = SHELL.read_text(encoding="utf-8")
+        self.assertIn('background: "#090b12"', source)
+        self.assertIn('accent: "#8b5cf6"', source)
+        self.assertIn("invalid theme.json; keeping the last valid palette", source)
+        self.assertIn("printErrors: false", source)
+
     def test_system_center_uses_native_quickshell_services_and_controls(self):
         source = SHELL.read_text(encoding="utf-8")
         for required in (
