@@ -11,7 +11,7 @@ Fenrir Dots owns the desktop configuration, user-facing tools and session servic
 | Configure monitors, appearance, shortcuts or startup apps | Open Fenrir Settings; see the [Settings source](../apps/fenrir-settings/) |
 | Learn the desktop and keybindings | Open Fenrir Welcome & Tutorial; see the [Welcome source](../apps/fenrir-welcome/) |
 | Diagnose the system or manage wallpaper intelligence | [Fenrir Doctor guide](../apps/fenrir-doctor/README.md) |
-| Synchronize the public multi-volume wallpaper library | [Public library guide](WALLPAPER-LIBRARY.md) |
+| Install and synchronize the complete public wallpaper library | [Public library guide](WALLPAPER-LIBRARY.md) — called automatically by the one-command Fenrir-Arch installer |
 | Understand private Catalog collection sync | See [Catalog integration](https://github.com/sunxsaturn/Fenrir-Wallpaper-Catalog/blob/main/docs/INTEGRATION.md) and the [desktop sync command](../README.md#private-catalog-collections) |
 | Understand version pins and releases | [Fenrir version policy](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/VERSIONING.md) |
 
