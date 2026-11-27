@@ -2355,6 +2355,93 @@ def wallpaper_snapshot() -> dict[str, Any]:
     }
 
 
+def public_library_audit_snapshot() -> dict[str, Any]:
+    """Return a read-only audit of published manifests across all active volumes."""
+    executable = shutil.which("fenrir-wallpaper")
+    if not executable:
+        raise ValueError("The Fenrir wallpaper companion is not installed.")
+    result = subprocess.run(
+        [executable, "audit-library", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "Public wallpaper library audit failed.").strip()
+        raise ValueError(detail[:300])
+    payload = strict_json(result.stdout.encode("utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("report") != "org.fenrir.public-wallpaper-library-audit"
+        or payload.get("report_version") != 1
+        or payload.get("read_only") is not True
+        or payload.get("downloads_started") != 0
+        or payload.get("image_bytes_fetched") != 0
+        or payload.get("files_modified") is not False
+        or payload.get("local_files_inspected") is not False
+        or payload.get("fixed_image_count_target") is not None
+        or not isinstance(payload.get("volumes"), list)
+        or not isinstance(payload.get("category_counts"), dict)
+        or payload.get("population_state") not in {"closed", "open"}
+        or payload.get("audit_status") not in {"clean", "review_required"}
+    ):
+        raise ValueError("The public-library audit did not satisfy its read-only contract.")
+    for field in (
+        "manifest_records", "unique_images", "duplicate_records",
+        "hash_metadata_conflicts", "hash_path_mismatches",
+        "invalid_dimensions", "below_desktop_resolution",
+        "manifested_image_bytes", "registered_volume_count", "active_volume_count",
+    ):
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Public-library audit returned an invalid count: {field}.")
+    volumes = []
+    for volume in payload["volumes"]:
+        if (
+            not isinstance(volume, dict)
+            or not isinstance(volume.get("id"), str)
+            or not isinstance(volume.get("repository"), str)
+            or not isinstance(volume.get("status"), str)
+            or not isinstance(volume.get("acquisition_enabled"), bool)
+            or not isinstance(volume.get("image_count"), int)
+            or not isinstance(volume.get("category_counts"), dict)
+        ):
+            raise ValueError("Public-library audit returned invalid volume metadata.")
+        volumes.append({
+            "id": volume["id"],
+            "repository": volume["repository"],
+            "status": volume["status"],
+            "acquisition_enabled": volume["acquisition_enabled"],
+            "image_count": volume["image_count"],
+            "manifest_updated_at": volume.get("manifest_updated_at"),
+            "manifested_image_bytes": volume.get("manifested_image_bytes", 0),
+            "category_counts": volume["category_counts"],
+        })
+    return {
+        "report": payload["report"],
+        "population_state": payload["population_state"],
+        "audit_status": payload["audit_status"],
+        "no_fixed_image_target": payload.get("no_fixed_image_target") is True,
+        "registered_volume_count": payload["registered_volume_count"],
+        "active_volume_count": payload["active_volume_count"],
+        "acquisition_enabled": payload.get("acquisition_enabled") is True,
+        "manifest_records": payload["manifest_records"],
+        "unique_images": payload["unique_images"],
+        "duplicate_records": payload["duplicate_records"],
+        "hash_metadata_conflicts": payload["hash_metadata_conflicts"],
+        "hash_path_mismatches": payload["hash_path_mismatches"],
+        "invalid_dimensions": payload["invalid_dimensions"],
+        "below_desktop_resolution": payload["below_desktop_resolution"],
+        "manifested_image_bytes": payload["manifested_image_bytes"],
+        "category_counts": payload["category_counts"],
+        "metadata_missing_counts": payload.get("metadata_missing_counts", {}),
+        "metadata_fields_with_gaps": payload.get("metadata_fields_with_gaps", []),
+        "volumes": volumes,
+        "read_only": True,
+    }
+
+
 def public_library_preview() -> dict[str, Any]:
     """Run the public mirror's read-only registry and manifest preflight."""
     executable = shutil.which("fenrir-wallpaper")
@@ -2715,6 +2802,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send_bytes(200, start_wallpaper_rights_review_studio())
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                 return self.send_bytes(503, {"error": str(exc)[:300]})
+
+        if path == "/api/doctor/wallpapers/public-library-audit":
+            try:
+                return self.send_bytes(200, public_library_audit_snapshot())
+            except (OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
 
         if path == "/api/doctor/wallpapers/public-library-plan":
             try:
