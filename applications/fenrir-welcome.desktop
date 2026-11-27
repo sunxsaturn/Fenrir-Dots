@@ -1,8 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Fenrir Welcome & Tutorial
-Comment=Search the Fenrir desktop guide and keybinding reference
-Exec=fenrir-welcome
-Icon=fenrir-desktop
-Terminal=false
-Categories=Utility;Documentation;

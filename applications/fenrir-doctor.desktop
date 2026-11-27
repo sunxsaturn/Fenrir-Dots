@@ -1,9 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Fenrir Doctor
-Comment=Local AI, system diagnostics, recovery and updates
-Exec=fenrir-doctor open
-Icon=fenrir-doctor
-Terminal=false
-Categories=Utility;Development;System;
-StartupNotify=false

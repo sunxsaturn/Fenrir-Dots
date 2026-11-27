@@ -1,4 +1,0 @@
-@import url("fenrir-palette.css");
-/* Fimbulwinter Glass: dynamic wallpaper accent, 60% opaque panel surfaces. */
-window.background { background-color: @fenrir_surface; color: @fenrir_fg; }
-button { border-radius: 9px; }
