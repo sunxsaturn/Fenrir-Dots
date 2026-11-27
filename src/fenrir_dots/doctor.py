@@ -6,13 +6,19 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import gi
 gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, Gio, GLib
+from gi.repository import Gtk, GLib
 
 APP_ID = "org.fenrir.desktop.doctor"
+PROVIDER_TERMS_URLS = {
+    "cleveland": "https://www.clevelandart.org/terms-and-conditions",
+    "met": "https://www.metmuseum.org/about-the-met/policies-and-documents/open-access-policy",
+    "wikimedia": "https://foundation.wikimedia.org/wiki/Policy:Terms_of_Use",
+}
 
 
 def command(args: list[str], timeout: int = 30) -> tuple[int, str]:
@@ -49,7 +55,12 @@ class FenrirDoctor(Gtk.Application):
         self.rationale = None
         self.action_label = None
         self.open_button = None
+        self.terms_button = None
         self.preview_button = None
+        self.source_reviewed = None
+        self.terms_reviewed = None
+        self.publish_gallery_button = None
+        self.publishing = False
         self.review_button = None
         self.acquire_button = None
         self.accept_button = None
@@ -113,6 +124,9 @@ class FenrirDoctor(Gtk.Application):
         open_diagnostics = Gtk.Button(label="System diagnostics")
         open_diagnostics.connect("clicked", self.show_diagnostics)
         toolbar.append(open_diagnostics)
+        self.publish_gallery_button = Gtk.Button(label="Publish complete 5,000-image gallery")
+        self.publish_gallery_button.connect("clicked", self.confirm_publish_gallery)
+        toolbar.append(self.publish_gallery_button)
         root.append(toolbar)
 
         paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
@@ -145,9 +159,12 @@ class FenrirDoctor(Gtk.Application):
         buttons = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         self.open_button = Gtk.Button(label="Open source page")
         self.open_button.connect("clicked", lambda *_: self.open_source())
+        self.terms_button = Gtk.Button(label="Open provider terms")
+        self.terms_button.connect("clicked", lambda *_: self.open_provider_terms())
         self.preview_button = Gtk.Button(label="Preview quarantine file")
         self.preview_button.connect("clicked", lambda *_: self.preview_asset())
         buttons.append(self.open_button)
+        buttons.append(self.terms_button)
         buttons.append(self.preview_button)
         right.append(buttons)
 
@@ -155,6 +172,12 @@ class FenrirDoctor(Gtk.Application):
         self.rationale = Gtk.Entry()
         self.rationale.set_placeholder_text("Explain the source, license and decision you reviewed…")
         right.append(self.rationale)
+        self.source_reviewed = Gtk.CheckButton(label="I inspected the original image page and its item-specific license.")
+        self.source_reviewed.connect("toggled", lambda *_: self._button_states())
+        right.append(self.source_reviewed)
+        self.terms_reviewed = Gtk.CheckButton(label="I reviewed the provider's current terms for this use.")
+        self.terms_reviewed.connect("toggled", lambda *_: self._button_states())
+        right.append(self.terms_reviewed)
 
         action_grid = Gtk.Grid(column_spacing=8, row_spacing=8)
         self.review_button = Gtk.Button(label="Approve rights + source terms")
@@ -205,8 +228,13 @@ class FenrirDoctor(Gtk.Application):
         item = self.selected or {}
         state = item.get("state")
         self.open_button.set_sensitive(bool(item.get("source_page")))
+        self.terms_button.set_sensitive(item.get("provider") in PROVIDER_TERMS_URLS)
         self.preview_button.set_sensitive(state in {"quarantined", "duplicate-review", "accepted"} and bool(item.get("validated_asset")))
-        self.review_button.set_sensitive(state in {"discovered", "rights-review", "deferred"})
+        self.review_button.set_sensitive(
+            state in {"discovered", "rights-review", "deferred"}
+            and self.source_reviewed.get_active()
+            and self.terms_reviewed.get_active()
+        )
         self.acquire_button.set_sensitive(state == "rights-review")
         self.accept_button.set_sensitive(state == "quarantined")
         self.publish_button.set_sensitive(state == "accepted")
@@ -218,19 +246,21 @@ class FenrirDoctor(Gtk.Application):
         try:
             population = catalog_json("population-status")
             inventory = catalog_json("inventory")
+            published = catalog_json("publication-status")
             self.candidates = catalog_json("candidates", "--limit", "250")
             counts = population.get("campaigns", {})
             self.status_label.set_text(
                 "Fenrir Doctor is running. Discovery is metadata-only; no image bytes are downloaded by campaigns."
             )
             category_text = ", ".join(
-                f"{key}: {value}/" + ("455" if index < 6 else "454")
-                for index, (key, value) in enumerate(sorted(inventory.get("by_category", {}).items()))
+                f"{key}: {value}" for key, value in sorted(inventory.get("by_category", {}).items())
             ) or "No candidates discovered yet."
             self.inventory_label.set_text(
                 f"Candidate metadata: {inventory.get('candidates', 0)}. "
-                f"Public target: 5,000 unique images. Legacy exclusions: 1,871 hashes. "
-                f"Images published: 0 until the public manifests are approved and populated.\n{category_text}"
+                f"Public target: 5,000 unique images. "
+                f"Published: {published.get('published_records', 0)}; "
+                f"remaining: {published.get('remaining', 5000)}. "
+                f"Legacy exclusion set: 1,871 hashes.\n{category_text}"
             )
             self.campaign_label.set_text(
                 "Campaigns: "
@@ -257,7 +287,6 @@ class FenrirDoctor(Gtk.Application):
             box.set_margin_end(8)
             headline = Gtk.Label(label=item.get("title", "Untitled"))
             headline.set_xalign(0)
-            headline.set_ellipsize(3)
             headline.add_css_class("heading")
             box.append(headline)
             detail = Gtk.Label(
@@ -280,6 +309,8 @@ class FenrirDoctor(Gtk.Application):
         if not 0 <= index < len(self.candidates):
             return
         self.selected = self.candidates[index]
+        self.source_reviewed.set_active(False)
+        self.terms_reviewed.set_active(False)
         try:
             detail = catalog_json("candidate-show", self.selected["asset_id"])
             self.selected = {**self.selected, **detail}
@@ -313,6 +344,12 @@ class FenrirDoctor(Gtk.Application):
         if url:
             subprocess.Popen(["xdg-open", url])
 
+    def open_provider_terms(self):
+        provider = (self.selected or {}).get("provider")
+        url = PROVIDER_TERMS_URLS.get(provider)
+        if url:
+            subprocess.Popen(["xdg-open", url])
+
     def preview_asset(self):
         validated = (self.selected or {}).get("validated_asset")
         path = validated.get("quarantine_path") if validated else None
@@ -328,6 +365,8 @@ class FenrirDoctor(Gtk.Application):
 
     def review_rights(self):
         try:
+            if not self.source_reviewed.get_active() or not self.terms_reviewed.get_active():
+                raise RuntimeError("Open and inspect both the original item and official provider terms before approving.")
             asset_id, rationale = self._selected_id(), self._rationale()
             self._run_action([
                 "rights-review", asset_id, "--reviewer", self._user(),
@@ -373,6 +412,57 @@ class FenrirDoctor(Gtk.Application):
             self._run_action(["campaign-run-next"])
         except Exception as exc:
             self._set_action(str(exc), True)
+
+    def confirm_publish_gallery(self, *_args):
+        dialog = Gtk.Dialog(
+            title="Publish the complete public wallpaper library",
+            transient_for=self.window,
+            modal=True,
+        )
+        dialog.add_button("Cancel", Gtk.ResponseType.CANCEL)
+        dialog.add_button("Publish 5,000 images", Gtk.ResponseType.ACCEPT)
+        label = Gtk.Label(
+            label=(
+                "This publishes only images that have passed rights review, acquisition, "
+                "technical validation, human acceptance and separate public-publication approval. "
+                "It may create additional public image-only repositories. The hub is activated "
+                "only after every volume has been pushed successfully."
+            )
+        )
+        label.set_wrap(True)
+        label.set_margin_top(18)
+        label.set_margin_bottom(18)
+        label.set_margin_start(18)
+        label.set_margin_end(18)
+        dialog.get_content_area().append(label)
+        dialog.connect("response", self._publish_response)
+        dialog.present()
+
+    def _publish_response(self, dialog, response):
+        dialog.close()
+        if response != Gtk.ResponseType.ACCEPT or self.publishing:
+            return
+        self.publishing = True
+        self.publish_gallery_button.set_sensitive(False)
+        self._set_action("Validating all 5,000 approved images and publishing image-only volumes…")
+        threading.Thread(target=self._publish_worker, daemon=True).start()
+
+    def _publish_worker(self):
+        code, output = command(
+            ["fenrir-catalog", "publish-public", "--reviewer", self._user()],
+            timeout=6 * 60 * 60,
+        )
+        GLib.idle_add(self._publish_complete, code, output)
+
+    def _publish_complete(self, code: int, output: str):
+        self.publishing = False
+        self.publish_gallery_button.set_sensitive(True)
+        self._set_action(
+            output or ("Public gallery publication completed." if code == 0 else "Public gallery publication failed."),
+            code != 0,
+        )
+        self.refresh()
+        return GLib.SOURCE_REMOVE
 
     def show_diagnostics(self, *_args):
         lines = []
