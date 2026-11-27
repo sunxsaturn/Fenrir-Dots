@@ -87,7 +87,7 @@ class QuickshellShellTests(unittest.TestCase):
 
     def test_installer_uses_versioned_managed_quickshell_directory(self):
         installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
-        self.assertIn('== "0.19.0"', installer)
+        self.assertIn('== "0.19.1"', installer)
         self.assertIn("fenrir-system-v0-19-1", installer)
 
     def test_shell_launches_only_fixed_application_commands(self):
