@@ -397,6 +397,8 @@ def _write_sidecar(destination: Path, value: dict) -> None:
 def _install_without_overwrite(partial: Path, target: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     _assert_no_symlink_components(target)
+    if target.exists():
+        raise LibrarySyncError(f"Refusing to overwrite an existing file: {target}")
     fd, temporary_name = tempfile.mkstemp(prefix=".fenrir-library-image-", dir=target.parent)
     try:
         with os.fdopen(fd, "wb") as output, partial.open("rb") as source:
@@ -510,7 +512,7 @@ def sync_public_library(
         raise LibrarySyncError("Network timeout must be between 5 and 300 seconds")
     opener = opener or urllib.request.urlopen
     progress = progress or (lambda _message: None)
-    root = _validate_destination(Path(destination), create=not dry_run)
+    root = _validate_destination(Path(destination), create=False)
 
     registry = _fetch_json(registry_url, timeout=timeout, opener=opener, label="Fenrir volume registry")
     volumes = _validate_registry(registry)
@@ -592,6 +594,7 @@ def sync_public_library(
     if dry_run:
         return result
 
+    root = _validate_destination(root, create=True)
     state_root = _state_root()
     _assert_no_symlink_components(state_root)
     state_root.mkdir(parents=True, exist_ok=True)
