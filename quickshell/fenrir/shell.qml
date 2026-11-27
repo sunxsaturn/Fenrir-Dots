@@ -17,13 +17,13 @@ Scope {
     property bool controlCenterOpen: false
     property string clockText: "--:--"
     property var palette: ({
-        background: root.palette.background,
+        background: "#090b12",
         surface: "#151a28",
         surfaceAlt: "#1d2434",
-        foreground: root.palette.foreground,
-        muted: root.palette.muted,
-        accent: root.palette.accent,
-        selectionForeground: root.palette.selectionForeground
+        foreground: "#edf0fa",
+        muted: "#a8afc4",
+        accent: "#8b5cf6",
+        selectionForeground: "#ffffff"
     })
 
     function refreshTheme() {
