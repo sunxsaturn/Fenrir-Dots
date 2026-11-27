@@ -855,6 +855,42 @@ def audit_public_library(
     }
 
 
+def _nearest_existing_directory(path: Path) -> Path:
+    current = path.expanduser()
+    while not current.exists():
+        if current.parent == current:
+            raise LibrarySyncError(f"No existing parent directory is available for storage inspection: {path}")
+        current = current.parent
+    if not current.is_dir():
+        raise LibrarySyncError(f"Storage inspection path is not a directory: {current}")
+    return current
+
+
+def _storage_preflight(destination: Path, state_root: Path, pending: list[dict]) -> dict:
+    planned_bytes = sum(int(item["size"]) for item in pending)
+    largest_asset_bytes = max((int(item["size"]) for item in pending), default=0)
+    destination_probe = _nearest_existing_directory(destination)
+    state_probe = _nearest_existing_directory(state_root)
+    destination_available = shutil.disk_usage(destination_probe).free
+    state_available = shutil.disk_usage(state_probe).free
+    # The downloader keeps one resumable partial in state and copies that one
+    # image to a temporary destination file before atomic installation.
+    destination_required = planned_bytes + largest_asset_bytes
+    state_required = largest_asset_bytes
+    return {
+        "destination_probe": str(destination_probe),
+        "state_probe": str(state_probe),
+        "destination_available_bytes": destination_available,
+        "destination_required_bytes": destination_required,
+        "state_available_bytes": state_available,
+        "state_required_bytes": state_required,
+        "sufficient": (
+            destination_available >= destination_required
+            and state_available >= state_required
+        ),
+    }
+
+
 def sync_public_library(
     *,
     destination: Path,
@@ -933,6 +969,8 @@ def sync_public_library(
     total_pending = len(pending)
     to_process = pending[:limit] if limit is not None else pending
     planned_bytes = sum(item["size"] for item in to_process)
+    state_root = _state_root()
+    storage = _storage_preflight(root, state_root, to_process)
     result = {
         "registry": registry_url,
         "destination": str(root),
@@ -945,6 +983,7 @@ def sync_public_library(
         "selected_downloads": len(to_process),
         "selected_download_bytes": planned_bytes,
         "remaining_after_limit": total_pending - len(to_process),
+        "storage_preflight": storage,
         "downloaded": 0,
         "downloaded_bytes": 0,
         "failed": 0,
@@ -953,9 +992,16 @@ def sync_public_library(
     }
     if dry_run:
         return result
+    if not storage["sufficient"]:
+        raise LibrarySyncError(
+            "Insufficient free space for the complete wallpaper synchronization: "
+            f"destination needs {storage['destination_required_bytes']} bytes "
+            f"({storage['destination_available_bytes']} available); "
+            f"download state needs {storage['state_required_bytes']} bytes "
+            f"({storage['state_available_bytes']} available)."
+        )
 
     root = _validate_destination(root, create=True)
-    state_root = _state_root()
     _assert_no_symlink_components(state_root)
     state_root.mkdir(parents=True, exist_ok=True)
     _assert_no_symlink_components(state_root)
