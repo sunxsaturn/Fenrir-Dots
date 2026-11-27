@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Doctor
+Comment=System health and rights-aware wallpaper intelligence
+Exec=fenrir-doctor
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Utility;
