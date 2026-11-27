@@ -52,12 +52,19 @@ def make_registry():
             "main/manifest/index.json"
         ),
         "active": True,
+        "acquisition_enabled": False,
+        "status": "closed",
     }
     return {
         "schema": library.REGISTRY_SCHEMA,
         "library_id": "fenrir-wallpapers",
         "hub_repository": library.HUB_REPOSITORY,
         "volumes": [volume],
+        "population": {
+            "state": "closed",
+            "mode": "existing-assets-only",
+            "fixed_image_count_target": None,
+        },
     }
 
 
@@ -129,6 +136,40 @@ class PublicLibrarySyncTests(unittest.TestCase):
     def tearDown(self):
         self.environ.stop()
         self.temporary.cleanup()
+
+    def test_read_only_audit_reports_current_inventory_without_fetching_image_bytes(self):
+        result = library.audit_public_library(opener=self.network)
+        self.assertEqual(result["report"], "org.fenrir.public-wallpaper-library-audit")
+        self.assertEqual(result["population_state"], "closed")
+        self.assertEqual(result["fixed_image_count_target"], None)
+        self.assertTrue(result["no_fixed_image_target"])
+        self.assertEqual(result["manifest_records"], 1)
+        self.assertEqual(result["unique_images"], 1)
+        self.assertEqual(result["category_counts"], {"nordic-mythology-fantasy": 1})
+        self.assertTrue(result["read_only"])
+        self.assertEqual(result["image_bytes_fetched"], 0)
+        self.assertFalse(result["files_modified"])
+        self.assertEqual(len(self.network.calls), 2)
+        self.assertFalse(any("/nordic-mythology-fantasy/" in url for url, _headers in self.network.calls))
+        self.assertFalse(self.destination.exists())
+
+    def test_read_only_audit_flags_duplicate_content_hashes_across_volumes(self):
+        registry = make_registry()
+        first = registry["volumes"][0]
+        second = dict(first)
+        second.update({
+            "id": "volume-02",
+            "repository": "sunxsaturn/Fenrir-Wallpapers-02",
+            "manifest_url": "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers-02/main/manifest/index.json",
+        })
+        registry["volumes"] = [first, second]
+        self.network.registry = registry
+        result = library.audit_public_library(opener=self.network)
+        self.assertEqual(result["manifest_records"], 2)
+        self.assertEqual(result["unique_images"], 1)
+        self.assertEqual(result["duplicate_records"], 1)
+        self.assertEqual(result["audit_status"], "review_required")
+        self.assertFalse(result["acquisition_enabled"])
 
     def test_dry_run_reads_registry_and_manifests_without_creating_files(self):
         result = library.sync_public_library(
