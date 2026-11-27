@@ -619,6 +619,103 @@ class WallpaperDiscoveryTests(unittest.TestCase):
         self.assertEqual(result["report"]["collection_status"]["estimated_accepted_not_yet_local"], 1000)
         self.assertNotIn("forecast", result["report"])
 
+    def test_public_library_audit_snapshot_is_read_only_and_sanitized(self):
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        payload = {
+            "report": "org.fenrir.public-wallpaper-library-audit",
+            "report_version": 1,
+            "population_state": "closed",
+            "audit_status": "review_required",
+            "no_fixed_image_target": True,
+            "fixed_image_count_target": None,
+            "acquisition_enabled": False,
+            "registered_volume_count": 3,
+            "active_volume_count": 3,
+            "manifest_records": 1871,
+            "unique_images": 1871,
+            "duplicate_records": 0,
+            "hash_metadata_conflicts": 0,
+            "hash_path_mismatches": 0,
+            "invalid_dimensions": 0,
+            "below_desktop_resolution": 0,
+            "manifested_image_bytes": 123456,
+            "source_page_invalid": 0,
+            "license_review_or_exclusion": 2,
+            "repositories_over_storage_limit": 0,
+            "repositories_storage_unknown": 0,
+            "category_counts": {"arctic-blue-violet": 228},
+            "category_balance": {
+                "category_count": 9,
+                "minimum_images": 111,
+                "maximum_images": 228,
+                "spread": 117,
+                "counts": {"arctic-blue-violet": 228},
+                "note": "Observed distribution only.",
+            },
+            "metadata_missing_counts": {"creator": 1},
+            "metadata_fields_with_gaps": ["creator"],
+            "license_counts": {
+                "permitted_family": 1800, "excluded": 1,
+                "manual_review": 1, "missing": 0,
+            },
+            "palette": {
+                "family_record_counts": {"blue": 1000},
+                "missing_records": 0,
+                "invalid_color_values": 0,
+                "excluded_yellow_orange_brown_records": 0,
+                "preferred_family_records": 1700,
+                "green_only_records": 100,
+                "note": "Manifest dominant colors only.",
+            },
+            "storage_safety_limit_bytes": 10 * 1024**3,
+            "volumes": [{
+                "id": "volume-01",
+                "repository": "sunxsaturn/Fenrir-Wallpapers",
+                "status": "closed",
+                "acquisition_enabled": False,
+                "image_count": 134,
+                "manifest_updated_at": "2026-11-26T21:10:04Z",
+                "manifested_image_bytes": 1024,
+                "category_counts": {"arctic-blue-violet": 20},
+                "storage": {
+                    "api_reported_size_kib": 1024,
+                    "api_reported_size_bytes": 1024 * 1024,
+                    "safety_limit_bytes": 10 * 1024**3,
+                    "headroom_bytes": 10 * 1024**3 - 1024 * 1024,
+                    "status": "within_safety_limit",
+                    "detail": "test",
+                },
+            }],
+            "read_only": True,
+            "downloads_started": 0,
+            "image_bytes_fetched": 0,
+            "files_modified": False,
+            "local_files_inspected": False,
+        }
+        completed = SimpleNamespace(
+            returncode=0, stdout=json.dumps(payload), stderr=""
+        )
+        with (
+            patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"),
+            patch.object(server.subprocess, "run", return_value=completed) as run,
+        ):
+            report = server.public_library_audit_snapshot()
+
+        self.assertEqual(report["manifest_records"], 1871)
+        self.assertEqual(report["unique_images"], 1871)
+        self.assertEqual(report["population_state"], "closed")
+        self.assertEqual(report["category_balance"]["spread"], 117)
+        self.assertEqual(report["license_counts"]["manual_review"], 1)
+        self.assertEqual(report["palette"]["missing_records"], 0)
+        self.assertEqual(report["volumes"][0]["storage"]["status"], "within_safety_limit")
+        self.assertTrue(report["read_only"])
+        self.assertEqual(run.call_args.args[0], [
+            "/usr/bin/fenrir-wallpaper", "audit-library", "--json"
+        ])
+
     def test_all_catalog_discovery_profiles_are_available_to_doctor(self):
         self.assertEqual(
             server.DISCOVERY_PROFILES,
