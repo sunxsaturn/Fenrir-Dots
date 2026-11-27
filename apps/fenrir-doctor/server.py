@@ -2356,7 +2356,7 @@ def wallpaper_snapshot() -> dict[str, Any]:
 
 
 def public_library_audit_snapshot() -> dict[str, Any]:
-    """Return a read-only audit of published manifests across all active volumes."""
+    """Return a sanitized read-only report of the existing public library."""
     executable = shutil.which("fenrir-wallpaper")
     if not executable:
         raise ValueError("The Fenrir wallpaper companion is not installed.")
@@ -2383,19 +2383,30 @@ def public_library_audit_snapshot() -> dict[str, Any]:
         or payload.get("fixed_image_count_target") is not None
         or not isinstance(payload.get("volumes"), list)
         or not isinstance(payload.get("category_counts"), dict)
+        or not isinstance(payload.get("category_balance"), dict)
+        or not isinstance(payload.get("license_counts"), dict)
+        or not isinstance(payload.get("palette"), dict)
         or payload.get("population_state") not in {"closed", "open"}
         or payload.get("audit_status") not in {"clean", "review_required"}
     ):
         raise ValueError("The public-library audit did not satisfy its read-only contract.")
-    for field in (
+
+    count_fields = (
         "manifest_records", "unique_images", "duplicate_records",
         "hash_metadata_conflicts", "hash_path_mismatches",
         "invalid_dimensions", "below_desktop_resolution",
-        "manifested_image_bytes", "registered_volume_count", "active_volume_count",
-    ):
+        "manifested_image_bytes", "registered_volume_count",
+        "active_volume_count", "source_page_invalid",
+        "license_review_or_exclusion", "repositories_over_storage_limit",
+        "repositories_storage_unknown",
+    )
+    counts = {}
+    for field in count_fields:
         value = payload.get(field)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise ValueError(f"Public-library audit returned an invalid count: {field}.")
+        counts[field] = value
+
     volumes = []
     for volume in payload["volumes"]:
         if (
@@ -2404,10 +2415,13 @@ def public_library_audit_snapshot() -> dict[str, Any]:
             or not isinstance(volume.get("repository"), str)
             or not isinstance(volume.get("status"), str)
             or not isinstance(volume.get("acquisition_enabled"), bool)
+            or isinstance(volume.get("image_count"), bool)
             or not isinstance(volume.get("image_count"), int)
             or not isinstance(volume.get("category_counts"), dict)
+            or not isinstance(volume.get("storage"), dict)
         ):
             raise ValueError("Public-library audit returned invalid volume metadata.")
+        storage = volume["storage"]
         volumes.append({
             "id": volume["id"],
             "repository": volume["repository"],
@@ -2417,26 +2431,46 @@ def public_library_audit_snapshot() -> dict[str, Any]:
             "manifest_updated_at": volume.get("manifest_updated_at"),
             "manifested_image_bytes": volume.get("manifested_image_bytes", 0),
             "category_counts": volume["category_counts"],
+            "storage": {
+                "api_reported_size_kib": storage.get("api_reported_size_kib"),
+                "api_reported_size_bytes": storage.get("api_reported_size_bytes"),
+                "safety_limit_bytes": storage.get("safety_limit_bytes"),
+                "headroom_bytes": storage.get("headroom_bytes"),
+                "status": storage.get("status", "unknown"),
+                "detail": storage.get("detail", ""),
+            },
         })
+
+    palette = payload["palette"]
+    for field in (
+        "missing_records", "invalid_color_values",
+        "excluded_yellow_orange_brown_records", "preferred_family_records",
+        "green_only_records",
+    ):
+        value = palette.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Public-library audit returned invalid palette count: {field}.")
+
+    license_counts = payload["license_counts"]
+    for field in ("permitted_family", "excluded", "manual_review", "missing"):
+        value = license_counts.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Public-library audit returned invalid license count: {field}.")
+
     return {
         "report": payload["report"],
         "population_state": payload["population_state"],
         "audit_status": payload["audit_status"],
         "no_fixed_image_target": payload.get("no_fixed_image_target") is True,
-        "registered_volume_count": payload["registered_volume_count"],
-        "active_volume_count": payload["active_volume_count"],
         "acquisition_enabled": payload.get("acquisition_enabled") is True,
-        "manifest_records": payload["manifest_records"],
-        "unique_images": payload["unique_images"],
-        "duplicate_records": payload["duplicate_records"],
-        "hash_metadata_conflicts": payload["hash_metadata_conflicts"],
-        "hash_path_mismatches": payload["hash_path_mismatches"],
-        "invalid_dimensions": payload["invalid_dimensions"],
-        "below_desktop_resolution": payload["below_desktop_resolution"],
-        "manifested_image_bytes": payload["manifested_image_bytes"],
+        **counts,
         "category_counts": payload["category_counts"],
+        "category_balance": payload["category_balance"],
         "metadata_missing_counts": payload.get("metadata_missing_counts", {}),
         "metadata_fields_with_gaps": payload.get("metadata_fields_with_gaps", []),
+        "license_counts": license_counts,
+        "palette": palette,
+        "storage_safety_limit_bytes": payload.get("storage_safety_limit_bytes"),
         "volumes": volumes,
         "read_only": True,
     }
