@@ -85,7 +85,7 @@ class DoctorUtilityTests(unittest.TestCase):
         self.assertEqual(
             server.LOCAL_RELEASES,
             {
-                "Fenrir-Arch": "0.9.4",
+                "Fenrir-Arch": "0.9.5",
                 "Fenrir-Dots": "0.14.2",
                 "Fenrir-Wallpaper-Catalog": "0.36.0",
             },
