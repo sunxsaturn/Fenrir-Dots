@@ -12,7 +12,7 @@ A single theme engine generates matching tokens for Hyprland, Waybar, Kitty, GTK
 
 ## Glass mode
 
-Glass mode is a user-toggleable appearance profile. Its default active-surface opacity is 80%, with compositor blur where supported. Fullscreen, game, media, lock and authentication surfaces remain opaque. The profile can be controlled with `fenrir-glass enable|disable|status`.
+Glass mode is a user-toggleable appearance profile. Its default active-surface opacity is 60%, with compositor blur where supported. Fullscreen, game, media, lock and authentication surfaces remain opaque. The profile can be controlled with `fenrir-glass enable|disable|status`.
 
 ## Wallpaper integration
 
