@@ -1,6 +1,6 @@
 # Fenrir-Dots
 
-**Version:** 0.17.3
+**Version:** 0.17.4
 
 Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, Waybar, launcher, terminal, notifications, file manager, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
 
