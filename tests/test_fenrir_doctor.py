@@ -87,7 +87,7 @@ class DoctorUtilityTests(unittest.TestCase):
             {
                 "Fenrir-Arch": "0.9.4",
                 "Fenrir-Dots": "0.14.2",
-                "Fenrir-Wallpaper-Catalog": "0.35.1",
+                "Fenrir-Wallpaper-Catalog": "0.36.0",
             },
         )
 
