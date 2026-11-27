@@ -50,7 +50,6 @@ if not quickshellConfig:match("^[%w_-]+$") then quickshellConfig = "fenrir-syste
 
 hl.on("hyprland.start", function()
   hl.exec_cmd("quickshell --config " .. quickshellConfig)
-  hl.exec_cmd("mako")
   hl.exec_cmd("hyprpaper")
 end)
 
