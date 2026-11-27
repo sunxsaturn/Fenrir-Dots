@@ -57,6 +57,10 @@ Categories=System;Utility;
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
             self.assertEqual(path.parent.stat().st_mode & 0o777, 0o700)
 
+    def test_refuses_favorites_state_under_protected_storage(self):
+        with self.assertRaises(ValueError):
+            toggle_favorite("org.example.App", favorites_path=Path("/mnt/storage/favorites.json"))
+
     def test_rejects_path_like_favorite_ids(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaises(ValueError):
