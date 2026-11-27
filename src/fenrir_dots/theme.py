@@ -122,7 +122,7 @@ def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
     """Write a single palette and propagate it without replacing unrelated user settings."""
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    (output / "theme.json").write_text(json.dumps(palette, indent=2) + "\\n", encoding="utf-8")
+    (output / "theme.json").write_text(json.dumps(palette, indent=2) + "\n", encoding="utf-8")
 
     bg, surface = palette["background"], palette["surface"]
     fg, muted, accent = palette["foreground"], palette["muted"], palette["accent"]
@@ -132,38 +132,38 @@ def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
     selection_fg = palette["selection_foreground"]
 
     (output / "waybar.css").write_text(
-        f"window#waybar {{ background: {bg}cc; color: {fg}; border-bottom: 1px solid {border}; }}\\n"
+        f"window#waybar {{ background: {bg}cc; color: {fg}; border-bottom: 1px solid {border}; }}\n"
         f"#workspaces, #window, #clock, #network, #wireplumber, #battery, #tray {{ "
-        f"background: {surface}cc; color: {fg}; border-color: {border}; }}\\n"
-        f"#workspaces button.active {{ color: {accent}; }}\\n"
-        f"#workspaces button:hover {{ background: {accent_soft}; color: {accent_fg}; }}\\n",
+        f"background: {surface}cc; color: {fg}; border-color: {border}; }}\n"
+        f"#workspaces button.active {{ color: {accent}; }}\n"
+        f"#workspaces button:hover {{ background: {accent_soft}; color: {accent_fg}; }}\n",
         encoding="utf-8",
     )
     (output / "gtk.css").write_text(
-        f"@define-color fenrir_bg {bg};\\n"
-        f"@define-color fenrir_surface {surface};\\n"
-        f"@define-color fenrir_fg {fg};\\n"
-        f"@define-color fenrir_muted {muted};\\n"
-        f"@define-color fenrir_accent {accent};\\n"
-        f"@define-color fenrir_border {border};\\n"
-        "window, dialog { background-color: @fenrir_bg; color: @fenrir_fg; }\\n"
-        "headerbar, .background, popover, menu { background-color: @fenrir_surface; color: @fenrir_fg; }\\n"
-        "button { background-color: @fenrir_surface; color: @fenrir_fg; border: 1px solid @fenrir_border; }\\n"
-        "button:hover, button:checked { background-color: @fenrir_accent; color: #ffffff; }\\n"
-        "entry, textview, list, row { background-color: @fenrir_surface; color: @fenrir_fg; }\\n",
+        f"@define-color fenrir_bg {bg};\n"
+        f"@define-color fenrir_surface {surface};\n"
+        f"@define-color fenrir_fg {fg};\n"
+        f"@define-color fenrir_muted {muted};\n"
+        f"@define-color fenrir_accent {accent};\n"
+        f"@define-color fenrir_border {border};\n"
+        "window, dialog { background-color: @fenrir_bg; color: @fenrir_fg; }\n"
+        "headerbar, .background, popover, menu { background-color: @fenrir_surface; color: @fenrir_fg; }\n"
+        "button { background-color: @fenrir_surface; color: @fenrir_fg; border: 1px solid @fenrir_border; }\n"
+        "button:hover, button:checked { background-color: @fenrir_accent; color: #ffffff; }\n"
+        "entry, textview, list, row { background-color: @fenrir_surface; color: @fenrir_fg; }\n",
         encoding="utf-8",
     )
     (output / "kitty.conf").write_text(
-        f"background {bg}\\nforeground {fg}\\n"
-        f"selection_background {accent}\\nselection_foreground {selection_fg}\\n"
-        f"active_border_color {accent}\\ninactive_border_color {border}\\n"
-        f"cursor {accent}\\n",
+        f"background {bg}\nforeground {fg}\n"
+        f"selection_background {accent}\nselection_foreground {selection_fg}\n"
+        f"active_border_color {accent}\ninactive_border_color {border}\n"
+        f"cursor {accent}\n",
         encoding="utf-8",
     )
     (output / "qt.qss").write_text(
-        f"QWidget {{ color: {fg}; background-color: {bg}; }}\\n"
-        f"QPushButton {{ border: 1px solid {border}; border-radius: 8px; padding: 6px 12px; }}\\n"
-        f"QPushButton:hover {{ background-color: {palette.get('surface_alt', surface)}; }}\\n",
+        f"QWidget {{ color: {fg}; background-color: {bg}; }}\n"
+        f"QPushButton {{ border: 1px solid {border}; border-radius: 8px; padding: 6px 12px; }}\n"
+        f"QPushButton:hover {{ background-color: {palette.get('surface_alt', surface)}; }}\n",
         encoding="utf-8",
     )
 
@@ -191,34 +191,34 @@ def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
         "#414a60", "#a0a8ba", "#52617c", "#505b72", "#141a26",
         "#0d1018", "#171c29", muted, "#737d93", "#414a60",
     ]
-    qt_colors = "[ColorScheme]\\n"
-    qt_colors += "active_colors=" + ",".join(argb(value) for value in active_roles) + "\\n"
-    qt_colors += "inactive_colors=" + ",".join(argb(value) for value in inactive_roles) + "\\n"
-    qt_colors += "disabled_colors=" + ",".join(argb(value) for value in disabled_roles) + "\\n"
+    qt_colors = "[ColorScheme]\n"
+    qt_colors += "active_colors=" + ",".join(argb(value) for value in active_roles) + "\n"
+    qt_colors += "inactive_colors=" + ",".join(argb(value) for value in inactive_roles) + "\n"
+    qt_colors += "disabled_colors=" + ",".join(argb(value) for value in disabled_roles) + "\n"
     (output / "qt6ct-colors.conf").write_text(qt_colors, encoding="utf-8")
 
     starship = (
-        'format = "$directory$git_branch$git_status$python$cmd_duration$line_break$character"\\n'
-        "add_newline = true\\n"
-        f'[directory]\\nstyle = "bold {accent}"\\ntruncation_length = 3\\n'
-        f'[git_branch]\\nstyle = "bold {accent}"\\n'
-        f'[git_status]\\nstyle = "bold {accent}"\\n'
-        f'[python]\\nstyle = "bold {accent}"\\n'
-        f'[cmd_duration]\\nstyle = "dimmed {muted}"\\n'
-        f'[character]\\nsuccess_symbol = "[❯](bold {accent})"\\n'
-        'error_symbol = "[❯](bold #ff607a)"\\n'
+        'format = "$directory$git_branch$git_status$python$cmd_duration$line_break$character"\n'
+        "add_newline = true\n"
+        f'[directory]\nstyle = "bold {accent}"\ntruncation_length = 3\n'
+        f'[git_branch]\nstyle = "bold {accent}"\n'
+        f'[git_status]\nstyle = "bold {accent}"\n'
+        f'[python]\nstyle = "bold {accent}"\n'
+        f'[cmd_duration]\nstyle = "dimmed {muted}"\n'
+        f'[character]\nsuccess_symbol = "[❯](bold {accent})"\n'
+        'error_symbol = "[❯](bold #ff607a)"\n'
     )
     (output / "starship.toml").write_text(starship, encoding="utf-8")
 
     (output / "mako.conf").write_text(
-        f"background-color={surface}cc\\ntext-color={fg}\\nborder-color={border}\\n",
+        f"background-color={surface}cc\ntext-color={fg}\nborder-color={border}\n",
         encoding="utf-8",
     )
     (output / "fuzzel.ini").write_text(
-        "[colors]\\n"
-        f"background={bg[1:]}cc\\ntext={fg[1:]}ff\\n"
-        f"match={accent[1:]}ff\\nselection={accent_soft[1:]}\\n"
-        f"selection-text={selection_fg[1:]}ff\\nborder={accent[1:]}aa\\n",
+        "[colors]\n"
+        f"background={bg[1:]}cc\ntext={fg[1:]}ff\n"
+        f"match={accent[1:]}ff\nselection={accent_soft[1:]}\n"
+        f"selection-text={selection_fg[1:]}ff\nborder={accent[1:]}aa\n",
         encoding="utf-8",
     )
 
@@ -263,7 +263,7 @@ def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
                 found.add(key)
         missing = [f"{key}={value}" for key, value in updates.items() if key not in found]
         lines[target_end:target_end] = missing
-        atomic_write(path, "\\n".join(lines).rstrip() + "\\n")
+        atomic_write(path, "\n".join(lines).rstrip() + "\n")
 
     # Waybar and GTK consume a generated stylesheet via stable import files.
     atomic_write(home / ".config/waybar/fenrir-theme.css", (output / "waybar.css").read_text())
@@ -294,10 +294,10 @@ def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
     }, section="Appearance")
 
     hyprland_theme = (
-        "-- Generated by fenrir-theme from the active wallpaper.\\n"
+        "-- Generated by fenrir-theme from the active wallpaper.\n"
         "hl.config({ general = { col = { active_border = \"rgba("
         + accent[1:] + "ff) rgba(" + accent[1:] + "88) 45deg\", "
-        + "inactive_border = \"rgba(" + border[1:] + ")\", } } })\\n"
+        + "inactive_border = \"rgba(" + border[1:] + ")\", } } })\n"
     )
     atomic_write(home / ".config/hypr/fenrir-theme.lua", hyprland_theme)
     return output

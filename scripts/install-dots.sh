@@ -30,7 +30,7 @@ git -C "$DOTS_DIR" checkout --detach "$DOTS_COMMIT"
 actual="$(git -C "$DOTS_DIR" rev-parse HEAD)"
 [[ "$actual" == "$DOTS_COMMIT" ]] || die "Pinned Dots checkout mismatch."
 version="$(tr -d '\r\n' < "$DOTS_DIR/VERSION")"
-[[ "$version" == "0.17.2" ]] || die "Expected Dots 0.17.2, found $version."
+[[ "$version" == "0.17.3" ]] || die "Expected Dots 0.17.3, found $version."
 [[ -f "$DOTS_DIR/pyproject.toml" && -f "$DOTS_DIR/config/hypr/hyprland.lua" ]] || die "Pinned Dots source tree is incomplete."
 
 python3 -m venv "$VENV"

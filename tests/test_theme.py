@@ -37,11 +37,27 @@ class ThemeTests(unittest.TestCase):
             self.assertEqual(palette["accent_family"], "blue")
             self.assertEqual(palette["background"], "#090b12")
 
-    def test_theme_writes_consumer_tokens(self):
+    def test_theme_writes_valid_newline_delimited_consumer_tokens(self):
         with tempfile.TemporaryDirectory() as tmp:
-            out = write_theme({"background":"#090b12","surface":"#151a28","foreground":"#edf0fa","muted":"#a8afc4","accent":"#6999ee","border":"#6999ee88","selection_foreground":"#ffffff"},tmp)
-            for name in ("theme.json","waybar.css","gtk.css","kitty.conf","qt.qss","qt6ct-colors.conf","starship.toml"):
-                self.assertTrue((out/name).is_file())
+            palette = {
+                "background": "#090b12", "surface": "#151a28",
+                "foreground": "#edf0fa", "muted": "#a8afc4",
+                "accent": "#6999ee", "border": "#6999ee88",
+                "selection_foreground": "#ffffff",
+            }
+            out = write_theme(palette, tmp)
+            names = (
+                "theme.json", "waybar.css", "gtk.css", "kitty.conf", "qt.qss",
+                "qt6ct-colors.conf", "starship.toml", "mako.conf", "fuzzel.ini",
+            )
+            for name in names:
+                with self.subTest(name=name):
+                    data = (out / name).read_bytes()
+                    self.assertIn(b"\n", data)
+                    self.assertNotIn(b"\\n", data)
+            css = (out / "waybar.css").read_text(encoding="utf-8")
+            self.assertIn("window#waybar", css)
+            self.assertIn("color:", css)
 
 
 if __name__ == "__main__":
