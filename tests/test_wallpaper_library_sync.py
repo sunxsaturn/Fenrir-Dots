@@ -204,6 +204,32 @@ class PublicLibrarySyncTests(unittest.TestCase):
             with self.assertRaises(library.LibrarySyncError):
                 library._validate_destination(Path("/mnt/storage/wallpapers"), create=False)
 
+    def test_complete_partial_is_verified_and_installed_without_network(self):
+        volume = library._validate_registry(make_registry())[0]
+        item = library._validate_manifest(
+            {"schema": library.MANIFEST_SCHEMA, "count": 1, "items": [self.network.item]},
+            volume,
+        )[0]
+        cache = library._state_root() / volume["id"]
+        cache.mkdir(parents=True)
+        partial = cache / f"{item['sha256']}.part"
+        partial.write_bytes(self.payload)
+        self.destination.mkdir(parents=True)
+
+        def unexpected_network(*_args, **_kwargs):
+            raise AssertionError("A complete partial file must not trigger another HTTP request")
+
+        path, outcome = library._download_image(
+            item,
+            state_dir=library._state_root(),
+            destination=self.destination,
+            timeout=45,
+            opener=unexpected_network,
+        )
+        self.assertEqual(outcome, "downloaded")
+        self.assertEqual(library._sha256_file(path), item["sha256"])
+        self.assertFalse(partial.exists())
+
     def test_range_download_resumes_existing_partial_file(self):
         volume = library._validate_registry(make_registry())[0]
         item = library._validate_manifest(
