@@ -4,7 +4,11 @@
 
 This feature synchronizes the public, multi-repository wallpaper library into one local Fenrir rotation directory. It is separate from the private Wallpaper Catalog workflow.
 
+**Fresh installation:** Fenrir-Arch invokes this exact Dots sync command automatically after deploying the pinned dotfiles. The documented one-command installer downloads every manifest-listed image from all active volumes. No separate wallpaper download command is required after installation.
+
 ## Commands
+
+The following commands are available for existing installations, audits and recovery. They are not an additional step in a fresh system installation.
 
 Run the read-only registry and manifest audit (no image downloads and no local folder scan):
 
@@ -30,7 +34,7 @@ Process a small number of new images first:
 fenrir-wallpaper sync-library --limit 10
 ```
 
-Use `--json` with any command for a machine-readable report. The command uses the existing `wallpaper.directory` setting (default: `~/Pictures/Wallpapers`).
+Use `--json` with any command for a machine-readable report. The command uses the existing `wallpaper.directory` setting (default: `~/Pictures/Wallpapers`). The dry-run report includes destination and resumable-cache free space. A real sync refuses to start when either filesystem lacks the required capacity.
 
 ## Use Fenrir Settings and Doctor
 
@@ -67,7 +71,7 @@ The local directory structure is `<wallpaper.directory>/<category>/<sha256>.<ext
 - One failed image is reported without discarding other successfully synchronized images. The command exits nonzero when any image fails.
 - Use `--dry-run` to review the entire existing public library before synchronization. `--limit` remains a technical transfer-batch cap, not a collection-size goal.
 
-The first complete synchronization may require substantial disk space and network traffic. Check available space before starting it.
+The complete 1,871-image synchronization may require substantial disk space and network traffic. The one-command installer computes the exact missing-image byte total and checks destination/cache capacity before downloading; it stops before transfers if space is insufficient. Interrupted downloads remain resumable.
 
 ## Attribution
 
