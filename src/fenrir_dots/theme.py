@@ -116,74 +116,126 @@ def extract_palette(image_path: Path | str) -> dict[str, str]:
 
 
 def write_theme(palette: dict[str, str], output_dir: Path | str) -> Path:
+    """Write a single palette and propagate it without replacing unrelated user settings."""
     output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
-    (output / "theme.json").write_text(json.dumps(palette, indent=2) + "\n", encoding="utf-8")
+    (output / "theme.json").write_text(json.dumps(palette, indent=2) + "\\n", encoding="utf-8")
+
+    bg, surface = palette["background"], palette["surface"]
+    fg, muted, accent = palette["foreground"], palette["muted"], palette["accent"]
+    border = palette["border"]
+    accent_soft = palette.get("accent_soft", accent + "66")
+    accent_fg = palette.get("accent_foreground", "#ffffff")
+    selection_fg = palette["selection_foreground"]
+
     (output / "waybar.css").write_text(
-        f":root {{ --fenrir-bg: {palette['background']}; --fenrir-surface: {palette['surface']}; "
-        f"--fenrir-fg: {palette['foreground']}; --fenrir-muted: {palette['muted']}; "
-        f"--fenrir-accent: {palette['accent']}; --fenrir-border: {palette['border']}; }}\n",
+        f"window#waybar {{ background: {bg}cc; color: {fg}; border-bottom: 1px solid {border}; }}\\n"
+        f"#workspaces, #window, #clock, #network, #wireplumber, #battery, #tray {{ "
+        f"background: {surface}cc; color: {fg}; border-color: {border}; }}\\n"
+        f"#workspaces button.active {{ color: {accent}; }}\\n"
+        f"#workspaces button:hover {{ background: {accent_soft}; color: {accent_fg}; }}\\n",
         encoding="utf-8",
     )
     (output / "gtk.css").write_text(
-        f"@define-color fenrir_bg {palette['background']};\n"
-        f"@define-color fenrir_surface {palette['surface']};\n"
-        f"@define-color fenrir_fg {palette['foreground']};\n"
-        f"@define-color fenrir_accent {palette['accent']};\n"
-        f"@define-color fenrir_border {palette['border']};\n",
+        f"@define-color fenrir_bg {bg};\\n"
+        f"@define-color fenrir_surface {surface};\\n"
+        f"@define-color fenrir_fg {fg};\\n"
+        f"@define-color fenrir_muted {muted};\\n"
+        f"@define-color fenrir_accent {accent};\\n"
+        f"@define-color fenrir_border {border};\\n"
+        "window, dialog { background-color: @fenrir_bg; color: @fenrir_fg; }\\n"
+        "headerbar, .background, popover, menu { background-color: @fenrir_surface; color: @fenrir_fg; }\\n"
+        "button { background-color: @fenrir_surface; color: @fenrir_fg; border: 1px solid @fenrir_border; }\\n"
+        "button:hover, button:checked { background-color: @fenrir_accent; color: #ffffff; }\\n"
+        "entry, textview, list, row { background-color: @fenrir_surface; color: @fenrir_fg; }\\n",
         encoding="utf-8",
     )
     (output / "kitty.conf").write_text(
-        f"background {palette['background']}\nforeground {palette['foreground']}\n"
-        f"selection_background {palette['accent']}\nselection_foreground {palette['selection_foreground']}\n"
-        f"active_border_color {palette['accent']}\ninactive_border_color {palette['border']}\n"
-        f"cursor {palette['accent']}\n",
+        f"background {bg}\\nforeground {fg}\\n"
+        f"selection_background {accent}\\nselection_foreground {selection_fg}\\n"
+        f"active_border_color {accent}\\ninactive_border_color {border}\\n"
+        f"cursor {accent}\\n",
         encoding="utf-8",
     )
     (output / "qt.qss").write_text(
-        f"QWidget {{ color: {palette['foreground']}; background-color: {palette['background']}; }}\n"
-        f"QPushButton {{ border: 1px solid {palette['border']}; border-radius: 8px; padding: 6px 12px; }}\n"
-        f"QPushButton:hover {{ background-color: {palette.get('surface_alt', palette['surface'])}; }}\n",
+        f"QWidget {{ color: {fg}; background-color: {bg}; }}\\n"
+        f"QPushButton {{ border: 1px solid {border}; border-radius: 8px; padding: 6px 12px; }}\\n"
+        f"QPushButton:hover {{ background-color: {palette.get('surface_alt', surface)}; }}\\n",
         encoding="utf-8",
     )
     (output / "mako.conf").write_text(
-        f"background-color={palette['surface']}cc\ntext-color={palette['foreground']}\n"
-        f"border-color={palette['border']}\n",
+        f"background-color={surface}cc\\ntext-color={fg}\\nborder-color={border}\\n",
         encoding="utf-8",
     )
     (output / "fuzzel.ini").write_text(
-        "[colors]\n"
-        f"background={palette['background'][1:]}cc\ntext={palette['foreground'][1:]}ff\n"
-        f"match={palette['accent'][1:]}ff\nselection={palette['accent_soft'][1:]}ff\n"
-        f"selection-text={palette['selection_foreground'][1:]}ff\n"
-        f"border={palette['border'][1:]}aa\n",
+        "[colors]\\n"
+        f"background={bg[1:]}cc\\ntext={fg[1:]}ff\\n"
+        f"match={accent[1:]}ff\\nselection={accent_soft[1:]}\\n"
+        f"selection-text={selection_fg[1:]}ff\\nborder={accent[1:]}aa\\n",
         encoding="utf-8",
     )
 
-    # Propagate the same generated tokens to each supported application.
     home = Path.home()
-    destinations = {
-        "waybar.css": home / ".config/waybar/fenrir-theme.css",
-        "gtk.css": home / ".config/gtk-3.0/fenrir-theme.css",
-    }
-    for source_name, destination in destinations.items():
+    default_output = home / ".config" / "fenrir" / "theme"
+    if output.resolve() != default_output.resolve():
+        return output
+
+    def atomic_write(destination: Path, content: str) -> None:
         destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_name(destination.name + ".tmp")
-        temporary.write_bytes((output / source_name).read_bytes())
+        temporary = destination.with_name(destination.name + ".fenrir-tmp")
+        temporary.write_text(content, encoding="utf-8")
         temporary.replace(destination)
 
-    gtk4 = home / ".config/gtk-4.0"
-    gtk4.mkdir(parents=True, exist_ok=True)
-    (gtk4 / "fenrir-theme.css").write_bytes((output / "gtk.css").read_bytes())
+    def replace_keys(path: Path, updates: dict[str, str], section: str | None = None) -> None:
+        """Update only selected config keys while preserving unrelated settings."""
+        lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+        target_start, target_end = 0, len(lines)
+        if section:
+            header = f"[{section}]"
+            try:
+                target_start = lines.index(header) + 1
+                target_end = next(
+                    (index for index in range(target_start, len(lines))
+                     if lines[index].strip().startswith("[") and lines[index].strip().endswith("]")),
+                    len(lines),
+                )
+            except ValueError:
+                if lines and lines[-1].strip():
+                    lines.append("")
+                lines.append(header)
+                target_start = len(lines)
+                target_end = len(lines)
+        found = set()
+        for index in range(target_start, target_end):
+            stripped = lines[index].strip()
+            if not stripped or stripped.startswith("#") or "=" not in stripped:
+                continue
+            key = stripped.split("=", 1)[0].strip()
+            if key in updates:
+                lines[index] = f"{key}={updates[key]}"
+                found.add(key)
+        missing = [f"{key}={value}" for key, value in updates.items() if key not in found]
+        lines[target_end:target_end] = missing
+        atomic_write(path, "\\n".join(lines).rstrip() + "\\n")
 
-    for source_name, relative in (
-        ("kitty.conf", ".config/kitty/fenrir-theme.conf"),
-        ("mako.conf", ".config/mako/fenrir-theme.conf"),
-        ("fuzzel.ini", ".config/fuzzel/fenrir-theme.ini"),
-    ):
-        destination = home / relative
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        temporary = destination.with_name(destination.name + ".tmp")
-        temporary.write_bytes((output / source_name).read_bytes())
-        temporary.replace(destination)
+    # Waybar and GTK consume a generated stylesheet via stable import files.
+    atomic_write(home / ".config/waybar/fenrir-theme.css", (output / "waybar.css").read_text())
+    atomic_write(home / ".config/gtk-3.0/fenrir-theme.css", (output / "gtk.css").read_text())
+    atomic_write(home / ".config/gtk-4.0/fenrir-theme.css", (output / "gtk.css").read_text())
+
+    # Kitty, Mako and Fuzzel configs are adjusted in-place only for color keys.
+    atomic_write(home / ".config/kitty/fenrir-theme.conf", (output / "kitty.conf").read_text())
+    replace_keys(home / ".config/kitty/kitty.conf", {
+        "background": bg, "foreground": fg, "selection_background": accent,
+        "selection_foreground": selection_fg, "active_border_color": accent,
+        "inactive_border_color": border, "cursor": accent,
+    })
+    replace_keys(home / ".config/mako/config", {
+        "background-color": surface + "cc", "text-color": fg, "border-color": border,
+    })
+    replace_keys(home / ".config/fuzzel/fuzzel.ini", {
+        "background": bg[1:] + "cc", "text": fg[1:] + "ff", "match": accent[1:] + "ff",
+        "selection": accent_soft[1:], "selection-text": selection_fg[1:] + "ff",
+        "border": accent[1:] + "aa",
+    }, section="colors")
     return output
