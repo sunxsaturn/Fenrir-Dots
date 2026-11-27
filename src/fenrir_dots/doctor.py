@@ -411,3 +411,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def control_center_main() -> int:
+    """Open Fenrir Doctor's desktop appearance and system control center."""
+    return main()

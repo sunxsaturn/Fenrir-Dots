@@ -30,12 +30,12 @@ git -C "$DOTS_DIR" checkout --detach "$DOTS_COMMIT"
 actual="$(git -C "$DOTS_DIR" rev-parse HEAD)"
 [[ "$actual" == "$DOTS_COMMIT" ]] || die "Pinned Dots checkout mismatch."
 version="$(tr -d '\r\n' < "$DOTS_DIR/VERSION")"
-[[ "$version" == "0.17.0" ]] || die "Expected Dots 0.17.0, found $version."
+[[ "$version" == "0.17.1" ]] || die "Expected Dots 0.17.1, found $version."
 [[ -f "$DOTS_DIR/pyproject.toml" && -f "$DOTS_DIR/config/hypr/hyprland.lua" ]] || die "Pinned Dots source tree is incomplete."
 
 python3 -m venv "$VENV"
 "$VENV/bin/python" -m pip install --disable-pip-version-check "$DOTS_DIR"
-for command_name in fenrir-wallpaper fenrir-theme fenrir-glass fenrir-doctor; do
+for command_name in fenrir-wallpaper fenrir-theme fenrir-glass fenrir-doctor fenrir-control-center; do
   [[ -x "$VENV/bin/$command_name" ]] || die "Missing installed command: $command_name"
   ln -sfn "$VENV/bin/$command_name" "$HOME/.local/bin/$command_name"
 done
@@ -66,10 +66,24 @@ for desktop in fenrir-wallpaper-timer.desktop fenrir-waybar.desktop fenrir-mako.
 done
 sudo install -Dm644 "$DOTS_DIR/applications/fenrir.desktop" /usr/share/wayland-sessions/fenrir.desktop
 install -Dm644 "$DOTS_DIR/applications/fenrir-doctor.desktop" "$HOME/.local/share/applications/fenrir-doctor.desktop"
+install -Dm644 "$DOTS_DIR/applications/fenrir-control-center.desktop" "$HOME/.local/share/applications/fenrir-control-center.desktop"
 
 mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/.local/state/fenrir"
+for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+  if [[ -f "$rc" ]] && ! grep -q 'starship init' "$rc"; then
+    shell_name=bash; [[ "$rc" == *.zshrc ]] && shell_name=zsh
+    printf '\n# Fenrir adaptive Fimbulwinter prompt\neval "$(starship init %s)"\n' "$shell_name" >> "$rc"
+  fi
+done
+mkdir -p "$HOME/.config/fish/conf.d"
+cat > "$HOME/.config/fish/conf.d/fenrir-starship.fish" <<'FISH'
+if status is-interactive
+    starship init fish | source
+end
+FISH
 if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]]; then
   systemctl --user daemon-reload
+  systemctl --user enable --now fenrir-wallpaper.timer
 fi
 log "Installed Fenrir-Dots $version at $actual."
 log "Hyprland session is available as Fenrir in SDDM."

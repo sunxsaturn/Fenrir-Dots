@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Fenrir Control Center
+Comment=Fimbulwinter appearance, desktop and wallpaper controls
+Exec=fenrir-control-center
+Icon=preferences-desktop-theme
+Terminal=false
+Categories=Settings;System;

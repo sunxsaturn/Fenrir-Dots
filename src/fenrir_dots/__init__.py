@@ -1,3 +1,3 @@
-"""Fenrir's Hyprland desktop and theme integration."""
+"""Fenrir's Hyprland desktop, adaptive theme and wallpaper integration."""
 
-__version__ = "0.17.0"
+__version__ = "0.17.1"

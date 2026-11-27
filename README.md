@@ -27,3 +27,10 @@ The target profile includes Steam/Proton, GameMode, MangoHud, Gamescope, RPCS3 a
 ## Release policy
 
 Canonical versions use three numeric components. Historical tags are never renumbered. The next implementation release must advance beyond v0.16.0.
+
+
+## Unified appearance and shell
+
+Wallpaper accents are generated from decoded pixels and propagated to Hyprland borders, GTK 3/4, Qt 6 via qt6ct, Waybar, Kitty, Mako, Fuzzel and Starship. Blue, red, purple, violet and black take precedence; green/white/neutral are fallbacks only. Yellow, brown, orange and pink-heavy images are excluded. The Qt palette is emitted in the Qt 6.6+ QPalette role order.
+
+Fimbulwinter Glass is controlled through `fenrir-glass enable|disable|status` or the Doctor/Control Center. It uses 80% active opacity by default; fullscreen, game, media, lock and authentication surfaces are kept opaque.
