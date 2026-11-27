@@ -87,7 +87,7 @@ class QuickshellShellTests(unittest.TestCase):
 
     def test_installer_uses_versioned_managed_quickshell_directory(self):
         installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
-        self.assertIn('== "0.19.1"', installer)
+        self.assertIn('== "0.20.0"', installer)
         self.assertIn("fenrir-system-v0-20", installer)
 
 
@@ -110,6 +110,33 @@ class QuickshellShellTests(unittest.TestCase):
                 self.assertIn(required, source)
         self.assertIn('qs ipc call fenrir toggleLauncher', hyprland)
         self.assertIn("fenrir-applications", installer)
+
+    def test_launcher_index_does_not_execute_desktop_exec_as_shell_text(self):
+        source = (ROOT / "src" / "fenrir_dots" / "applications.py").read_text(encoding="utf-8")
+        self.assertNotIn("subprocess", source)
+        self.assertNotIn("shell=True", source)
+        self.assertNotIn("os.system", source)
+
+
+    def test_native_application_launcher_uses_xdg_index_and_quickshell_ipc(self):
+        source = SHELL.read_text(encoding="utf-8")
+        hyprland = (ROOT / "config" / "hypr" / "hyprland.lua").read_text(encoding="utf-8")
+        installer = (ROOT / "scripts" / "install-dots.sh").read_text(encoding="utf-8")
+        for required in (
+            "IpcHandler",
+            'target: "fenrir"',
+            "toggleLauncher(): void",
+            "fenrir-applications",
+            '["gtk-launch", desktopId]',
+            "filteredApplications",
+            "launcherSearch",
+            "Favorites",
+            'text: modelData.favorite ? "★" : "☆"',
+        ):
+            with self.subTest(required=required):
+                self.assertIn(required, source)
+        self.assertIn('qs ipc call fenrir toggleLauncher', hyprland)
+        self.assertIn('fenrir-applications', installer)
 
     def test_launcher_index_does_not_execute_desktop_exec_as_shell_text(self):
         source = (ROOT / "src" / "fenrir_dots" / "applications.py").read_text(encoding="utf-8")
