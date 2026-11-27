@@ -98,7 +98,7 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.37.0\ndef456\trefs/tags/v0.38.0\n",
+                stdout="abc123\trefs/tags/v0.38.0\ndef456\trefs/tags/v0.39.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
