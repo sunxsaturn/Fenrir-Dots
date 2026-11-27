@@ -1,0 +1,8 @@
+[Unit]
+Description=Fenrir wallpaper rotation and dynamic theme
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/fenrir-wallpaper-rotate
