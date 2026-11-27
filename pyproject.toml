@@ -14,7 +14,9 @@ images = ["Pillow>=11.0"]
 test = []
 
 [project.scripts]
-fenrir-glass = "fenrir_dots.glass:main"\nfenrir-theme = "fenrir_dots.theme:main"\nfenrir-wallpaper = "fenrir_dots.wallpaper_library:main"
+fenrir-glass = "fenrir_dots.glass:main"
+fenrir-theme = "fenrir_dots.theme:main"
+fenrir-wallpaper = "fenrir_dots.wallpaper_library:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
