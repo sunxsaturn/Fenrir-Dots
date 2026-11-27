@@ -27,9 +27,14 @@ class ThemeTests(unittest.TestCase):
         self.assertEqual(classify_rgb(225, 90, 150), "pink")
 
     def test_only_yellow_orange_and_brown_are_excluded(self):
-        for rgb in ((240, 190, 20), (240, 110, 20), (160, 85, 35)):
-            with self.subTest(rgb=rgb), self.assertRaises(ValueError):
-                classify_rgb(*rgb)
+        expected = {
+            (240, 190, 20): "yellow",
+            (240, 110, 20): "orange",
+            (160, 85, 35): "brown",
+        }
+        for rgb, family in expected.items():
+            with self.subTest(rgb=rgb):
+                self.assertEqual(classify_rgb(*rgb), family)
         with tempfile.TemporaryDirectory() as tmp:
             for name, color in (
                 ("yellow", (240, 190, 20)),
