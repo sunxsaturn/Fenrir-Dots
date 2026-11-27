@@ -10,7 +10,24 @@ import sys
 from pathlib import Path
 from typing import Iterable
 
-APP_ID = "org.fenrir.desktop.launcher"
+
+def _safe_user_path(path: Path) -> None:
+    absolute = Path(os.path.abspath(path))
+    protected = Path("/mnt/storage")
+    if absolute == protected or protected in absolute.parents:
+        raise ValueError("Fenrir launcher state may not read or write /mnt/storage")
+    current = Path(absolute.anchor)
+    for part in absolute.parts[1:]:
+        current = current / part
+        if current.is_symlink():
+            raise ValueError(f"refusing symlinked launcher path: {current}")
+
+
+def _state_path() -> Path:
+    state_home = Path(os.environ.get("XDG_STATE_HOME") or (Path.home() / ".local/state"))
+    path = state_home / "fenrir/launcher-favorites.json"
+    _safe_user_path(path)
+    return path
 
 
 def application_dirs(environ: dict[str, str] | None = None) -> list[Path]:
@@ -19,8 +36,15 @@ def application_dirs(environ: dict[str, str] | None = None) -> list[Path]:
     data_dirs = env.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share")
     result = [data_home / "applications"]
     result.extend(Path(item) / "applications" for item in data_dirs.split(":") if item)
-    # Preserve XDG search order while avoiding duplicate directory reads.
-    return list(dict.fromkeys(result))
+    unique = list(dict.fromkeys(result))
+    safe = []
+    for path in unique:
+        try:
+            _safe_user_path(path)
+            safe.append(path)
+        except ValueError:
+            continue
+    return safe
 
 
 def _try_exec_available(value: str) -> bool:
@@ -41,13 +65,13 @@ def parse_desktop_file(path: Path, root: Path) -> dict | None:
         with path.open("r", encoding="utf-8") as stream:
             parser.read_file(stream)
         entry = parser["Desktop Entry"]
-    except (OSError, UnicodeError, configparser.Error, KeyError):
+        if entry.get("Type", "Application") != "Application":
+            return None
+        if entry.getboolean("Hidden", fallback=False) or entry.getboolean("NoDisplay", fallback=False):
+            return None
+    except (OSError, UnicodeError, configparser.Error, KeyError, ValueError):
         return None
 
-    if entry.get("Type", "Application") != "Application":
-        return None
-    if entry.getboolean("Hidden", fallback=False) or entry.getboolean("NoDisplay", fallback=False):
-        return None
     name = entry.get("Name", "").strip()
     exec_value = entry.get("Exec", "").strip()
     if not name or not exec_value or not _try_exec_available(entry.get("TryExec", "").strip()):
@@ -57,10 +81,11 @@ def parse_desktop_file(path: Path, root: Path) -> dict | None:
         relative = path.relative_to(root).as_posix()
     except ValueError:
         return None
-    desktop_id = relative.replace("/", "-")
-    if not desktop_id.endswith(".desktop"):
+    if not relative.endswith(".desktop") or ".." in Path(relative).parts:
         return None
-    desktop_id = desktop_id[:-8]
+    desktop_id = relative[:-8].replace("/", "-")
+    if not desktop_id or "/" in desktop_id or "\\" in desktop_id:
+        return None
     categories = [item.strip() for item in entry.get("Categories", "").split(";") if item.strip()]
     return {
         "desktop_id": desktop_id,
@@ -71,14 +96,21 @@ def parse_desktop_file(path: Path, root: Path) -> dict | None:
     }
 
 
-def load_favorites(path: Path) -> set[str]:
+def load_favorites(path: Path | None = None) -> set[str]:
+    favorites_file = path or _state_path()
+    _safe_user_path(favorites_file)
+    if favorites_file.is_symlink():
+        raise ValueError("refusing symlinked favorites file")
     try:
-        values = json.loads(path.read_text(encoding="utf-8"))
+        values = json.loads(favorites_file.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return set()
     if not isinstance(values, list):
         return set()
-    return {value for value in values if isinstance(value, str) and value and "/" not in value and "\\\\" not in value}
+    return {
+        value for value in values
+        if isinstance(value, str) and value and "/" not in value and "\\" not in value
+    }
 
 
 def list_applications(
@@ -86,13 +118,13 @@ def list_applications(
     favorites_path: Path | None = None,
 ) -> list[dict]:
     roots = list(directories if directories is not None else application_dirs())
-    favorites_file = favorites_path or (
-        Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
-        / "fenrir/launcher-favorites.json"
-    )
-    favorites = load_favorites(favorites_file)
+    favorites = load_favorites(favorites_path)
     found: dict[str, dict] = {}
     for root in roots:
+        try:
+            _safe_user_path(root)
+        except ValueError:
+            continue
         if not root.is_dir() or root.is_symlink():
             continue
         for current, dirs, files in os.walk(root, followlinks=False):
@@ -104,8 +136,7 @@ def list_applications(
             for filename in sorted(files):
                 if not filename.endswith(".desktop"):
                     continue
-                path = current_path / filename
-                record = parse_desktop_file(path, root)
+                record = parse_desktop_file(current_path / filename, root)
                 if record is not None:
                     found.setdefault(record["desktop_id"], record)
     for record in found.values():
@@ -120,12 +151,12 @@ def list_applications(
 
 
 def toggle_favorite(desktop_id: str, *, favorites_path: Path | None = None) -> bool:
-    if not desktop_id or "/" in desktop_id or "\\\\" in desktop_id or desktop_id.startswith("."):
+    if not desktop_id or "/" in desktop_id or "\\" in desktop_id or desktop_id.startswith("."):
         raise ValueError("invalid desktop application ID")
-    favorites_file = favorites_path or (
-        Path(os.environ.get("XDG_STATE_HOME", Path.home() / ".local/state"))
-        / "fenrir/launcher-favorites.json"
-    )
+    favorites_file = favorites_path or _state_path()
+    _safe_user_path(favorites_file)
+    if favorites_file.is_symlink():
+        raise ValueError("refusing symlinked favorites file")
     values = load_favorites(favorites_file)
     if desktop_id in values:
         values.remove(desktop_id)
@@ -134,8 +165,9 @@ def toggle_favorite(desktop_id: str, *, favorites_path: Path | None = None) -> b
         values.add(desktop_id)
         enabled = True
     favorites_file.parent.mkdir(parents=True, exist_ok=True)
+    _safe_user_path(favorites_file)
     temporary = favorites_file.with_name(favorites_file.name + ".tmp")
-    temporary.write_text(json.dumps(sorted(values), indent=2) + "\\n", encoding="utf-8")
+    temporary.write_text(json.dumps(sorted(values), indent=2) + "\n", encoding="utf-8")
     os.chmod(temporary, 0o600)
     os.replace(temporary, favorites_file)
     os.chmod(favorites_file.parent, 0o700)
