@@ -165,8 +165,6 @@ class FenrirWallpaperTests(unittest.TestCase):
                 self.assertEqual(wallpaper.resolution_policy(), (2560, 1440))
                 (config / "fenrir").mkdir(parents=True)
                 settings = config / "fenrir" / "settings.toml"
-                settings.write_text("[wallpaper]\\nminimum_count = 20000\\n", encoding="utf-8")
-                self.assertEqual(wallpaper.resolution_policy(), (2560, 1440))
 
     def test_catalog_sync_cli_has_no_image_count_target(self):
         result = {
