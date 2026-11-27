@@ -329,7 +329,6 @@ class FenrirDoctor(Gtk.Application):
     def review_rights(self):
         try:
             asset_id, rationale = self._selected_id(), self._rationale()
-            self.open_source()
             self._run_action([
                 "rights-review", asset_id, "--reviewer", self._user(),
                 "--license-decision", "approved", "--terms-decision", "approved",
