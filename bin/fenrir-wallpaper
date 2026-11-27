@@ -24,7 +24,6 @@ ALLOWED_ACCENTS = {"green", "neutral"}
 MAX_IMAGE_BYTES = 100 * 1024 * 1024
 DEFAULT_MIN_WIDTH = 2560
 DEFAULT_MIN_HEIGHT = 1440
-DEFAULT_MIN_COUNT = 20000
 
 
 def config_dir() -> Path:
@@ -52,17 +51,11 @@ def wallpaper_dir() -> Path:
     return Path(raw).expanduser()
 
 
-def resolution_policy() -> tuple[int, int, int]:
+def resolution_policy() -> tuple[int, int]:
     block = settings().get("wallpaper", {})
     width = max(DEFAULT_MIN_WIDTH, int(block.get("minimum_width", DEFAULT_MIN_WIDTH)))
     height = max(DEFAULT_MIN_HEIGHT, int(block.get("minimum_height", DEFAULT_MIN_HEIGHT)))
-    configured_count = block.get("minimum_count", DEFAULT_MIN_COUNT)
-    count = (
-        configured_count
-        if type(configured_count) is int and configured_count in {5000, 10000, 20000}
-        else DEFAULT_MIN_COUNT
-    )
-    return width, height, count
+    return width, height
 
 
 def classify_hex_color(value: str) -> str:
@@ -162,7 +155,7 @@ def validated_wallpapers() -> tuple[list[Path], int, int, int, dict[str, int]]:
     root = wallpaper_dir()
     if not root.is_dir():
         raise RuntimeError(f"Wallpaper directory does not exist: {root}")
-    min_width, min_height, _ = resolution_policy()
+    min_width, min_height = resolution_policy()
     index_path = state_dir() / "wallpaper-index.json"
     try:
         cached = json.loads(index_path.read_text(encoding="utf-8"))
@@ -378,7 +371,7 @@ def next_wallpapers() -> dict[str, Path]:
 
     files, invalid, total, _palette_excluded, scores = validated_wallpapers()
     if not files:
-        min_width, min_height, _minimum_count = resolution_policy()
+        min_width, min_height = resolution_policy()
         raise RuntimeError(
             f"No qualifying wallpapers found (checked {total} files; {invalid} rejected). "
             f"Add readable landscape images at least {min_width}x{min_height}."
@@ -508,12 +501,11 @@ def apply(path: Path | dict[str, Path]) -> None:
 
 def next_wallpaper() -> Path:
     files, invalid, total, palette_excluded, scores = validated_wallpapers()
-    min_width, min_height, minimum_count = resolution_policy()
+    min_width, min_height = resolution_policy()
     if not files:
         raise RuntimeError(
             f"No qualifying wallpapers found (checked {total} files; {invalid} rejected). "
-            f"Add readable landscape images at least {min_width}x{min_height}. "
-            f"The long-term collection target is {minimum_count}, but rotation does not wait for it."
+            f"Add readable landscape images at least {min_width}x{min_height}."
         )
     state = state_dir() / "wallpaper.json"
     current = None
@@ -529,32 +521,39 @@ def next_wallpaper() -> Path:
 
 def report_status(as_json: bool = False) -> int:
     valid, invalid, total, palette_excluded, _scores = validated_wallpapers()
-    _, _, minimum_count = resolution_policy()
     result = {
-        "directory": str(wallpaper_dir()), "valid_count": len(valid),
-        "rejected_count": invalid, "excluded_palette_count": palette_excluded, "file_count": total,
-        "minimum_count": minimum_count, "minimum_resolution": "2560x1440",
-        "preferred_resolution": "3840x2160+", "palette_policy": PALETTE_POLICY_ID,
+        "directory": str(wallpaper_dir()),
+        "valid_count": len(valid),
+        "rejected_count": invalid,
+        "excluded_palette_count": palette_excluded,
+        "file_count": total,
+        "minimum_resolution": "2560x1440",
+        "preferred_resolution": "3840x2160+",
+        "palette_policy": PALETTE_POLICY_ID,
         "excluded_colors": sorted(EXCLUDED_FAMILIES),
         "preferred_colors": sorted(PREFERRED_FAMILIES),
         "allowed_accents": sorted(ALLOWED_ACCENTS),
         "interval_minutes": int(settings().get("wallpaper", {}).get("interval_minutes", 15)),
         "monitor_mode": settings().get("wallpaper", {}).get("monitor_mode", "shared"),
         "history_depth": settings().get("wallpaper", {}).get("history_depth", 20),
-        "requirement_met": len(valid) >= minimum_count,
     }
     if as_json:
         print(json.dumps(result, indent=2))
     else:
-        print(f"Fenrir wallpapers: {len(valid):,} valid / {total:,} image files; {invalid:,} rejected ({palette_excluded:,} excluded by color palette)")
-        print(f"Target: at least {minimum_count:,}; minimum 2560x1440 landscape; preferred 3840x2160+")
+        print(
+            f"Fenrir wallpapers: {len(valid):,} qualifying / {total:,} image files; "
+            f"{invalid:,} rejected ({palette_excluded:,} excluded by color palette)"
+        )
+        print("Rotation uses every currently qualifying image; there is no collection-size target.")
+        print(f"Minimum resolution: landscape {result['minimum_resolution']}; preferred {result['preferred_resolution']}")
         print("Palette: exclude yellow/orange/brown; prefer red/purple/blue/white/black; green allowed")
         print(f"Directory: {result['directory']}")
         dynamic = bool(settings().get("theme", {}).get("dynamic_colors", True))
-        print(f"Rotation: every {result['interval_minutes']} minutes; monitor mode: {result['monitor_mode']}; no-repeat depth: {result['history_depth']}")
+        print(
+            f"Rotation: every {result['interval_minutes']} minutes; "
+            f"monitor mode: {result['monitor_mode']}; no-repeat depth: {result['history_depth']}"
+        )
         print(f"Dynamic accent extraction {'enabled' if dynamic else 'disabled'}")
-        print(f"{minimum_count:,}-image collection target: " + ("MET" if result["requirement_met"] else "NOT MET"))
-        print("Rotation uses all currently qualifying images; the collection target is not a prerequisite.")
     return 0
 
 
@@ -610,7 +609,6 @@ def launch_wallpaper_studio() -> None:
 def sync_catalog_collection(
     collection_id: str,
     *,
-    target_count: int = 20000,
     database: Path | None = None,
     quarantine_root: Path | None = None,
 ) -> dict:
@@ -622,9 +620,6 @@ def sync_catalog_collection(
         or any(ord(character) < 32 for character in collection_id)
     ):
         raise RuntimeError("A valid --collection-id is required for Catalog synchronization")
-    if target_count not in {5000, 10000, 20000}:
-        raise RuntimeError("Catalog target count must be 5000, 10000 or 20000")
-
     catalog_cli = shutil.which("fenrir-catalog")
     if not catalog_cli:
         fallback = Path.home() / ".local/bin/fenrir-catalog"
@@ -647,7 +642,6 @@ def sync_catalog_collection(
         "--database", str(database_path),
         "--quarantine-root", str(quarantine_path),
         "--destination", str(destination),
-        "--target-count", str(target_count),
         "--collection-id", collection_id.strip(),
     ]
     try:
@@ -696,11 +690,10 @@ def sync_catalog_collection(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["next", "watch", "status", "sync-catalog", "sync-library", "studio"], nargs="?", default="next")
+    parser.add_argument("action", choices=["next", "watch", "status", "sync-catalog", "sync-library", "audit-library", "studio"], nargs="?", default="next")
     parser.add_argument("--interval", type=int, default=0, help="Rotation interval in minutes (default: 15 or config)")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status")
     parser.add_argument("--collection-id", help="Existing curated Fenrir Catalog collection to stage into the wallpaper rotation directory.")
-    parser.add_argument("--target-count", type=int, choices=(5000, 10000, 20000), default=20000)
     parser.add_argument("--database", type=Path, help="Optional explicit Catalog database path.")
     parser.add_argument("--quarantine-root", type=Path, help="Optional explicit Catalog quarantine path.")
     parser.add_argument("--dry-run", action="store_true", help="Preview public-library synchronization without creating or changing files.")
@@ -709,6 +702,26 @@ def main() -> int:
     try:
         if args.action == "studio":
             launch_wallpaper_studio()
+            return 0
+        if args.action == "audit-library":
+            from fenrir_wallpaper_library import audit_public_library
+            result = audit_public_library()
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print(
+                    f"Public library: {result['manifest_records']:,} manifest records; "
+                    f"{result['unique_images']:,} unique images across "
+                    f"{result['active_volume_count']} active volumes."
+                )
+                print(
+                    "Population: " + result["population_state"]
+                    + "; fixed image-count target: none."
+                )
+                print(
+                    f"Duplicate records: {result['duplicate_records']}; "
+                    f"hash/path mismatches: {result['hash_path_mismatches']}."
+                )
             return 0
         if args.action == "sync-library":
             from fenrir_wallpaper_library import sync_public_library
@@ -751,7 +764,6 @@ def main() -> int:
         if args.action == "sync-catalog":
             result = sync_catalog_collection(
                 args.collection_id,
-                target_count=args.target_count,
                 database=args.database,
                 quarantine_root=args.quarantine_root,
             )
