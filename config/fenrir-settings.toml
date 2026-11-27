@@ -1,7 +1,6 @@
 [wallpaper]
 directory = "~/Pictures/Wallpapers"
 interval_minutes = 15
-minimum_count = 20000
 minimum_width = 2560
 minimum_height = 1440
 preferred_width = 3840
