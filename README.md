@@ -2,7 +2,11 @@
 
 **Version:** 0.18.0
 
-Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, Waybar, launcher, terminal, notifications, file manager, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
+Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, an original Quickshell/Qt Quick/QML shell, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
+
+## Native shell
+
+Fenrir launches its own Quickshell configuration from `~/.config/quickshell`. The first shell generation includes a multi-monitor top panel, Hyprland workspace controls, app dock and a quick control-center window. It is not based on a preconfigured third-party shell. The shell source is in `quickshell/fenrir/shell.qml`; see [Shell implementation](docs/SHELL.md) for the implemented surface and remaining work.
 
 ## Design direction
 
