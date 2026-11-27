@@ -13,6 +13,7 @@ dependencies = ["Pillow>=11.0"]
 fenrir-wallpaper = "fenrir_dots.cli:wallpaper_main"
 fenrir-theme = "fenrir_dots.cli:theme_main"
 fenrir-glass = "fenrir_dots.cli:glass_main"
+fenrir-doctor = "fenrir_dots.doctor:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
