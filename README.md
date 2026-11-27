@@ -1,5 +1,9 @@
 # Fenrir Dots
 
+**Version:** 0.14.0
+
+**Documentation:** [Project index](docs/README.md) · [Public wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Complete ecosystem map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md)
+
 Fenrir Dots is the visual and user-session layer of **Fenrir Desktop**, an original Arch Linux + Hyprland environment. The system installer lives in [Fenrir-Arch](https://github.com/sunxsaturn/Fenrir-Arch); this repository supplies the desktop configuration, applications and services.
 
 ## Installation
@@ -98,7 +102,19 @@ The GitHub mirror contains only assets with separate public-redistribution and p
 
 ## Multi-volume wallpaper library
 
-Fenrir's wallpaper library is indexed by [the Fenrir-Wallpapers volume registry](https://github.com/sunxsaturn/Fenrir-Wallpapers/blob/main/manifest/volumes.json). The registry identifies the hub and every image volume, along with each volume's image root and manifest. New numbered repositories will be added there rather than hard-coded into the desktop. The local wallpaper scanner already walks nested directories, so synchronized volumes can be exposed beneath one configured wallpaper root.
+Fenrir reads the canonical [volume registry](https://github.com/sunxsaturn/Fenrir-Wallpapers/blob/main/manifest/volumes.json), not a hard-coded volume list. Run a read-only preview first:
 
-The current repository is Volume 01. Future volumes are intended to use `Fenrir-Wallpapers-02`, `-03`, etc. A unified multi-volume sync command still needs to be wired to the registry before automatic desktop sync across all shards is considered complete.
+```bash
+fenrir-wallpaper sync-library --dry-run
+```
+
+Synchronize every active registered volume into the configured wallpaper directory:
+
+```bash
+fenrir-wallpaper sync-library
+```
+
+Use `--limit 10` for a small first batch, or `--json` for a machine-readable report. The command validates manifests, globally deduplicates SHA-256 content, resumes interrupted downloads, verifies image bytes and Fenrir's decoded-image quality/palette rules, preserves attribution in `.fenrir-public-library-attribution.json`, and never overwrites or deletes existing files. See the [complete sync guide](docs/WALLPAPER-LIBRARY.md).
+
+This public-library mirror is separate from `fenrir-wallpaper sync-catalog`, which copies explicitly curated, rights-approved and human-accepted assets from the private Catalog.
 

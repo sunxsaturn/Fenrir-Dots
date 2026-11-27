@@ -696,18 +696,58 @@ def sync_catalog_collection(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["next", "watch", "status", "sync-catalog", "studio"], nargs="?", default="next")
+    parser.add_argument("action", choices=["next", "watch", "status", "sync-catalog", "sync-library", "studio"], nargs="?", default="next")
     parser.add_argument("--interval", type=int, default=0, help="Rotation interval in minutes (default: 15 or config)")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable status")
     parser.add_argument("--collection-id", help="Existing curated Fenrir Catalog collection to stage into the wallpaper rotation directory.")
     parser.add_argument("--target-count", type=int, choices=(5000, 10000, 20000), default=20000)
     parser.add_argument("--database", type=Path, help="Optional explicit Catalog database path.")
     parser.add_argument("--quarantine-root", type=Path, help="Optional explicit Catalog quarantine path.")
+    parser.add_argument("--dry-run", action="store_true", help="Preview public-library synchronization without creating or changing files.")
+    parser.add_argument("--limit", type=int, help="Process at most this many missing public-library images.")
     args = parser.parse_args()
     try:
         if args.action == "studio":
             launch_wallpaper_studio()
             return 0
+        if args.action == "sync-library":
+            from fenrir_wallpaper_library import sync_public_library
+            result = sync_public_library(
+                destination=wallpaper_dir(),
+                dry_run=args.dry_run,
+                limit=args.limit,
+                progress=lambda message: print(f"fenrir-wallpaper: {message}", file=sys.stderr),
+            )
+            if result["downloaded"]:
+                try:
+                    valid, rejected, total, palette_excluded, _scores = validated_wallpapers()
+                    result["wallpaper_index"] = {
+                        "refreshed": True,
+                        "valid_count": len(valid),
+                        "rejected_count": rejected,
+                        "file_count": total,
+                        "palette_excluded_count": palette_excluded,
+                    }
+                except Exception as exc:
+                    result["wallpaper_index"] = {"refreshed": False, "error": str(exc)[:500]}
+            else:
+                result["wallpaper_index"] = {"refreshed": False}
+            if args.json:
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+            else:
+                print("Fenrir public wallpaper library preview:" if args.dry_run else "Fenrir public wallpaper library synchronized.")
+                print(f"Active volumes: {', '.join(result['active_volumes'])}")
+                print(f"Unique images: {result['unique_images']:,}; already present: {result['already_present']:,}.")
+                print(f"Downloads selected: {result['selected_downloads']:,} ({result['selected_download_bytes'] / (1024 * 1024):.1f} MiB).")
+                if not args.dry_run:
+                    print(f"Newly installed: {result['downloaded']:,}; failures: {result['failed']:,}.")
+                    if result["wallpaper_index"].get("refreshed"):
+                        print(f"Qualifying wallpapers indexed: {result['wallpaper_index']['valid_count']:,}.")
+                    elif result["downloaded"]:
+                        print(f"Wallpaper index refresh failed: {result['wallpaper_index'].get('error', 'unknown error')}")
+                if result["remaining_after_limit"]:
+                    print(f"Remaining after --limit: {result['remaining_after_limit']:,}.")
+            return 2 if result["failed"] else 0
         if args.action == "sync-catalog":
             result = sync_catalog_collection(
                 args.collection_id,
