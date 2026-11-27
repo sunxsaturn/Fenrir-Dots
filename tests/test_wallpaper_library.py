@@ -1,4 +1,10 @@
+import hashlib
+import io
+import tempfile
 import unittest
+import urllib.request
+from pathlib import Path
+from unittest.mock import patch
 
 from fenrir_dots.wallpaper_library import (
     MANIFEST_SCHEMA,
@@ -7,9 +13,13 @@ from fenrir_dots.wallpaper_library import (
     TOLERATED,
     EXCLUDED,
     WallpaperSyncError,
+    MAX_IMAGE_PIXELS,
+    _RawGitHubRedirect,
+    _assert_raw_github_response,
     _safe_path,
     _validate_manifest,
     _validate_registry,
+    _verify_image,
 )
 
 CATEGORIES = [
@@ -61,6 +71,94 @@ class WallpaperLibraryTests(unittest.TestCase):
             "source_terms_evidence_id": "terms:123",
             "palette_policy": "fenrir-wallpaper-palette-v3",
         }
+
+    def test_raw_github_redirect_handler_rejects_origin_changes(self):
+        handler = _RawGitHubRedirect()
+        request = urllib.request.Request(
+            "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/main/index.json"
+        )
+        accepted = handler.redirect_request(
+            request, io.BytesIO(), 302, "Found", {},
+            "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/main/manifest.json",
+        )
+        self.assertEqual(
+            accepted.full_url,
+            "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/main/manifest.json",
+        )
+        for destination in (
+            "https://evil.example/manifest.json",
+            "http://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/main/manifest.json",
+            "https://raw.githubusercontent.com:8443/sunxsaturn/Fenrir-Wallpapers/main/manifest.json",
+            "https://user@raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/main/manifest.json",
+        ):
+            with self.subTest(destination=destination):
+                with self.assertRaises(WallpaperSyncError):
+                    handler.redirect_request(
+                        request, io.BytesIO(), 302, "Found", {}, destination
+                    )
+
+    def test_final_metadata_and_image_responses_must_remain_on_raw_github_https(self):
+        class Response:
+            def __init__(self, url):
+                self.url = url
+
+            def geturl(self):
+                return self.url
+
+        expected = "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/main/index.json"
+        _assert_raw_github_response(Response(expected), expected)
+        for final_url in (
+            "http://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/main/index.json",
+            "https://evil.example/index.json",
+            "https://raw.githubusercontent.com:8443/index.json",
+            "https://user@raw.githubusercontent.com/index.json",
+        ):
+            with self.subTest(final_url=final_url):
+                with self.assertRaises(WallpaperSyncError):
+                    _assert_raw_github_response(Response(final_url), expected)
+
+    def test_manifest_rejects_images_above_decoded_pixel_ceiling(self):
+        volume = {"id": "volume-01", "images_path": "images/"}
+        item = self.record()
+        item["width"], item["height"] = 10_001, 10_000
+        manifest = {
+            "schema": MANIFEST_SCHEMA, "library_id": LIBRARY_ID,
+            "volume_id": "volume-01", "count": 1, "items": [item],
+        }
+        self.assertGreater(item["width"] * item["height"], MAX_IMAGE_PIXELS)
+        with self.assertRaisesRegex(WallpaperSyncError, "100-megapixel"):
+            _validate_manifest(manifest, volume)
+
+    def test_image_verification_rejects_large_dimensions_before_pixel_conversion(self):
+        class OversizedImage:
+            format = "JPEG"
+            size = (10_001, 10_000)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def verify(self):
+                return None
+
+            def convert(self, mode):
+                raise AssertionError("conversion must not run for an oversized image")
+
+        payload = b"test image placeholder"
+        digest = hashlib.sha256(payload).hexdigest()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "oversized.jpg"
+            path.write_bytes(payload)
+            item = {
+                "sha256": digest, "file_size_bytes": len(payload),
+                "path": "images/nordic-landscapes/" + digest + ".jpg",
+                "mime_type": "image/jpeg", "width": 10_001, "height": 10_000,
+            }
+            with patch("fenrir_dots.wallpaper_library.Image.open", return_value=OversizedImage()):
+                with self.assertRaisesRegex(WallpaperSyncError, "100-megapixel"):
+                    _verify_image(path, item)
 
     def test_registry_requires_all_5000_to_be_published(self):
         self.assertEqual(len(_validate_registry(self.registry())), 1)

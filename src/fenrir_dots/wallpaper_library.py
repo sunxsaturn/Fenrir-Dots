@@ -22,6 +22,7 @@ MANIFEST_SCHEMA = "org.fenrir.public-wallpapers.index.v2"
 LIBRARY_ID = "fenrir-wallpapers-v2"
 MIN_WIDTH, MIN_HEIGHT = 2560, 1440
 MAX_IMAGE_BYTES = 100 * 1024 * 1024
+MAX_IMAGE_PIXELS = 100_000_000
 ALLOWED_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
 USER_AGENT = "Fenrir-Desktop-Public-Library/2.0"
 CATEGORY_IDS = {
@@ -49,13 +50,44 @@ def _safe_path(path: Path) -> None:
             raise WallpaperSyncError(f"Refusing a symlinked destination component: {current}")
 
 
+class _RawGitHubRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, file_pointer, code, message, headers, new_url):
+        parsed = urllib.parse.urlparse(new_url)
+        try:
+            port = parsed.port
+        except ValueError as exc:
+            raise WallpaperSyncError("Gallery redirect contains an invalid port") from exc
+        if (
+            parsed.scheme != "https"
+            or parsed.hostname != "raw.githubusercontent.com"
+            or port not in (None, 443)
+            or parsed.username is not None
+            or parsed.password is not None
+        ):
+            raise WallpaperSyncError("Gallery redirect outside the approved HTTPS origin was blocked")
+        return super().redirect_request(request, file_pointer, code, message, headers, new_url)
+
+
 def _request(url: str, *, opener: Callable, headers: dict[str, str] | None = None):
     parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname != "raw.githubusercontent.com" or parsed.port:
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise WallpaperSyncError("Public gallery URL contains an invalid port") from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != "raw.githubusercontent.com"
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
         raise WallpaperSyncError("Public gallery requests must use raw.githubusercontent.com over HTTPS")
     request_headers = {"User-Agent": USER_AGENT, "Accept": "application/json, image/*"}
     request_headers.update(headers or {})
-    return opener(urllib.request.Request(url, headers=request_headers), timeout=45)
+    request = urllib.request.Request(url, headers=request_headers)
+    if opener is urllib.request.urlopen:
+        return urllib.request.build_opener(_RawGitHubRedirect()).open(request, timeout=45)
+    return opener(request, timeout=45)
 
 
 def _response_url(response, expected: str) -> str:
@@ -63,9 +95,28 @@ def _response_url(response, expected: str) -> str:
     return geturl() if callable(geturl) else expected
 
 
+def _assert_raw_github_response(response, expected: str) -> None:
+    final_url = _response_url(response, expected)
+    parsed = urllib.parse.urlparse(final_url)
+    expected_parsed = urllib.parse.urlparse(expected)
+    try:
+        port = parsed.port
+    except ValueError as exc:
+        raise WallpaperSyncError("Gallery response URL contains an invalid port") from exc
+    if (
+        parsed.scheme != "https"
+        or parsed.hostname != expected_parsed.hostname
+        or port not in (None, 443)
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise WallpaperSyncError("Gallery response escaped the approved raw.githubusercontent.com HTTPS origin")
+
+
 def _fetch_json(url: str, opener: Callable) -> dict:
     try:
         with _request(url, opener=opener, headers={"Accept": "application/json"}) as response:
+            _assert_raw_github_response(response, url)
             raw = response.read(16 * 1024 * 1024 + 1)
     except (OSError, urllib.error.URLError, TimeoutError) as exc:
         raise WallpaperSyncError(f"Could not fetch {url}: {exc}") from exc
@@ -186,8 +237,13 @@ def _validate_manifest(manifest: dict, volume: dict) -> list[dict]:
         if not isinstance(item.get("source_page"), str) or not item["source_page"].startswith("https://"):
             raise WallpaperSyncError("Wallpaper source page must use HTTPS")
         width, height = item.get("width"), item.get("height")
-        if type(width) is not int or type(height) is not int or width < MIN_WIDTH or height < MIN_HEIGHT or width < height:
+        if (
+            type(width) is not int or type(height) is not int
+            or width < MIN_WIDTH or height < MIN_HEIGHT or width < height
+        ):
             raise WallpaperSyncError("Wallpaper manifest dimensions must meet the 2560x1440 landscape minimum")
+        if width * height > MAX_IMAGE_PIXELS:
+            raise WallpaperSyncError("Wallpaper manifest exceeds the 100-megapixel decoded-image limit")
         if relative.stem != digest:
             raise WallpaperSyncError("Content-addressed image filename must equal its SHA-256")
         if item.get("palette_policy") != "fenrir-wallpaper-palette-v3":
@@ -229,9 +285,13 @@ def _verify_image(path: Path, item: dict) -> None:
         with Image.open(path) as image:
             image_format = image.format
             width, height = image.size
+            if width * height > MAX_IMAGE_PIXELS:
+                raise WallpaperSyncError("Decoded image exceeds the 100-megapixel safety limit")
             thumbnail = image.convert("RGB")
             thumbnail.thumbnail((128, 128))
             samples = list(thumbnail.getdata())
+    except WallpaperSyncError:
+        raise
     except Exception as exc:
         raise WallpaperSyncError(f"Image decode failed for {item['path']}: {exc}") from exc
     expected_format = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}[item["mime_type"]]
@@ -389,9 +449,7 @@ def _download(item: dict, state_dir: Path, destination: Path, opener: Callable) 
         resumed = False
         if offset:
             with _request(url, opener=opener, headers={"Range": f"bytes={offset}-"}) as response:
-                final_url = _response_url(response, url)
-                if urllib.parse.urlparse(final_url).hostname != "raw.githubusercontent.com":
-                    raise WallpaperSyncError("Image download redirected outside raw.githubusercontent.com")
+                _assert_raw_github_response(response, url)
                 status = getattr(response, "status", None) or response.getcode()
                 content_range = response.headers.get("Content-Range", "")
                 if status == 206 and content_range.startswith(f"bytes {offset}-") and content_range.endswith(f"/{expected_size}"):
@@ -406,9 +464,7 @@ def _download(item: dict, state_dir: Path, destination: Path, opener: Callable) 
                     offset = 0
         if not resumed:
             with _request(url, opener=opener) as response:
-                final_url = _response_url(response, url)
-                if urllib.parse.urlparse(final_url).hostname != "raw.githubusercontent.com":
-                    raise WallpaperSyncError("Image download redirected outside raw.githubusercontent.com")
+                _assert_raw_github_response(response, url)
                 with partial.open("wb") as stream:
                     total = _stream_response(response, stream, starting_size=0, expected_size=expected_size)
                 if total != expected_size:
