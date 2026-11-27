@@ -6,6 +6,7 @@ discover assets, grant rights, acquire from providers or publish Catalog data.
 from __future__ import annotations
 
 import argparse
+import errno
 import hashlib
 import json
 import os
@@ -147,8 +148,19 @@ def _validate_registry(registry: dict) -> list[dict]:
             "manifest_path": manifest_relative.as_posix(),
             "target_images": volume.get("target_images"),
         })
-    if not active:
-        raise LibrarySyncError("Registry contains no active gallery volumes")
+    expected_volumes = {
+        "volume-01": 1667,
+        "volume-02": 1667,
+        "volume-03": 1666,
+    }
+    actual_targets = {item["id"]: item["target_images"] for item in active}
+    if len(active) != 3 or actual_targets != expected_volumes:
+        raise LibrarySyncError(
+            "The public gallery must use the canonical three-volume allocation "
+            "(1667, 1667, 1666 images)."
+        )
+    if sum(actual_targets.values()) != TARGET:
+        raise LibrarySyncError("Registered volume quotas do not sum to 5,000")
     return active
 
 
@@ -194,6 +206,22 @@ def _validate_item(item: object, volume: dict, policy: dict) -> dict:
     evidence_url = approval["evidence_url"]
     if not evidence_url.startswith("https://"):
         raise LibrarySyncError(f"Publication evidence URL must use HTTPS for {relative}")
+    rights_review = item.get("rights_review")
+    if not isinstance(rights_review, dict) or rights_review.get("decision") != "approved":
+        raise LibrarySyncError(f"Missing explicit human rights approval for {relative}")
+    for key in ("reviewer", "reviewed_at", "evidence_url"):
+        if not isinstance(rights_review.get(key), str) or not rights_review[key].strip():
+            raise LibrarySyncError(f"Rights review is missing {key} for {relative}")
+    if not rights_review["evidence_url"].startswith("https://"):
+        raise LibrarySyncError(f"Rights evidence URL must use HTTPS for {relative}")
+    terms = item.get("source_terms_evidence")
+    if not isinstance(terms, dict):
+        raise LibrarySyncError(f"Missing current provider-terms evidence for {relative}")
+    for key in ("url", "reviewed_at", "summary"):
+        if not isinstance(terms.get(key), str) or not terms[key].strip():
+            raise LibrarySyncError(f"Provider terms evidence is missing {key} for {relative}")
+    if not terms["url"].startswith("https://"):
+        raise LibrarySyncError(f"Provider terms evidence URL must use HTTPS for {relative}")
     for key in ("title", "creator", "source", "source_page", "attribution", "license_url"):
         if not isinstance(item.get(key), str) or not item[key].strip():
             raise LibrarySyncError(f"Manifest item is missing required provenance field {key}: {relative}")
@@ -303,13 +331,17 @@ def _verify_image(path: Path, item: dict) -> None:
             sample = image.convert("RGB").resize((64, 64))
             quantized = sample.quantize(colors=8).convert("RGB")
             palette = quantized.getcolors(maxcolors=4096) or []
-            families = set()
-            for _count, pixel in palette:
-                families.add(classify_rgb(*pixel))
-            blocked = families & EXCLUDED_FAMILIES
-            if blocked:
+            excluded_pixels = 0
+            for pixel_count, pixel in palette:
+                if classify_rgb(*pixel) in EXCLUDED_FAMILIES:
+                    excluded_pixels += pixel_count
+            excluded_fraction = excluded_pixels / 4096
+            # Reject a genuinely dominant excluded hue while tolerating small
+            # orange/yellow highlights in otherwise blue-violet artwork.
+            if excluded_fraction > 0.08:
                 raise LibrarySyncError(
-                    f"Decoded pixels contain excluded dominant color families {sorted(blocked)}: {path}"
+                    f"Excluded palette families occupy {excluded_fraction:.1%} "
+                    f"of decoded pixels (limit 8%): {path}"
                 )
     except LibrarySyncError:
         raise
@@ -366,9 +398,28 @@ def _download(item: dict, destination: Path, state_dir: Path, *, opener: Callabl
     if _sha256(partial) != item["sha256"]:
         raise LibrarySyncError(f"Downloaded image failed SHA-256 verification: {target}")
     _verify_image(partial, item)
-    if target.exists():
-        raise LibrarySyncError(f"Target appeared during transfer; refusing to overwrite: {target}")
-    os.replace(partial, target)
+    # Stage on the destination filesystem, verify again, then hard-link into
+    # place. A hard link fails rather than replacing a file created by a race.
+    fd, staged_name = tempfile.mkstemp(prefix=f".{target.name}.", suffix=".verified", dir=target.parent)
+    staged = Path(staged_name)
+    try:
+        with os.fdopen(fd, "wb") as output, partial.open("rb") as source:
+            shutil.copyfileobj(source, output, length=1024 * 1024)
+            output.flush()
+            os.fsync(output.fileno())
+        if staged.stat().st_size != item["file_size_bytes"] or _sha256(staged) != item["sha256"]:
+            raise LibrarySyncError(f"Staged destination copy failed verification: {target}")
+        try:
+            os.link(staged, target)
+        except FileExistsError as exc:
+            raise LibrarySyncError(f"Target appeared during transfer; refusing to overwrite: {target}") from exc
+        staged.unlink()
+        partial.unlink()
+    finally:
+        try:
+            staged.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def sync_library(
