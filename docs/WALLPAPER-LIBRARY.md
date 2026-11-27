@@ -1,8 +1,16 @@
 # Fenrir public wallpaper library
 
+**Population status (2026-11-27): closed.** The existing 1,871 published images in three volumes remain active for desktop synchronization. No more acquisitions, image-count balancing or new volumes are scheduled. There is no fixed image target.
+
 This feature synchronizes the public, multi-repository wallpaper library into one local Fenrir rotation directory. It is separate from the private Wallpaper Catalog workflow.
 
 ## Commands
+
+Run the read-only registry and manifest audit (no image downloads and no local folder scan):
+
+```bash
+fenrir-wallpaper audit-library --json
+```
 
 Preview the registry and all active manifests without creating or changing files:
 
@@ -27,8 +35,8 @@ Use `--json` with any command for a machine-readable report. The command uses th
 ## Use Fenrir Settings and Doctor
 
 - **Fenrir Settings → Wallpapers → Public multi-volume wallpaper library** provides a read-only preview in a terminal and a separate, confirmation-gated synchronization action.
-- **Fenrir Doctor → Wallpapers → Public multi-volume library** shows active volumes, unique image counts, already-present images and estimated transfer size. Preview is read-only; synchronization requires a separate explicit confirmation. Its status and log refresh with the normal Wallpaper Intelligence refresh cycle.
-- The public mirror controls are independent of the private Catalog's accepted-wallpaper sync and acquisition scheduler.
+- **Fenrir Doctor → Wallpapers → Public multi-volume library** audits manifest SHA declarations, uniqueness, categories, dimensions, metadata/rights gaps, palette metadata and repository storage headroom. The audit never downloads image bytes or inspects the local folder. Preview is read-only; synchronization requires a separate explicit confirmation.
+- The public mirror controls are independent of the private Catalog's accepted-wallpaper sync and metadata discovery scheduler. Public image population is closed; all current volumes remain active for sync.
 
 ## How it works
 
@@ -47,17 +55,17 @@ The local directory structure is `<wallpaper.directory>/<category>/<sha256>.<ext
 
 ## Safety and behavior
 
-- Only volumes marked `active: true` in the canonical registry are synchronized. Acquisition-enabled status does not affect local download eligibility.
+- Only volumes marked `active: true` in the canonical registry are synchronized. Every current volume is marked `acquisition_enabled: false` and `status: closed`; acquisition state does not affect local download eligibility.
 - Only committed files listed in a volume's validated manifest are fetched. The desktop does not query Wikimedia or other providers.
 - Image URLs are constructed from the registered GitHub repository, branch and manifest path; manifest-supplied arbitrary download URLs are not followed.
 - Existing local files are never overwritten or deleted.
 - Global duplicate detection uses content hashes, not titles or filenames alone.
-- A separate process lock prevents overlapping library sync commands.
+- A separate process lock prevents overlapping library sync commands. The public population workflows are closed; sync transfers already-published manifest entries only.
 - Partial downloads are kept in the Fenrir state directory and resumed on the next invocation.
 - The private Catalog database, quarantine and `fenrir-catalog sync-catalog` path are not read or modified.
 - `/mnt/storage` destinations and paths containing symbolic links are rejected.
 - One failed image is reported without discarding other successfully synchronized images. The command exits nonzero when any image fails.
-- Use `--dry-run` before the first large sync, or `--limit` to stage a bounded initial batch.
+- Use `--dry-run` to review the entire existing public library before synchronization. `--limit` remains a technical transfer-batch cap, not a collection-size goal.
 
 The first complete synchronization may require substantial disk space and network traffic. Check available space before starting it.
 

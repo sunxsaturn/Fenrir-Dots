@@ -24,7 +24,6 @@ class SettingsTests(unittest.TestCase):
         self.assertIsNone(settings["weather"]["latitude"])
         self.assertIsNone(settings["weather"]["longitude"])
         self.assertEqual(settings["weather"]["location"], "")
-        self.assertEqual(settings["wallpaper_target_count"], 20000)
 
     def test_unconfigured_weather_does_not_make_network_request(self):
         from unittest.mock import patch
@@ -81,13 +80,13 @@ class SettingsTests(unittest.TestCase):
 
 class DoctorUtilityTests(unittest.TestCase):
     def test_release_fallbacks_match_current_component_versions(self):
-        self.assertEqual(server.APP_VERSION, "0.14.2")
+        self.assertEqual(server.APP_VERSION, "0.15.0")
         self.assertEqual(
             server.LOCAL_RELEASES,
             {
                 "Fenrir-Arch": "0.9.5",
-                "Fenrir-Dots": "0.14.2",
-                "Fenrir-Wallpaper-Catalog": "0.36.0",
+                "Fenrir-Dots": "0.15.0",
+                "Fenrir-Wallpaper-Catalog": "0.37.0",
             },
         )
 
@@ -99,7 +98,7 @@ class DoctorUtilityTests(unittest.TestCase):
             (catalog / ".git").mkdir(parents=True)
             completed = server.subprocess.CompletedProcess(
                 args=["git"], returncode=0,
-                stdout="abc123\trefs/tags/v0.36.0\ndef456\trefs/tags/v0.37.0\n",
+                stdout="abc123\trefs/tags/v0.37.0\ndef456\trefs/tags/v0.38.0\n",
                 stderr="",
             )
             with patch.object(server, "CATALOG_SOURCE", catalog), patch.object(
@@ -108,10 +107,10 @@ class DoctorUtilityTests(unittest.TestCase):
                 server.subprocess, "run", return_value=completed,
             ) as run:
                 result = server._latest_private_catalog_release()
-            self.assertEqual(result["latest"], "0.37.0")
+            self.assertEqual(result["latest"], "0.38.0")
             self.assertTrue(result["update_available"])
             self.assertEqual(result["status"], "available")
-            self.assertIn("/releases/tag/v0.37.0", result["url"])
+            self.assertIn("/releases/tag/v0.38.0", result["url"])
             self.assertEqual(run.call_args.kwargs["env"]["GIT_TERMINAL_PROMPT"], "0")
 
     def test_private_catalog_auth_failure_is_not_reported_as_no_release(self):
@@ -244,7 +243,7 @@ class DoctorUtilityTests(unittest.TestCase):
                 self.assertFalse(server.wallpaper_sync_destination_allowed(home / "Downloads" / "Wallpapers"))
                 self.assertFalse(server.wallpaper_sync_destination_allowed(Path("/mnt/storage/wallpapers")))
 
-    def test_wallpaper_sync_preflight_uses_bounded_read_only_catalog_plan(self):
+    def test_wallpaper_sync_preflight_is_read_only_and_target_free(self):
         import json
         import tempfile
         from types import SimpleNamespace
@@ -259,17 +258,16 @@ class DoctorUtilityTests(unittest.TestCase):
             destination = root / "Pictures" / "Wallpapers"
             payload = {
                 "report": "org.fenrir.wallpaper-sync-preflight",
-                "target_count": 20000,
-                "before_count": 5000,
-                "remaining_slots": 15000,
+                "before_count": 500,
                 "accepted_assets_examined": 12,
+                "manifest_pages_examined": 1,
                 "metadata_eligible_count": 8,
+                "copy_ready_count": 6,
                 "already_present_count": 2,
                 "planned_new_copies": 6,
-                "projected_total_count": 5006,
-                "projected_target_reached": False,
+                "projected_local_count": 506,
                 "plan_complete": True,
-                "selection_satisfied": False,
+                "selection_scope": "all_accepted_assets",
                 "has_more": False,
                 "destination_parent_writable": True,
                 "sync_allowed": True,
@@ -296,16 +294,19 @@ class DoctorUtilityTests(unittest.TestCase):
                 patch.object(server, "wallpaper_sync_destination_allowed", return_value=True),
                 patch.object(server.subprocess, "run", return_value=completed) as run,
             ):
-                plan = server.wallpaper_sync_preflight(20000)
+                plan = server.wallpaper_sync_preflight()
 
         self.assertTrue(plan["read_only"])
         self.assertTrue(plan["sync_allowed"])
         self.assertEqual(plan["planned_new_copies"], 6)
         self.assertEqual(plan["skipped"], {"license_not_approved": 4})
+        self.assertEqual(plan["selection_scope"], "all_accepted_assets")
+        self.assertNotIn("target_count", plan)
         command = run.call_args.args[0]
         self.assertIn("sync-plan", command)
         self.assertIn("--max-plan-assets", command)
-        self.assertIn("20000", command)
+        self.assertEqual(command[command.index("--max-plan-assets") + 1], "20000")
+        self.assertNotIn("--target-count", command)
         self.assertFalse(destination.exists())
 
     def test_wallpaper_sync_requires_successful_preflight_before_writes(self):
@@ -332,7 +333,7 @@ class DoctorUtilityTests(unittest.TestCase):
                 patch.object(server.subprocess, "Popen") as process,
             ):
                 with self.assertRaisesRegex(ValueError, "preflight blocked"):
-                    server.start_wallpaper_sync(20000)
+                    server.start_wallpaper_sync()
             self.assertFalse(destination.exists())
             process.assert_not_called()
 
@@ -513,47 +514,27 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                     )
             popen.assert_not_called()
 
-    def test_portfolio_snapshot_is_read_only_and_conservative_without_attribution(self):
+    def test_portfolio_snapshot_is_read_only_and_target_free_without_attribution(self):
         import json
         import tempfile
         from types import SimpleNamespace
         from unittest.mock import patch
 
-        providers = [
-            {"source_key": key, "provider_budget": {"max_api_requests_per_slice": 4}}
-            for key in ("openverse", "wikimedia_commons", "wallhaven", "cleveland_museum")
-        ]
-        profiles = [
-            {"profile_key": key}
-            for key in (
-                "fenrir-nordic-fantasy-v1",
-                "fenrir-cinematic-nature-v1",
-                "fenrir-cosmic-sci-fi-v1",
-                "fenrir-arctic-blue-v1",
-                "fenrir-architecture-monochrome-v1",
-                "fenrir-red-violet-dark-fantasy-v1",
-                "fenrir-deep-ocean-bioluminescence-v1",
-                "fenrir-obsidian-abstract-v1",
-            )
-        ]
         payload = {
             "report": "org.fenrir.discovery-portfolio",
             "report_version": 1,
-            "providers": providers,
-            "profiles": profiles,
-            "forecast": {
-                "target_count": 20000,
+            "providers": [{"source_key": "openverse", "provider_budget": {}}],
+            "profiles": [{"profile_key": "fenrir-nordic-fantasy-v1"}],
+            "collection_status": {
                 "local_qualifying_count": 500,
                 "accepted_quality_eligible_count": 900,
+                "attributed_catalog_asset_count": 0,
                 "estimated_accepted_not_yet_local": 900,
-                "projected_total_if_current_accepted_assets_are_synced": 1400,
-                "remaining_after_current_accepted_assets": 18600,
-                "projected_progress_percent": 7.0,
                 "recent_accepted_count": 12,
                 "history_days": 30,
                 "recent_acceptance_rate_per_day": 0.4,
-                "estimated_days_at_recent_acceptance_rate": 46500,
-                "forecast_status": "historical_trend",
+                "status": "observed_trend",
+                "note": "No wallpaper-count target or completion date is inferred.",
             },
             "read_only": True,
             "images_downloaded": 0,
@@ -570,20 +551,19 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                 patch.object(server.subprocess, "run", return_value=completed) as run,
             ):
                 result = server.wallpaper_portfolio_snapshot(
-                    20000, 500, wallpaper_dir, catalog_available=True
+                    500, wallpaper_dir, catalog_available=True
                 )
 
         self.assertTrue(result["available"])
         self.assertTrue(result["read_only"])
         self.assertFalse(result["attribution_count_is_exact"])
-        forecast = result["report"]["forecast"]
-        self.assertEqual(forecast["estimated_accepted_not_yet_local"], 0)
-        self.assertEqual(forecast["projected_total_if_current_accepted_assets_are_synced"], 500)
-        self.assertEqual(forecast["remaining_after_current_accepted_assets"], 19500)
-        self.assertEqual(forecast["forecast_basis"], "local_only_conservative_attribution_unknown")
+        status = result["report"]["collection_status"]
+        self.assertIsNone(status["estimated_accepted_not_yet_local"])
+        self.assertNotIn("forecast", result["report"])
         command = run.call_args.args[0]
         self.assertIn("portfolio", command)
         self.assertIn("--local-image-count", command)
+        self.assertNotIn("--target-count", command)
         self.assertEqual(command[command.index("--attributed-asset-count") + 1], "0")
 
     def test_portfolio_snapshot_uses_verified_attribution_sidecar(self):
@@ -597,19 +577,16 @@ class WallpaperDiscoveryTests(unittest.TestCase):
             "report_version": 1,
             "providers": [{"source_key": "openverse", "provider_budget": {}}],
             "profiles": [{"profile_key": "fenrir-nordic-fantasy-v1"}],
-            "forecast": {
-                "target_count": 5000,
+            "collection_status": {
                 "local_qualifying_count": 1000,
                 "accepted_quality_eligible_count": 1200,
+                "attributed_catalog_asset_count": 200,
                 "estimated_accepted_not_yet_local": 1000,
-                "projected_total_if_current_accepted_assets_are_synced": 2000,
-                "remaining_after_current_accepted_assets": 3000,
-                "projected_progress_percent": 40.0,
                 "recent_accepted_count": 30,
                 "history_days": 30,
                 "recent_acceptance_rate_per_day": 1.0,
-                "estimated_days_at_recent_acceptance_rate": 3000,
-                "forecast_status": "historical_trend",
+                "status": "observed_trend",
+                "note": "Observed inventory only.",
             },
             "read_only": True,
             "images_downloaded": 0,
@@ -633,16 +610,111 @@ class WallpaperDiscoveryTests(unittest.TestCase):
                 server.subprocess, "run", return_value=completed
             ):
                 result = server.wallpaper_portfolio_snapshot(
-                    5000, 1000, wallpaper_dir, catalog_available=True
+                    1000, wallpaper_dir, catalog_available=True
                 )
 
         self.assertTrue(result["available"])
         self.assertTrue(result["attribution_count_is_exact"])
         self.assertEqual(result["attributed_asset_count"], 200)
-        self.assertEqual(
-            result["report"]["forecast"]["forecast_basis"],
-            "local_plus_unattributed_accepted_assets",
+        self.assertEqual(result["report"]["collection_status"]["estimated_accepted_not_yet_local"], 1000)
+        self.assertNotIn("forecast", result["report"])
+
+    def test_public_library_audit_snapshot_is_read_only_and_sanitized(self):
+        import json
+        from types import SimpleNamespace
+        from unittest.mock import patch
+
+        payload = {
+            "report": "org.fenrir.public-wallpaper-library-audit",
+            "report_version": 1,
+            "population_state": "closed",
+            "audit_status": "review_required",
+            "no_fixed_image_target": True,
+            "fixed_image_count_target": None,
+            "acquisition_enabled": False,
+            "registered_volume_count": 3,
+            "active_volume_count": 3,
+            "manifest_records": 1871,
+            "unique_images": 1871,
+            "duplicate_records": 0,
+            "hash_metadata_conflicts": 0,
+            "hash_path_mismatches": 0,
+            "invalid_dimensions": 0,
+            "below_desktop_resolution": 0,
+            "manifested_image_bytes": 123456,
+            "source_page_invalid": 0,
+            "license_review_or_exclusion": 2,
+            "repositories_over_storage_limit": 0,
+            "repositories_storage_unknown": 0,
+            "category_counts": {"arctic-blue-violet": 228},
+            "category_balance": {
+                "category_count": 9,
+                "minimum_images": 111,
+                "maximum_images": 228,
+                "spread": 117,
+                "counts": {"arctic-blue-violet": 228},
+                "note": "Observed distribution only.",
+            },
+            "metadata_missing_counts": {"creator": 1},
+            "metadata_fields_with_gaps": ["creator"],
+            "license_counts": {
+                "permitted_family": 1800, "excluded": 1,
+                "manual_review": 1, "missing": 0,
+            },
+            "palette": {
+                "family_record_counts": {"blue": 1000},
+                "missing_records": 0,
+                "invalid_color_values": 0,
+                "excluded_yellow_orange_brown_records": 0,
+                "preferred_family_records": 1700,
+                "green_only_records": 100,
+                "note": "Manifest dominant colors only.",
+            },
+            "storage_safety_limit_bytes": 10 * 1024**3,
+            "volumes": [{
+                "id": "volume-01",
+                "repository": "sunxsaturn/Fenrir-Wallpapers",
+                "status": "closed",
+                "acquisition_enabled": False,
+                "image_count": 134,
+                "manifest_updated_at": "2026-11-26T21:10:04Z",
+                "manifested_image_bytes": 1024,
+                "category_counts": {"arctic-blue-violet": 20},
+                "storage": {
+                    "api_reported_size_kib": 1024,
+                    "api_reported_size_bytes": 1024 * 1024,
+                    "safety_limit_bytes": 10 * 1024**3,
+                    "headroom_bytes": 10 * 1024**3 - 1024 * 1024,
+                    "status": "within_safety_limit",
+                    "detail": "test",
+                },
+            }],
+            "read_only": True,
+            "downloads_started": 0,
+            "image_bytes_fetched": 0,
+            "files_modified": False,
+            "local_files_inspected": False,
+        }
+        completed = SimpleNamespace(
+            returncode=0, stdout=json.dumps(payload), stderr=""
         )
+        with (
+            patch.object(server.shutil, "which", return_value="/usr/bin/fenrir-wallpaper"),
+            patch.object(server.subprocess, "run", return_value=completed) as run,
+        ):
+            report = server.public_library_audit_snapshot()
+
+        self.assertEqual(report["manifest_records"], 1871)
+        self.assertEqual(report["unique_images"], 1871)
+        self.assertEqual(report["population_state"], "closed")
+        self.assertEqual(report["category_balance"]["spread"], 117)
+        self.assertEqual(report["license_counts"]["manual_review"], 1)
+        self.assertEqual(report["palette"]["missing_records"], 0)
+        self.assertEqual(report["volumes"][0]["storage"]["status"], "within_safety_limit")
+        self.assertTrue(report["read_only"])
+        self.assertEqual(run.call_args.args[0], [
+            "/usr/bin/fenrir-wallpaper", "audit-library", "--json"
+        ])
 
     def test_all_catalog_discovery_profiles_are_available_to_doctor(self):
         self.assertEqual(

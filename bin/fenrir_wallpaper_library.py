@@ -2,6 +2,7 @@
 """Registry-driven, integrity-checked synchronization of Fenrir's public wallpaper volumes."""
 from __future__ import annotations
 
+import colorsys
 import fcntl
 import hashlib
 import importlib.machinery
@@ -161,6 +162,8 @@ def _validate_registry(registry: dict) -> list[dict]:
             "images_path": images_path,
             "manifest_path": manifest_path,
             "manifest_url": manifest_url,
+            "acquisition_enabled": volume.get("acquisition_enabled") is True,
+            "status": str(volume.get("status", "unknown")),
         })
     if not active:
         raise LibrarySyncError("The volume registry has no active image volumes")
@@ -505,6 +508,351 @@ def _download_image(
     _install_without_overwrite(partial, target)
     partial.unlink(missing_ok=True)
     return target, "downloaded"
+
+
+def _manifest_palette_families(value: object) -> tuple[set[str], int]:
+    """Classify supplied dominant-color hex values without fetching image bytes."""
+    if not isinstance(value, list) or not value:
+        return set(), 0
+    families: set[str] = set()
+    invalid = 0
+    for raw in value:
+        if not isinstance(raw, str):
+            invalid += 1
+            continue
+        match = re.fullmatch(r"#?([0-9a-fA-F]{6})", raw.strip())
+        if not match:
+            invalid += 1
+            continue
+        encoded = match.group(1)
+        red, green, blue = (
+            int(encoded[index:index + 2], 16) / 255.0
+            for index in (0, 2, 4)
+        )
+        hue, saturation, brightness = colorsys.rgb_to_hsv(red, green, blue)
+        degrees = hue * 360.0
+        if saturation < 0.16:
+            if brightness <= 0.15:
+                family = "black"
+            elif brightness >= 0.86:
+                family = "white"
+            else:
+                family = "neutral"
+        elif 15.0 <= degrees < 45.0:
+            family = "brown" if brightness <= 0.58 else "orange"
+        elif 45.0 <= degrees < 72.0:
+            family = "yellow"
+        elif 72.0 <= degrees < 165.0:
+            family = "green"
+        elif 165.0 <= degrees < 195.0:
+            family = "cyan"
+        elif 195.0 <= degrees < 260.0:
+            family = "blue"
+        elif 260.0 <= degrees < 330.0:
+            family = "purple"
+        else:
+            family = "red"
+        families.add(family)
+    return families, invalid
+
+
+def _license_classification(value: object) -> str:
+    if not isinstance(value, str) or not value.strip():
+        return "missing"
+    normalized = value.casefold().replace("_", " ").replace("-", " ")
+    if (
+        re.search(r"\b(?:nc|nd)\b", normalized)
+        or "noncommercial" in normalized
+        or "non commercial" in normalized
+        or "no derivative" in normalized
+        or "all rights reserved" in normalized
+    ):
+        return "excluded"
+    if "public domain" in normalized or "cc0" in normalized or "cc 0" in normalized:
+        return "permitted_family"
+    if "cc by" in normalized or "creative commons attribution" in normalized:
+        return "permitted_family"
+    return "manual_review"
+
+
+def audit_public_library(
+    *,
+    registry_url: str = REGISTRY_URL,
+    opener: Callable | None = None,
+    timeout: int = 45,
+) -> dict:
+    """Audit all active public manifests and GitHub repository metadata, never image bytes."""
+    if type(timeout) is not int or not 5 <= timeout <= 300:
+        raise LibrarySyncError("Network timeout must be between 5 and 300 seconds")
+    opener = opener or urllib.request.urlopen
+    registry = _fetch_json(
+        registry_url, timeout=timeout, opener=opener, label="Fenrir volume registry"
+    )
+    volumes = _validate_registry(registry)
+    volume_reports: list[dict] = []
+    category_counts: dict[str, int] = {}
+    metadata_gaps = {
+        field: 0 for field in (
+            "title", "creator", "credit", "attribution",
+            "source", "source_page", "license_identifier", "license_url",
+        )
+    }
+    palette_families: dict[str, int] = {}
+    license_counts = {
+        "permitted_family": 0,
+        "excluded": 0,
+        "manual_review": 0,
+        "missing": 0,
+    }
+    seen_hashes: dict[str, dict] = {}
+    duplicate_samples: list[dict] = []
+    hash_metadata_conflicts = 0
+    hash_path_mismatches = 0
+    below_desktop_resolution = 0
+    invalid_dimensions = 0
+    palette_missing = 0
+    palette_invalid = 0
+    palette_excluded = 0
+    palette_preferred = 0
+    palette_green_only = 0
+    source_page_invalid = 0
+    manifest_records = 0
+    manifested_bytes = 0
+    policy = registry.get("policy")
+    policy = policy if isinstance(policy, dict) else {}
+    storage_limit = policy.get("github_repository_size_safety_limit_bytes")
+    if type(storage_limit) is not int or storage_limit < 1:
+        storage_limit = None
+
+    for volume in volumes:
+        manifest = _fetch_json(
+            volume["manifest_url"], timeout=timeout, opener=opener,
+            label=f"volume {volume['id']} manifest",
+        )
+        images = _validate_manifest(manifest, volume)
+        volume_categories: dict[str, int] = {}
+        volume_bytes = 0
+        volume_palette_missing = 0
+        volume_palette_excluded = 0
+        volume_license_issues = 0
+
+        for image in images:
+            record = image["record"]
+            digest = image["sha256"]
+            volume_bytes += image["size"]
+            manifested_bytes += image["size"]
+            manifest_records += 1
+            category = image["relative_path"].split("/", 1)[0]
+            category_counts[category] = category_counts.get(category, 0) + 1
+            volume_categories[category] = volume_categories.get(category, 0) + 1
+
+            filename = PurePosixPath(image["relative_path"]).name
+            if PurePosixPath(filename).stem != digest:
+                hash_path_mismatches += 1
+
+            width, height = record.get("width"), record.get("height")
+            if (
+                isinstance(width, bool) or not isinstance(width, int)
+                or isinstance(height, bool) or not isinstance(height, int)
+                or width < 1 or height < 1
+            ):
+                invalid_dimensions += 1
+            elif width < MIN_WIDTH or height < MIN_HEIGHT or width <= height:
+                below_desktop_resolution += 1
+
+            for field in metadata_gaps:
+                value = record.get(field)
+                if not isinstance(value, str) or not value.strip():
+                    metadata_gaps[field] += 1
+            source_page = record.get("source_page")
+            if isinstance(source_page, str) and source_page.strip():
+                parsed_source = urllib.parse.urlparse(source_page)
+                if parsed_source.scheme != "https" or not parsed_source.netloc:
+                    source_page_invalid += 1
+
+            families, invalid_colors = _manifest_palette_families(record.get("dominant_colors"))
+            if not families:
+                palette_missing += 1
+                volume_palette_missing += 1
+            palette_invalid += invalid_colors
+            for family in families:
+                palette_families[family] = palette_families.get(family, 0) + 1
+            if families.intersection({"yellow", "orange", "brown"}):
+                palette_excluded += 1
+                volume_palette_excluded += 1
+            elif families:
+                if families.intersection({"red", "purple", "blue", "white", "black"}):
+                    palette_preferred += 1
+                elif families == {"green"}:
+                    palette_green_only += 1
+
+            license_status = _license_classification(record.get("license_identifier"))
+            license_counts[license_status] += 1
+            if license_status != "permitted_family":
+                volume_license_issues += 1
+
+            previous = seen_hashes.get(digest)
+            if previous is not None:
+                if previous["size"] != image["size"] or previous["mime_type"] != image["mime_type"]:
+                    hash_metadata_conflicts += 1
+                if len(duplicate_samples) < 100:
+                    duplicate_samples.append({
+                        "sha256": digest,
+                        "first_volume": previous["volume_id"],
+                        "duplicate_volume": volume["id"],
+                        "path": image["relative_path"],
+                    })
+            else:
+                seen_hashes[digest] = {
+                    "volume_id": volume["id"],
+                    "size": image["size"],
+                    "mime_type": image["mime_type"],
+                }
+
+        storage_report = {
+            "api_reported_size_kib": None,
+            "api_reported_size_bytes": None,
+            "safety_limit_bytes": storage_limit,
+            "headroom_bytes": None,
+            "status": "unknown",
+            "detail": "GitHub repository size was not retrieved.",
+        }
+        api_url = f"https://api.github.com/repos/{volume['repository']}"
+        try:
+            repository_metadata = _fetch_json(
+                api_url,
+                timeout=timeout,
+                opener=opener,
+                label=f"GitHub repository metadata for {volume['id']}",
+            )
+            size_kib = repository_metadata.get("size")
+            if isinstance(size_kib, bool) or not isinstance(size_kib, int) or size_kib < 0:
+                raise LibrarySyncError("GitHub repository metadata has an invalid size value")
+            size_bytes = size_kib * 1024
+            headroom = max(0, storage_limit - size_bytes) if storage_limit else None
+            if storage_limit is None:
+                storage_status = "limit_not_configured"
+            elif size_bytes > storage_limit:
+                storage_status = "over_safety_limit"
+            else:
+                storage_status = "within_safety_limit"
+            storage_report = {
+                "api_reported_size_kib": size_kib,
+                "api_reported_size_bytes": size_bytes,
+                "safety_limit_bytes": storage_limit,
+                "headroom_bytes": headroom,
+                "status": storage_status,
+                "detail": "GitHub API repository size in KiB, converted to bytes; approximate storage indicator.",
+            }
+        except (LibrarySyncError, OSError, urllib.error.URLError, TimeoutError) as exc:
+            storage_report["detail"] = str(exc)[:200]
+
+        volume_reports.append({
+            "id": volume["id"],
+            "repository": volume["repository"],
+            "status": volume["status"],
+            "acquisition_enabled": volume["acquisition_enabled"],
+            "image_count": len(images),
+            "manifest_updated_at": manifest.get("updated_at"),
+            "manifested_image_bytes": volume_bytes,
+            "category_counts": dict(sorted(volume_categories.items())),
+            "palette_missing": volume_palette_missing,
+            "palette_excluded": volume_palette_excluded,
+            "license_review_or_exclusion": volume_license_issues,
+            "storage": storage_report,
+        })
+
+    registered = registry.get("volumes", [])
+    registered_count = len(registered) if isinstance(registered, list) else len(volumes)
+    acquisition_enabled = any(item["acquisition_enabled"] for item in volumes)
+    all_registered_active = registered_count == len(volumes)
+    duplicate_count = manifest_records - len(seen_hashes)
+    population = registry.get("population")
+    population = population if isinstance(population, dict) else {}
+    population_closed = (
+        not acquisition_enabled
+        and all_registered_active
+        and population.get("state") == "closed"
+    )
+    category_values = list(category_counts.values())
+    category_balance = {
+        "category_count": len(category_values),
+        "minimum_images": min(category_values) if category_values else 0,
+        "maximum_images": max(category_values) if category_values else 0,
+        "spread": max(category_values) - min(category_values) if category_values else 0,
+        "counts": dict(sorted(category_counts.items())),
+        "note": "Observed distribution only; there is no equalization target.",
+    }
+    palette_report = {
+        "family_record_counts": dict(sorted(palette_families.items())),
+        "missing_records": palette_missing,
+        "invalid_color_values": palette_invalid,
+        "excluded_yellow_orange_brown_records": palette_excluded,
+        "preferred_family_records": palette_preferred,
+        "green_only_records": palette_green_only,
+        "note": "Classified from manifest dominant_colors metadata only; actual pixels are checked when image bytes are downloaded.",
+    }
+    storage_over_limit = sum(
+        1 for volume in volume_reports
+        if volume["storage"]["status"] == "over_safety_limit"
+    )
+    storage_unavailable = sum(
+        1 for volume in volume_reports
+        if volume["storage"]["status"] == "unknown"
+    )
+    structural_issues = (
+        duplicate_count + hash_metadata_conflicts + hash_path_mismatches
+        + invalid_dimensions + below_desktop_resolution + palette_missing
+        + palette_invalid + palette_excluded + source_page_invalid
+        + license_counts["excluded"] + license_counts["manual_review"]
+        + license_counts["missing"]
+        + sum(metadata_gaps.values())
+        + storage_over_limit
+    )
+    return {
+        "report": "org.fenrir.public-wallpaper-library-audit",
+        "report_version": 1,
+        "population_state": "closed" if population_closed else "open",
+        "audit_status": "clean" if structural_issues == 0 else "review_required",
+        "no_fixed_image_target": population.get("fixed_image_count_target") is None,
+        "fixed_image_count_target": None,
+        "registered_volume_count": registered_count,
+        "active_volume_count": len(volumes),
+        "acquisition_enabled": acquisition_enabled,
+        "volumes": volume_reports,
+        "manifest_records": manifest_records,
+        "unique_images": len(seen_hashes),
+        "duplicate_records": duplicate_count,
+        "hash_metadata_conflicts": hash_metadata_conflicts,
+        "duplicate_samples": duplicate_samples,
+        "hash_path_mismatches": hash_path_mismatches,
+        "invalid_dimensions": invalid_dimensions,
+        "below_desktop_resolution": below_desktop_resolution,
+        "manifested_image_bytes": manifested_bytes,
+        "category_counts": dict(sorted(category_counts.items())),
+        "category_balance": category_balance,
+        "metadata_missing_counts": metadata_gaps,
+        "metadata_fields_with_gaps": [field for field, value in metadata_gaps.items() if value],
+        "source_page_invalid": source_page_invalid,
+        "license_counts": license_counts,
+        "license_review_or_exclusion": (
+            license_counts["excluded"] + license_counts["manual_review"] + license_counts["missing"]
+        ),
+        "palette": palette_report,
+        "storage_safety_limit_bytes": storage_limit,
+        "repositories_over_storage_limit": storage_over_limit,
+        "repositories_storage_unknown": storage_unavailable,
+        "read_only": True,
+        "downloads_started": 0,
+        "image_bytes_fetched": 0,
+        "files_modified": False,
+        "local_files_inspected": False,
+        "note": (
+            "Audit reads the live registry, committed manifests and GitHub repository metadata only. "
+            "It does not fetch wallpaper bytes or inspect the local directory. Manifest colors are metadata hints; "
+            "pixel-level palette and exact SHA-256 checks happen during desktop sync."
+        ),
+    }
 
 
 def sync_public_library(

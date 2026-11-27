@@ -102,12 +102,12 @@
           </section>
 
           <section class="page-view hidden" id="wallpapers-view">
-            <div class="page-heading"><div><div class="eyebrow">RIGHTS-AWARE WALLPAPER LIBRARY</div><h2>Wallpaper intelligence</h2><p>Grow the local Fenrir wallpaper collection from accepted catalog assets.</p></div><div class="page-symbol">▧</div></div>
+            <div class="page-heading"><div><div class="eyebrow">RIGHTS-AWARE WALLPAPER LIBRARY</div><h2>Wallpaper library</h2><p>Review and synchronize the existing accepted catalog and public library inventory.</p></div><div class="page-symbol">▧</div></div>
             <div id="wallpaper-summary" class="loading-card">Connecting to the local wallpaper catalog…</div>
             <div class="system-grid" id="wallpaper-metrics"></div>
             <section class="settings-section doctor-section" id="wallpaper-portfolio">
-              <div class="eyebrow">COLLECTION INTELLIGENCE</div><h3>Provider balance and 20,000-image forecast</h3>
-              <p class="field-help">Read-only provider/profile campaign yield, accepted assets passing stored quality metadata, and recent human-acceptance pace. An ETA is withheld until enough real acceptance history exists. Sync preflight remains authoritative.</p>
+              <div class="eyebrow">COLLECTION INTELLIGENCE</div><h3>Provider balance and observed collection activity</h3>
+              <p class="field-help">Read-only provider/profile campaign yield, accepted assets passing stored quality metadata, and recent human-acceptance activity. Reports show observed inventory only; no collection target or completion ETA is used.</p>
               <div id="wallpaper-portfolio-summary" class="loading-card">Loading provider and collection metrics…</div>
               <div class="system-grid" id="wallpaper-portfolio-metrics"></div>
               <h4 class="subheading">Provider balance</h4>
@@ -118,8 +118,13 @@
             <section class="settings-section doctor-section" id="wallpaper-public-library">
               <div class="eyebrow">PUBLIC MULTI-VOLUME LIBRARY</div><h3>Synchronize the Fenrir wallpaper volumes</h3>
               <p class="field-help">This is the public GitHub mirror, separate from the private Catalog below. Fenrir reads the live hub registry, checks every active volume manifest, deduplicates by SHA-256, and verifies each downloaded image before adding it to the configured wallpaper folder. It never changes existing local files or Catalog records.</p>
-              <div id="wallpaper-public-library-summary" class="loading-card">Preview the active volumes and missing image count before downloading.</div>
+              <div id="wallpaper-public-library-summary" class="loading-card">Run a manifest-only audit or preview the active public volumes before downloading.</div>
               <div class="system-grid" id="wallpaper-public-library-metrics"></div>
+              <div class="settings-actions">
+                <span id="wallpaper-public-library-audit-status" role="status">Read-only audit has not run.</span>
+                <button class="secondary-button" id="wallpaper-public-library-audit-button" type="button">Audit committed library</button>
+              </div>
+              <div id="wallpaper-public-library-audit-summary" class="loading-card">The audit checks manifests, categories, hashes and metadata without downloading image bytes or inspecting your local folder.</div>
               <div class="settings-actions">
                 <span id="wallpaper-public-library-plan-status" role="status">Read-only preview has not been run.</span>
                 <button class="secondary-button" id="wallpaper-public-library-plan-button" type="button">Preview public library</button>
@@ -178,50 +183,9 @@
               <div id="wallpaper-acquisition-items" class="doctor-list"><p class="loading-card">No campaign assets loaded.</p></div>
             </section>
             <section class="settings-section doctor-section">
-              <div class="eyebrow">AUTOMATIC COLLECTION</div><h3>One-click collection run</h3>
-              <p class="field-help">Select providers and themes, then start one persistent job. Continuous mode cycles through every queued combination immediately, saving each campaign cursor so an interrupted run can resume without repeating completed work.</p>
-              <div class="campaign-queue-grid">
-                <fieldset class="campaign-queue-options">
-                  <legend>Sources</legend>
-                  <label><input class="wallpaper-queue-source" type="checkbox" value="openverse" checked> Openverse</label>
-                  <label><input class="wallpaper-queue-source" type="checkbox" value="wikimedia_commons" checked> Wikimedia Commons</label>
-                  <label><input class="wallpaper-queue-source" type="checkbox" value="wallhaven" checked> Wallhaven (SFW metadata)</label>
-                  <label><input class="wallpaper-queue-source" type="checkbox" value="cleveland_museum" checked> Cleveland Museum of Art (CC0)</label>
-                </fieldset>
-                <fieldset class="campaign-queue-options">
-                  <legend>Wallpaper profiles</legend>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-nordic-fantasy-v1" checked> Nordic mythology and dark fantasy</label>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-cinematic-nature-v1" checked> Cinematic nature and landscapes</label>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-cosmic-sci-fi-v1" checked> Cosmic science fiction</label>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-arctic-blue-v1" checked> Arctic blue and violet</label>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-architecture-monochrome-v1" checked> Monochrome and futuristic architecture</label>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-red-violet-dark-fantasy-v1" checked> Red/violet dark fantasy</label>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-deep-ocean-bioluminescence-v1" checked> Deep-ocean bioluminescence</label>
-                  <label><input class="wallpaper-queue-profile" type="checkbox" value="fenrir-obsidian-abstract-v1" checked> Obsidian minimalism and abstract geometry</label>
-                </fieldset>
-              </div>
-              <label for="wallpaper-schedule-mode">Collection mode</label>
-              <select id="wallpaper-schedule-mode">
-                <option value="continuous" selected>Continuous · keep going until complete</option>
-                <option value="scheduled">Scheduled · run at intervals</option>
-              </select>
-              <label for="wallpaper-schedule-interval">Scheduled mode interval</label>
-              <select id="wallpaper-schedule-interval">
-                <option value="60">1 hour</option>
-                <option value="180">3 hours</option>
-                <option value="360" selected>6 hours</option>
-                <option value="720">12 hours</option>
-                <option value="1440">24 hours</option>
-              </select>
-              <p class="field-help">Up to 32 provider/profile campaigns can be queued. Each turn is limited to four provider API requests and campaigns rotate fairly; continuous mode starts the next turn as soon as the previous slice finishes, while scheduled mode waits for the selected interval. Discovery records metadata only. It never grants rights, authorizes downloads or accepts images. When discovery is exhausted, Fenrir pauses for the separate rights, duplicate-review, acquisition and acceptance steps.</p>
-              <div class="settings-actions"><span id="wallpaper-schedule-status" role="status"></span><button class="primary-button" id="wallpaper-schedule-button" type="button">Start 20,000-image collection run</button></div>
-            </section>
-            <section class="settings-section doctor-section">
-              <div class="eyebrow">LOCAL COLLECTION</div><h3>Collection target</h3>
-              <label for="wallpaper-target">Choose a target size</label>
-              <select id="wallpaper-target"><option value="5000">5,000 images</option><option value="10000">10,000 images</option><option value="20000" selected>20,000 images · recommended</option></select>
-              <p class="field-help">Only locally quarantined images with approved license policy, human rights approval and explicit catalog acceptance are copied. Images are hash-verified and attribution is retained. A bounded read-only preflight is required before every sync; it does not fetch provider URLs or read quarantine image bytes.</p>
-              <div class="settings-actions"><span id="wallpaper-sync-plan-status" role="status">Run a read-only preflight before synchronization.</span><button class="secondary-button" id="wallpaper-sync-plan-button" type="button">Preview sync plan</button></div>
+              <div class="eyebrow">LOCAL LIBRARY</div><h3>Sync accepted wallpapers</h3>
+              <p class="field-help">Preview all currently eligible, human-accepted Catalog assets, then synchronize them to your local wallpaper folder. There is no collection-size target. The preflight is read-only and does not fetch provider URLs or read image bytes. Synchronization revalidates rights, license, integrity, dimensions and palette before each additive copy; existing files are never overwritten.</p>
+              <div class="settings-actions"><span id="wallpaper-sync-plan-status" role="status">Run a read-only preflight before synchronization.</span><button class="secondary-button" id="wallpaper-sync-plan-button" type="button">Preview all accepted assets</button></div>
               <div class="settings-actions"><span id="wallpaper-sync-status" role="status"></span><button class="primary-button" id="wallpaper-sync-button" type="button" disabled>Sync accepted wallpapers</button></div>
               <pre id="wallpaper-sync-log" class="doctor-log" aria-live="polite"></pre>
             </section>

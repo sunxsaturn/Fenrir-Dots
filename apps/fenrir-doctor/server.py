@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-from math import ceil
 import re
 import select
 import shutil
@@ -37,11 +36,11 @@ CATALOG_HOME = Path(os.environ.get("FENRIR_CATALOG_HOME", Path.home() / ".local/
 CATALOG_DB = Path(os.environ.get("FENRIR_CATALOG_DB", CATALOG_HOME / "catalog.sqlite3"))
 QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "quarantine"))
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
-APP_VERSION = "0.14.2"
+APP_VERSION = "0.15.0"
 LOCAL_RELEASES = {
     "Fenrir-Arch": "0.9.5",
-    "Fenrir-Dots": "0.14.2",
-    "Fenrir-Wallpaper-Catalog": "0.36.0",
+    "Fenrir-Dots": "0.15.0",
+    "Fenrir-Wallpaper-Catalog": "0.37.0",
 }
 RELEASE_CACHE: dict[str, Any] | None = None
 RELEASE_CACHE_AT = 0.0
@@ -147,7 +146,6 @@ def default_settings() -> dict[str, Any]:
     return {
         "default_model": "",
         "weather": {"location": "", "latitude": None, "longitude": None},
-        "wallpaper_target_count": 20000,
     }
 
 
@@ -160,9 +158,6 @@ def read_settings() -> dict[str, Any]:
         model = raw.get("default_model", "")
         if isinstance(model, str) and len(model) <= 160:
             settings["default_model"] = model
-        target_count = raw.get("wallpaper_target_count", 20000)
-        if target_count in {5000, 10000, 20000}:
-            settings["wallpaper_target_count"] = target_count
         weather = raw.get("weather", {})
         if isinstance(weather, dict):
             location = weather.get("location", "")
@@ -465,7 +460,6 @@ def wallpaper_runtime_snapshot() -> dict[str, Any]:
         "valid_count": None,
         "file_count": None,
         "rejected_count": None,
-        "minimum_count": 20000,
         "monitor_mode": "shared",
         "history_depth": 20,
         "monitor_count": None,
@@ -498,7 +492,6 @@ def wallpaper_runtime_snapshot() -> dict[str, Any]:
             "valid_count": int(payload.get("valid_count", 0)),
             "file_count": int(payload.get("file_count", 0)),
             "rejected_count": int(payload.get("rejected_count", 0)),
-            "minimum_count": int(payload.get("minimum_count", 20000)),
             "monitor_mode": payload.get("monitor_mode", "shared"),
             "history_depth": int(payload.get("history_depth", 20)),
             "detail": "Wallpaper qualification report loaded from the local companion.",
@@ -577,11 +570,10 @@ def diagnostics_snapshot() -> dict[str, Any]:
     wallpaper_runtime = wallpaper_runtime_snapshot()
     if wallpaper_runtime["available"]:
         valid_count = wallpaper_runtime["valid_count"]
-        target = wallpaper_runtime["minimum_count"]
         quality_status = "ok" if valid_count > 0 else ("attention" if wallpaper_runtime["file_count"] else "warning")
         quality_detail = (
             f"{valid_count:,} qualifying of {wallpaper_runtime['file_count']:,} files; "
-            f"{wallpaper_runtime['rejected_count']:,} rejected; target {target:,}."
+            f"{wallpaper_runtime['rejected_count']:,} rejected. Rotation uses the full available inventory."
         )
     else:
         quality_status = "warning"
@@ -861,10 +853,8 @@ def wallpaper_sync_destination_allowed(path: Path) -> bool:
     return absolute == pictures or pictures in absolute.parents
 
 
-def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
-    """Run the Catalog's bounded, read-only sync planner and sanitize its result."""
-    if target_count not in {5000, 10000, 20000}:
-        raise ValueError("Choose a wallpaper target of 5,000, 10,000 or 20,000.")
+def wallpaper_sync_preflight() -> dict[str, Any]:
+    """Run the Catalog's bounded, read-only plan for all eligible accepted assets."""
     executable = shutil.which("fenrir-catalog")
     if not executable or not CATALOG_DB.is_file() or not QUARANTINE_ROOT.is_dir():
         raise ValueError("The local Fenrir Wallpaper Catalog is not ready.")
@@ -878,7 +868,6 @@ def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
             "--database", str(CATALOG_DB),
             "--quarantine-root", str(QUARANTINE_ROOT),
             "--destination", str(wallpaper_directory),
-            "--target-count", str(target_count),
             "--max-plan-assets", "20000",
         ],
         capture_output=True,
@@ -894,12 +883,12 @@ def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
     if (
         not isinstance(payload, dict)
         or payload.get("report") != "org.fenrir.wallpaper-sync-preflight"
-        or payload.get("target_count") != target_count
         or payload.get("read_only") is not True
         or payload.get("sync_started") is not False
         or not isinstance(payload.get("sync_allowed"), bool)
         or not isinstance(payload.get("plan_complete"), bool)
         or not isinstance(payload.get("destination_parent_writable"), bool)
+        or "target_count" in payload
     ):
         raise ValueError("Catalog returned an invalid or incomplete wallpaper sync preflight.")
 
@@ -914,9 +903,9 @@ def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
         raise ValueError("Catalog violated the read-only wallpaper sync preflight contract.")
 
     count_fields = (
-        "before_count", "remaining_slots", "accepted_assets_examined",
-        "metadata_eligible_count", "already_present_count",
-        "planned_new_copies", "projected_total_count",
+        "before_count", "accepted_assets_examined", "manifest_pages_examined",
+        "metadata_eligible_count", "copy_ready_count", "already_present_count",
+        "planned_new_copies", "projected_local_count",
     )
     counts = {}
     for field in count_fields:
@@ -934,12 +923,10 @@ def wallpaper_sync_preflight(target_count: Any) -> dict[str, Any]:
         raise ValueError("Catalog returned invalid preflight blocker counts.")
 
     return {
-        "target_count": target_count,
         **counts,
-        "projected_target_reached": payload.get("projected_target_reached") is True,
         "plan_complete": payload["plan_complete"],
-        "selection_satisfied": payload.get("selection_satisfied") is True,
         "has_more": payload.get("has_more") is True,
+        "selection_scope": payload.get("selection_scope"),
         "destination_parent_writable": payload["destination_parent_writable"],
         "sync_allowed": payload["sync_allowed"] is True,
         "skipped": skipped,
@@ -2157,13 +2144,12 @@ def start_wallpaper_discovery_scheduler() -> None:
 
 
 def wallpaper_portfolio_snapshot(
-    target_count: int,
     local_image_count: int,
     wallpaper_directory: Path,
     *,
     catalog_available: bool,
 ) -> dict[str, Any]:
-    """Return a sanitized, read-only provider/profile portfolio forecast."""
+    """Return a sanitized read-only provider/profile report with no count goal."""
     unavailable = {
         "available": False,
         "detail": "The read-only Catalog portfolio report is unavailable.",
@@ -2211,7 +2197,6 @@ def wallpaper_portfolio_snapshot(
         [
             executable, "campaign", "portfolio",
             "--database", str(CATALOG_DB),
-            "--target-count", str(target_count),
             "--local-image-count", str(local_image_count),
             "--attributed-asset-count", str(attribution_count),
             "--history-days", "30",
@@ -2239,7 +2224,7 @@ def wallpaper_portfolio_snapshot(
             or payload.get("files_modified") is not False
             or not isinstance(payload.get("providers"), list)
             or not isinstance(payload.get("profiles"), list)
-            or not isinstance(payload.get("forecast"), dict)
+            or not isinstance(payload.get("collection_status"), dict)
         ):
             raise ValueError("Catalog portfolio report did not satisfy its read-only contract.")
         for provider in payload["providers"]:
@@ -2251,59 +2236,29 @@ def wallpaper_portfolio_snapshot(
         for profile in payload["profiles"]:
             if not isinstance(profile, dict) or profile.get("profile_key") not in DISCOVERY_PROFILES:
                 raise ValueError("Catalog returned an invalid profile portfolio row.")
-        forecast = payload["forecast"]
-        numeric_forecast_fields = (
-            "target_count", "local_qualifying_count",
-            "accepted_quality_eligible_count", "estimated_accepted_not_yet_local",
-            "projected_total_if_current_accepted_assets_are_synced",
-            "remaining_after_current_accepted_assets", "projected_progress_percent",
+        status = payload["collection_status"]
+        numeric_fields = (
+            "local_qualifying_count", "accepted_quality_eligible_count",
+            "attributed_catalog_asset_count", "estimated_accepted_not_yet_local",
             "recent_accepted_count", "history_days", "recent_acceptance_rate_per_day",
         )
-        for field in numeric_forecast_fields:
-            value = forecast.get(field)
+        for field in numeric_fields:
+            value = status.get(field)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-                raise ValueError(f"Catalog returned an invalid collection forecast value: {field}.")
-        eta = forecast.get("estimated_days_at_recent_acceptance_rate")
-        if eta is not None and (
-            isinstance(eta, bool) or not isinstance(eta, int) or eta < 0
-        ):
-            raise ValueError("Catalog returned an invalid forecast ETA.")
-        if forecast.get("forecast_status") not in {"historical_trend", "insufficient_history"}:
-            raise ValueError("Catalog returned an unsupported forecast confidence status.")
-        if not (attribution_source == "verified_sidecar"):
-            # Without an attribution sidecar, accepted Catalog assets may
-            # already be present locally. Do not add them to the projected
-            # total; show a conservative local-only floor instead.
-            local_only = int(forecast["local_qualifying_count"])
-            target = int(forecast["target_count"])
-            remaining = max(0, target - local_only)
-            rate = float(forecast["recent_acceptance_rate_per_day"])
-            status = forecast["forecast_status"]
-            forecast["estimated_accepted_not_yet_local"] = 0
-            forecast["projected_total_if_current_accepted_assets_are_synced"] = local_only
-            forecast["remaining_after_current_accepted_assets"] = remaining
-            forecast["projected_progress_percent"] = round(
-                min(100.0, local_only / target * 100), 1
-            )
-            forecast["estimated_days_at_recent_acceptance_rate"] = (
-                ceil(remaining / rate)
-                if status == "historical_trend" and rate > 0 and remaining > 0
-                else (0 if status == "historical_trend" and remaining == 0 else None)
-            )
-            forecast["forecast_basis"] = "local_only_conservative_attribution_unknown"
-            forecast["forecast_notice"] = (
-                "Attribution sidecar is unavailable. Projection counts only the "
-                "verified local qualifying-image count and excludes accepted Catalog "
-                "assets that may already be local. Reconcile with a fresh sync preflight."
-            )
+                raise ValueError(f"Catalog returned an invalid observed collection value: {field}.")
+        if status.get("status") not in {"observed_trend", "insufficient_history"}:
+            raise ValueError("Catalog returned an unsupported collection activity status.")
+        if attribution_source != "verified_sidecar":
+            status["estimated_accepted_not_yet_local"] = None
+            status["attribution_note"] = "Local attribution sidecar unavailable; do not infer additional local copies."
         else:
-            forecast["forecast_basis"] = "local_plus_unattributed_accepted_assets"
+            status["attribution_note"] = "Counts reconciled against the local Catalog attribution sidecar."
     except (ValueError, TypeError, BadJSON) as exc:
         return {**unavailable, "detail": str(exc)[:240]}
 
     return {
         "available": True,
-        "detail": "Provider balance and collection forecast loaded from the local, read-only Catalog report.",
+        "detail": "Provider balance and observed collection activity loaded from the local, read-only Catalog report.",
         "attribution_status": attribution_source,
         "attributed_asset_count": attribution_count,
         "attribution_count_is_exact": attribution_source == "verified_sidecar",
@@ -2313,7 +2268,6 @@ def wallpaper_portfolio_snapshot(
 
 
 def wallpaper_snapshot() -> dict[str, Any]:
-    target_count = read_settings().get("wallpaper_target_count", 20000)
     accepted = None
     catalog_available = shutil.which("fenrir-catalog") is not None and CATALOG_DB.is_file() and QUARANTINE_ROOT.is_dir()
     detail = "Catalog is not installed or its local database has not been initialized."
@@ -2370,7 +2324,6 @@ def wallpaper_snapshot() -> dict[str, Any]:
         except (OSError, subprocess.SubprocessError, ValueError, TypeError):
             detail = "The Catalog palette index could not be loaded."
     portfolio = wallpaper_portfolio_snapshot(
-        target_count,
         local_count,
         wallpaper_directory,
         catalog_available=catalog_available and sync_destination_allowed,
@@ -2396,12 +2349,130 @@ def wallpaper_snapshot() -> dict[str, Any]:
         "palette_metrics": palette_metrics,
         "discovery": wallpaper_campaign_snapshot(),
         "portfolio": portfolio,
-        "target_count": target_count,
-        "remaining": max(0, target_count - local_count),
-        "target_reached": local_count >= target_count,
         "detail": detail,
         "sync": sync,
         "public_library": public_library_sync_snapshot(),
+    }
+
+
+def public_library_audit_snapshot() -> dict[str, Any]:
+    """Return a sanitized read-only report of the existing public library."""
+    executable = shutil.which("fenrir-wallpaper")
+    if not executable:
+        raise ValueError("The Fenrir wallpaper companion is not installed.")
+    result = subprocess.run(
+        [executable, "audit-library", "--json"],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        check=False,
+    )
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "Public wallpaper library audit failed.").strip()
+        raise ValueError(detail[:300])
+    payload = strict_json(result.stdout.encode("utf-8"))
+    if (
+        not isinstance(payload, dict)
+        or payload.get("report") != "org.fenrir.public-wallpaper-library-audit"
+        or payload.get("report_version") != 1
+        or payload.get("read_only") is not True
+        or payload.get("downloads_started") != 0
+        or payload.get("image_bytes_fetched") != 0
+        or payload.get("files_modified") is not False
+        or payload.get("local_files_inspected") is not False
+        or payload.get("fixed_image_count_target") is not None
+        or not isinstance(payload.get("volumes"), list)
+        or not isinstance(payload.get("category_counts"), dict)
+        or not isinstance(payload.get("category_balance"), dict)
+        or not isinstance(payload.get("license_counts"), dict)
+        or not isinstance(payload.get("palette"), dict)
+        or payload.get("population_state") not in {"closed", "open"}
+        or payload.get("audit_status") not in {"clean", "review_required"}
+    ):
+        raise ValueError("The public-library audit did not satisfy its read-only contract.")
+
+    count_fields = (
+        "manifest_records", "unique_images", "duplicate_records",
+        "hash_metadata_conflicts", "hash_path_mismatches",
+        "invalid_dimensions", "below_desktop_resolution",
+        "manifested_image_bytes", "registered_volume_count",
+        "active_volume_count", "source_page_invalid",
+        "license_review_or_exclusion", "repositories_over_storage_limit",
+        "repositories_storage_unknown",
+    )
+    counts = {}
+    for field in count_fields:
+        value = payload.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Public-library audit returned an invalid count: {field}.")
+        counts[field] = value
+
+    volumes = []
+    for volume in payload["volumes"]:
+        if (
+            not isinstance(volume, dict)
+            or not isinstance(volume.get("id"), str)
+            or not isinstance(volume.get("repository"), str)
+            or not isinstance(volume.get("status"), str)
+            or not isinstance(volume.get("acquisition_enabled"), bool)
+            or isinstance(volume.get("image_count"), bool)
+            or not isinstance(volume.get("image_count"), int)
+            or not isinstance(volume.get("category_counts"), dict)
+            or not isinstance(volume.get("storage"), dict)
+        ):
+            raise ValueError("Public-library audit returned invalid volume metadata.")
+        storage = volume["storage"]
+        volumes.append({
+            "id": volume["id"],
+            "repository": volume["repository"],
+            "status": volume["status"],
+            "acquisition_enabled": volume["acquisition_enabled"],
+            "image_count": volume["image_count"],
+            "manifest_updated_at": volume.get("manifest_updated_at"),
+            "manifested_image_bytes": volume.get("manifested_image_bytes", 0),
+            "category_counts": volume["category_counts"],
+            "storage": {
+                "api_reported_size_kib": storage.get("api_reported_size_kib"),
+                "api_reported_size_bytes": storage.get("api_reported_size_bytes"),
+                "safety_limit_bytes": storage.get("safety_limit_bytes"),
+                "headroom_bytes": storage.get("headroom_bytes"),
+                "status": storage.get("status", "unknown"),
+                "detail": storage.get("detail", ""),
+            },
+        })
+
+    palette = payload["palette"]
+    for field in (
+        "missing_records", "invalid_color_values",
+        "excluded_yellow_orange_brown_records", "preferred_family_records",
+        "green_only_records",
+    ):
+        value = palette.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Public-library audit returned invalid palette count: {field}.")
+
+    license_counts = payload["license_counts"]
+    for field in ("permitted_family", "excluded", "manual_review", "missing"):
+        value = license_counts.get(field)
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError(f"Public-library audit returned invalid license count: {field}.")
+
+    return {
+        "report": payload["report"],
+        "population_state": payload["population_state"],
+        "audit_status": payload["audit_status"],
+        "no_fixed_image_target": payload.get("no_fixed_image_target") is True,
+        "acquisition_enabled": payload.get("acquisition_enabled") is True,
+        **counts,
+        "category_counts": payload["category_counts"],
+        "category_balance": payload["category_balance"],
+        "metadata_missing_counts": payload.get("metadata_missing_counts", {}),
+        "metadata_fields_with_gaps": payload.get("metadata_fields_with_gaps", []),
+        "license_counts": license_counts,
+        "palette": palette,
+        "storage_safety_limit_bytes": payload.get("storage_safety_limit_bytes"),
+        "volumes": volumes,
+        "read_only": True,
     }
 
 
@@ -2531,10 +2602,8 @@ def start_public_library_sync(
     }
 
 
-def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
+def start_wallpaper_sync() -> dict[str, Any]:
     global WALLPAPER_SYNC
-    if target_count not in {5000, 10000, 20000}:
-        raise ValueError("Choose a wallpaper target of 5,000, 10,000 or 20,000.")
     if WALLPAPER_SYNC is not None and WALLPAPER_SYNC.poll() is None:
         raise ValueError("A wallpaper synchronization is already running.")
     executable = shutil.which("fenrir-catalog")
@@ -2543,10 +2612,10 @@ def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
     wallpaper_directory = current_wallpaper_directory()
     if not wallpaper_sync_destination_allowed(wallpaper_directory):
         raise ValueError("Catalog sync is sandboxed to folders under ~/Pictures. Change the wallpaper directory in Fenrir Settings first.")
-    preflight = wallpaper_sync_preflight(target_count)
+    preflight = wallpaper_sync_preflight()
     if not preflight["sync_allowed"]:
         raise ValueError(
-            "Read-only sync preflight blocked synchronization; review the collection plan and blockers."
+            "Read-only sync preflight blocked synchronization; review the accepted-asset plan and blockers."
         )
     wallpaper_directory.mkdir(parents=True, exist_ok=True)
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -2558,7 +2627,6 @@ def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
                 "--database", str(CATALOG_DB),
                 "--quarantine-root", str(QUARANTINE_ROOT),
                 "--destination", str(wallpaper_directory),
-                "--target-count", str(target_count),
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -2571,7 +2639,7 @@ def start_wallpaper_sync(target_count: Any) -> dict[str, Any]:
     return {
         "started": True,
         "pid": WALLPAPER_SYNC.pid,
-        "target_count": target_count,
+        "selection_scope": preflight["selection_scope"],
         "preflight": preflight,
     }
 
@@ -2745,13 +2813,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send_bytes(400, {"error": "provide both latitude and longitude"})
                 if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
                     return self.send_bytes(400, {"error": "coordinates out of range"})
-            target_count = obj.get("wallpaper_target_count", read_settings().get("wallpaper_target_count", 20000))
-            if target_count not in {5000, 10000, 20000}:
-                return self.send_bytes(400, {"error": "Wallpaper target must be 5000, 10000 or 20000."})
             settings = {
                 "default_model": model.strip(),
                 "weather": {"location": location.strip(), "latitude": latitude, "longitude": longitude},
-                "wallpaper_target_count": target_count,
             }
             atomic_json(SETTINGS_FILE, settings)
             return self.send_bytes(200, {"saved": True, **settings})
@@ -2773,6 +2837,12 @@ class Handler(BaseHTTPRequestHandler):
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as exc:
                 return self.send_bytes(503, {"error": str(exc)[:300]})
 
+        if path == "/api/doctor/wallpapers/public-library-audit":
+            try:
+                return self.send_bytes(200, public_library_audit_snapshot())
+            except (OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
+                return self.send_bytes(400, {"error": str(exc)[:300]})
+
         if path == "/api/doctor/wallpapers/public-library-plan":
             try:
                 return self.send_bytes(200, public_library_preview())
@@ -2789,15 +2859,13 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/doctor/wallpapers/sync-plan":
             try:
-                return self.send_bytes(200, wallpaper_sync_preflight(
-                    obj.get("target_count", 20000)
-                ))
+                return self.send_bytes(200, wallpaper_sync_preflight())
             except (OSError, ValueError, TypeError, subprocess.SubprocessError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:300]})
 
         if path == "/api/doctor/wallpapers/sync":
             try:
-                return self.send_bytes(202, start_wallpaper_sync(obj.get("target_count", 20000)))
+                return self.send_bytes(202, start_wallpaper_sync())
             except (OSError, ValueError) as exc:
                 return self.send_bytes(400, {"error": str(exc)[:260]})
 
