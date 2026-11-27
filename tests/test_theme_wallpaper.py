@@ -234,7 +234,7 @@ class FenrirWallpaperTests(unittest.TestCase):
             self.assertEqual(rejected, 2)
             self.assertEqual([p.name for p in valid], ["valid.webp"])
 
-    def test_rotation_works_below_5000_target_without_falsely_marking_it_complete(self):
+    def test_rotation_uses_existing_inventory_without_collection_target(self):
         from PIL import Image
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "wallpapers"
@@ -251,7 +251,6 @@ class FenrirWallpaperTests(unittest.TestCase):
                 self.assertEqual(selected.resolve(), image.resolve())
                 valid, _, _, _, _ = wallpaper.validated_wallpapers()
                 self.assertEqual(len(valid), 1)
-                self.assertGreater(wallpaper.resolution_policy()[2], len(valid))
 
     def test_rotation_excludes_yellow_orange_and_brown_dominant_palettes(self):
         from PIL import Image
@@ -339,7 +338,7 @@ class FenrirWallpaperTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "No qualifying wallpapers"):
                     wallpaper.next_wallpaper()
 
-    def test_status_reports_5000_wallpaper_target(self):
+    def test_status_reports_current_wallpaper_inventory(self):
         from PIL import Image
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp) / "wallpapers"
@@ -353,7 +352,7 @@ class FenrirWallpaperTests(unittest.TestCase):
             with patch.dict(os.environ, {"XDG_CONFIG_HOME": str(config), "XDG_STATE_HOME": str(Path(temp) / "state")}, clear=False):
                 valid, _, _, _, _ = wallpaper.validated_wallpapers()
                 self.assertEqual(len(valid), 1)
-                self.assertEqual(wallpaper.resolution_policy()[2], 5000)
+                self.assertEqual(wallpaper.resolution_policy(), (2560, 1440))
 
     def test_catalog_collection_sync_uses_configured_rotation_directory(self):
         with tempfile.TemporaryDirectory() as temp:
