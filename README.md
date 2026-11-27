@@ -2,7 +2,7 @@
 
 **Version:** 0.14.1
 
-**Documentation:** [Project index](docs/README.md) · [Public wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Complete ecosystem map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md)
+**Documentation:** [Topic index](docs/README.md) · [Public wallpaper library sync](docs/WALLPAPER-LIBRARY.md) · [Fenrir Doctor](apps/fenrir-doctor/README.md) · [Versioning policy](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/VERSIONING.md) · [Complete ecosystem map](https://github.com/sunxsaturn/Fenrir-Arch/blob/main/docs/PROJECT-MAP.md)
 
 Fenrir Dots is the visual and user-session layer of **Fenrir Desktop**, an original Arch Linux + Hyprland environment. The system installer lives in [Fenrir-Arch](https://github.com/sunxsaturn/Fenrir-Arch); this repository supplies the desktop configuration, applications and services.
 
