@@ -39,7 +39,7 @@ QUARANTINE_ROOT = Path(os.environ.get("FENRIR_QUARANTINE_ROOT", CATALOG_HOME / "
 WALLPAPER_DIRECTORY = Path(os.environ.get("FENRIR_WALLPAPER_DIRECTORY", Path.home() / "Pictures/Wallpapers"))
 APP_VERSION = "0.14.2"
 LOCAL_RELEASES = {
-    "Fenrir-Arch": "0.9.4",
+    "Fenrir-Arch": "0.9.5",
     "Fenrir-Dots": "0.14.2",
     "Fenrir-Wallpaper-Catalog": "0.36.0",
 }
