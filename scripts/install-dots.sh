@@ -40,12 +40,29 @@ for command_name in fenrir-wallpaper fenrir-theme fenrir-glass; do
   ln -sfn "$VENV/bin/$command_name" "$HOME/.local/bin/$command_name"
 done
 
-install -Dm644 "$DOTS_DIR/config/hypr/hyprland.lua" "$HOME/.config/hypr/hyprland.lua"
-install -Dm644 "$DOTS_DIR/systemd/user/fenrir-wallpaper.service" "$HOME/.config/systemd/user/fenrir-wallpaper.service"
-install -Dm644 "$DOTS_DIR/systemd/user/fenrir-wallpaper.timer" "$HOME/.config/systemd/user/fenrir-wallpaper.timer"
-install -Dm644 "$ROOT/config/fenrir/appearance.json" "$HOME/.config/fenrir/appearance.json"
-install -Dm644 "$ROOT/applications/fenrir-wallpaper-timer.desktop" "$HOME/.config/autostart/fenrir-wallpaper-timer.desktop"
-sudo install -Dm644 "$ROOT/applications/fenrir.desktop" /usr/share/wayland-sessions/fenrir.desktop
+copy_config(){
+  local source="$1" destination="$2"
+  if [[ -e "$destination" ]] && ! cmp -s "$source" "$destination"; then
+    destination="${destination}.fenrir-default"
+    log "Preserving existing configuration; installing Fenrir default as $destination"
+  fi
+  install -Dm644 "$source" "$destination"
+}
+copy_config "$DOTS_DIR/config/hypr/hyprland.lua" "$HOME/.config/hypr/hyprland.lua"
+copy_config "$DOTS_DIR/config/hypr/hyprpaper.conf" "$HOME/.config/hypr/hyprpaper.conf"
+copy_config "$DOTS_DIR/config/kitty/kitty.conf" "$HOME/.config/kitty/kitty.conf"
+copy_config "$DOTS_DIR/config/waybar/config.jsonc" "$HOME/.config/waybar/config.jsonc"
+copy_config "$DOTS_DIR/config/waybar/style.css" "$HOME/.config/waybar/style.css"
+copy_config "$DOTS_DIR/config/mako/config" "$HOME/.config/mako/config"
+copy_config "$DOTS_DIR/config/fuzzel/fuzzel.ini" "$HOME/.config/fuzzel/fuzzel.ini"
+copy_config "$DOTS_DIR/config/fenrir/appearance.json" "$HOME/.config/fenrir/appearance.json"
+for unit in fenrir-wallpaper.service fenrir-wallpaper.timer; do
+  install -Dm644 "$DOTS_DIR/systemd/user/$unit" "$HOME/.config/systemd/user/$unit"
+done
+for desktop in fenrir-wallpaper-timer.desktop fenrir-waybar.desktop fenrir-mako.desktop fenrir-hyprpaper.desktop fenrir-initial-wallpaper.desktop; do
+  install -Dm644 "$DOTS_DIR/applications/$desktop" "$HOME/.config/autostart/$desktop"
+done
+sudo install -Dm644 "$DOTS_DIR/applications/fenrir.desktop" /usr/share/wayland-sessions/fenrir.desktop
 
 mkdir -p "$HOME/Pictures/Wallpapers" "$HOME/.local/state/fenrir"
 if [[ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ]]; then
