@@ -201,6 +201,33 @@ class PublicLibrarySyncTests(unittest.TestCase):
         self.assertFalse(self.destination.exists())
         self.assertFalse((self.root / "state").exists())
 
+    def test_dry_run_reports_complete_inventory_storage_requirements(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": 10**12})()
+            result = library.sync_public_library(
+                destination=self.destination,
+                dry_run=True,
+                opener=self.network,
+            )
+        storage = result["storage_preflight"]
+        self.assertTrue(storage["sufficient"])
+        self.assertEqual(storage["destination_required_bytes"], 2 * len(self.payload))
+        self.assertEqual(storage["state_required_bytes"], len(self.payload))
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root / "state").exists())
+
+    def test_sync_refuses_before_download_when_storage_is_insufficient(self):
+        with patch.object(library.shutil, "disk_usage") as disk_usage:
+            disk_usage.return_value = type("Usage", (), {"free": 1})()
+            with self.assertRaisesRegex(library.LibrarySyncError, "Insufficient free space"):
+                library.sync_public_library(
+                    destination=self.destination,
+                    opener=self.network,
+                )
+        self.assertFalse(self.destination.exists())
+        self.assertFalse((self.root / "state").exists())
+        self.assertFalse(any("/nordic-mythology-fantasy/" in url for url, _headers in self.network.calls))
+
     def test_sync_downloads_verified_image_and_writes_separate_attribution(self):
         result = library.sync_public_library(
             destination=self.destination,
