@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/release.yml"
+      - "VERSION"
+      - "pyproject.toml"
+      - "src/fenrir_dots/__init__.py"
+      - "README.md"
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out release commit
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Validate normalized component versions
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(tr -d '\r\n' < VERSION)"
+          [[ "$version" =~ ^[0-9]\.[0-9]\.[0-9]$ ]]
+          python - <<'PY'
+          import pathlib
+          import tomllib
+          version = pathlib.Path("VERSION").read_text().strip()
+          package = tomllib.loads(pathlib.Path("pyproject.toml").read_text())
+          runtime = {}
+          exec(pathlib.Path("src/fenrir_dots/__init__.py").read_text(), runtime)
+          assert package["project"]["version"] == version
+          assert runtime["__version__"] == version
+          assert f"**Version:** {version}" in pathlib.Path("README.md").read_text()
+          PY
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build wheel, sdist and source archive
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check build
+          mkdir -p dist
+          python -m build --outdir dist
+          git archive --format=tar.gz --prefix="fenrir-dots-${VERSION}/" HEAD > "dist/fenrir-dots-${VERSION}.tar.gz"
+          printf '%s\n' "$VERSION" > dist/VERSION
+          (
+            cd dist
+            sha256sum fenrir-dots-${VERSION}.tar.gz fenrir_dots-${VERSION}-py3-none-any.whl fenrir_dots-${VERSION}.tar.gz VERSION > SHA256SUMS
+          )
+
+      - name: Attest release artifacts
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            dist/fenrir-dots-${{ steps.metadata.outputs.version }}.tar.gz
+            dist/fenrir_dots-${{ steps.metadata.outputs.version }}-py3-none-any.whl
+            dist/fenrir_dots-${{ steps.metadata.outputs.version }}.tar.gz
+
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+          VERSION: ${{ steps.metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "Refusing to replace existing immutable tag ${TAG}" >&2
+            exit 1
+          fi
+          gh release create "${TAG}" dist/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${GITHUB_SHA}" \
+            --title "Fenrir-Dots ${VERSION}" \
+            --generate-notes \
+            --latest
