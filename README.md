@@ -1,6 +1,6 @@
 # Fenrir-Dots
 
-**Version:** 2.0.0
+**Version:** 2.0.1
 
 Fenrir-Dots is the user-session desktop layer for Fenrir Desktop: Hyprland, an original Quickshell/Qt Quick/QML shell, themes, wallpaper rotation, desktop services, Fenrir Settings and Fenrir Doctor.
 
