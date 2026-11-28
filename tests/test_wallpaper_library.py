@@ -30,8 +30,8 @@ CATEGORIES = [
 
 
 class WallpaperLibraryTests(unittest.TestCase):
-    def test_sync_policy_matches_fimbulwinter_palette_v3(self):
-        self.assertEqual(EXCLUDED, {"yellow", "orange", "brown"})
+    def test_sync_policy_uses_advisory_palette_v4(self):
+        self.assertEqual(EXCLUDED, set())
         self.assertTrue({"red", "purple", "blue", "white", "black"} <= PREFERRED)
         self.assertIn("green", TOLERATED)
         self.assertNotIn("pink", EXCLUDED)
@@ -70,7 +70,7 @@ class WallpaperLibraryTests(unittest.TestCase):
             "source_page": "https://example.org/source",
             "rights_evidence_id": "rights:123",
             "source_terms_evidence_id": "terms:123",
-            "palette_policy": "fenrir-wallpaper-palette-v3",
+            "palette_policy": "fenrir-wallpaper-palette-advisory-v4",
         }
 
     def test_raw_github_redirect_handler_rejects_origin_changes(self):
@@ -214,16 +214,15 @@ class WallpaperLibraryTests(unittest.TestCase):
         with self.assertRaises(WallpaperSyncError):
             _validate_manifest(manifest, volume)
 
-    def test_manifest_requires_landscape_resolution_metadata(self):
+    def test_manifest_accepts_lower_resolution_images(self):
         volume = {"id": "volume-01", "images_path": "images/"}
         item = self.record()
-        item["width"], item["height"] = 1920, 1080
+        item["width"], item["height"] = 640, 480
         manifest = {
             "schema": MANIFEST_SCHEMA, "library_id": LIBRARY_ID,
             "volume_id": "volume-01", "count": 1, "items": [item],
         }
-        with self.assertRaises(WallpaperSyncError):
-            _validate_manifest(manifest, volume)
+        self.assertEqual(len(_validate_manifest(manifest, volume)), 1)
 
     def test_unsafe_data_path_is_rejected(self):
         with self.assertRaises(WallpaperSyncError):

@@ -20,7 +20,6 @@ REGISTRY_URL = "https://raw.githubusercontent.com/sunxsaturn/Fenrir-Wallpapers/m
 REGISTRY_SCHEMA = "org.fenrir.wallpaper-library-volumes.v2"
 MANIFEST_SCHEMA = "org.fenrir.public-wallpapers.index.v2"
 LIBRARY_ID = "fenrir-wallpapers-v2"
-MIN_WIDTH, MIN_HEIGHT = 2560, 1440
 MAX_IMAGE_BYTES = 100 * 1024 * 1024
 MAX_IMAGE_PIXELS = 100_000_000
 ALLOWED_MIME = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".webp"}
@@ -32,7 +31,7 @@ CATEGORY_IDS = {
 }
 PREFERRED = {"red", "purple", "blue", "white", "black", "violet"}
 TOLERATED = {"green", "neutral", "pink"}
-EXCLUDED = {"yellow", "orange", "brown"}
+EXCLUDED = set()
 
 
 class WallpaperSyncError(RuntimeError):
@@ -244,16 +243,13 @@ def _validate_manifest(manifest: dict, volume: dict) -> list[dict]:
         if not isinstance(item.get("source_page"), str) or not item["source_page"].startswith("https://"):
             raise WallpaperSyncError("Wallpaper source page must use HTTPS")
         width, height = item.get("width"), item.get("height")
-        if (
-            type(width) is not int or type(height) is not int
-            or width < MIN_WIDTH or height < MIN_HEIGHT or width < height
-        ):
-            raise WallpaperSyncError("Wallpaper manifest dimensions must meet the 2560x1440 landscape minimum")
+        if type(width) is not int or type(height) is not int or width < 1 or height < 1:
+            raise WallpaperSyncError("Wallpaper manifest dimensions must be positive integers")
         if width * height > MAX_IMAGE_PIXELS:
             raise WallpaperSyncError("Wallpaper manifest exceeds the 100-megapixel decoded-image limit")
         if relative.stem != digest:
             raise WallpaperSyncError("Content-addressed image filename must equal its SHA-256")
-        if item.get("palette_policy") != "fenrir-wallpaper-palette-v3":
+        if item.get("palette_policy") != "fenrir-wallpaper-palette-advisory-v4":
             raise WallpaperSyncError("Image has not passed the current Fenrir wallpaper palette policy")
         seen_paths.add(path)
         seen_hashes.add(digest)
@@ -294,26 +290,15 @@ def _verify_image(path: Path, item: dict) -> None:
             width, height = image.size
             if width * height > MAX_IMAGE_PIXELS:
                 raise WallpaperSyncError("Decoded image exceeds the 100-megapixel safety limit")
-            thumbnail = image.convert("RGB")
-            thumbnail.thumbnail((128, 128))
-            samples = list(thumbnail.getdata())
+            # The client verifies bytes and decoded format; palette is advisory metadata.
     except WallpaperSyncError:
         raise
     except Exception as exc:
         raise WallpaperSyncError(f"Image decode failed for {item['path']}: {exc}") from exc
     expected_format = {"image/jpeg": "JPEG", "image/png": "PNG", "image/webp": "WEBP"}[item["mime_type"]]
-    if (image_format != expected_format or width < MIN_WIDTH or height < MIN_HEIGHT or width < height
+    if (image_format != expected_format or width < 1 or height < 1
             or width != item["width"] or height != item["height"]):
         raise WallpaperSyncError(f"Image format or decoded dimensions rejected for {item['path']}")
-    counts: dict[str, int] = {}
-    for sample in samples:
-        family = _palette_family(sample)
-        counts[family] = counts.get(family, 0) + 1
-    total = max(1, len(samples))
-    excluded = sum(counts.get(name, 0) for name in EXCLUDED) / total
-    accepted = sum(counts.get(name, 0) for name in PREFERRED | TOLERATED) / total
-    if excluded > 0.25 or accepted < 0.08:
-        raise WallpaperSyncError(f"Image palette rejected for {item['path']}")
 
 
 def _safe_destination(destination: Path, state_dir: Path) -> None:
