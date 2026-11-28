@@ -18,7 +18,9 @@ class ReleaseContractTests(unittest.TestCase):
         self.assertIn("attestations: write", workflow)
         self.assertIn("gh release create", workflow)
         self.assertIn('--target "${GITHUB_SHA}"', workflow)
-        self.assertIn("Refusing to replace existing immutable tag", workflow)
+        self.assertIn("release_needed=false", workflow)
+        self.assertIn("release_needed=true", workflow)
+        self.assertIn("if: steps.metadata.outputs.release_needed == 'true'", workflow)
         self.assertNotIn("publish-public", workflow)
 
 
