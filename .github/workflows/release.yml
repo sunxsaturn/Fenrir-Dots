@@ -8,7 +8,6 @@ on:
       - "VERSION"
       - "pyproject.toml"
       - "src/fenrir_dots/__init__.py"
-      - "README.md"
 
 permissions:
   contents: write
@@ -45,10 +44,18 @@ jobs:
           assert runtime["__version__"] == version
           assert f"**Version:** {version}" in pathlib.Path("README.md").read_text()
           PY
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/${tag}" >/dev/null 2>&1; then
+            release_needed=false
+          else
+            release_needed=true
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=v$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "release_needed=$release_needed" >> "$GITHUB_OUTPUT"
 
       - name: Build wheel, sdist and source archive
+        if: steps.metadata.outputs.release_needed == 'true'
         env:
           VERSION: ${{ steps.metadata.outputs.version }}
         shell: bash
@@ -65,6 +72,7 @@ jobs:
           )
 
       - name: Attest release artifacts
+        if: steps.metadata.outputs.release_needed == 'true'
         uses: actions/attest-build-provenance@v2
         with:
           subject-path: |
@@ -73,6 +81,7 @@ jobs:
             dist/fenrir_dots-${{ steps.metadata.outputs.version }}.tar.gz
 
       - name: Publish immutable GitHub release
+        if: steps.metadata.outputs.release_needed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.metadata.outputs.tag }}
